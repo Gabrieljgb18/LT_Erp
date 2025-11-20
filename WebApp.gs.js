@@ -1,13 +1,5 @@
 function doGet() {
   return HtmlService
-    .createTemplateFromFile('FrontedErp')
-    .evaluate()
+    .createHtmlOutputFromFile('FrontedErp')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
-}
-
-/**
- * Helper para incluir parciales en las plantillas
- */
-function include(name) {
-  return HtmlService.createHtmlOutputFromFile(name).getContent();
 }
