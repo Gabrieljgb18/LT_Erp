@@ -191,6 +191,7 @@ const ReferenceService = (() => {
         setGlobalLoading: function(isLoading, message) {
           const badge = document.getElementById("global-loading");
           const btn = document.getElementById("btn-grabar");
+          toggleControls(isLoading);
           if (btn) btn.disabled = !!isLoading;
           if (!badge) return;
           if (isLoading) {
@@ -203,6 +204,12 @@ const ReferenceService = (() => {
           }
         }
       };
+      function toggleControls(disabled) {
+        ["formato", "search-query", "btn-nuevo"].forEach(function(id) {
+          var el = document.getElementById(id);
+          if (el) el.disabled = !!disabled;
+        });
+      }
       // ==== Helpers para mensajes bonitos ====
 
       function clearAlerts() {
@@ -268,6 +275,7 @@ const ReferenceService = (() => {
           .then(function (formats) {
             if (!Array.isArray(formats) || !formats.length) {
               renderFormatsOptions(buildLocalFormats());
+              showAlert("No pudimos cargar los formatos del servidor. Se usan formatos locales.", "warning");
               return;
             }
             renderFormatsOptions(formats);
@@ -276,6 +284,7 @@ const ReferenceService = (() => {
             console.error("Error obteniendo formatos:", err);
             // Fallback: cargar formatos desde las definiciones locales
             renderFormatsOptions(buildLocalFormats());
+            showAlert("No pudimos cargar los formatos. Usando definiciones locales.", "warning");
           });
       }
 
