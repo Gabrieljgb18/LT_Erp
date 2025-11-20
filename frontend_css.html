@@ -1,0 +1,219 @@
+:root {
+        --app-max-width: 960px;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        overflow-x: hidden;
+      }
+
+      body {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          Roboto, Arial, sans-serif;
+        background-color: #f4f5f7;
+        font-size: 14px;      /* 👈 base un poquito más grande */
+      }
+
+
+      /* contenedor general */
+      .page-wrapper {
+        padding: 0; /* 👈 sin padding base */
+      }
+
+      /* Card base (lo que se ve en PC) */
+      .card-app {
+        border-radius: 16px;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .card-header-app {
+        border-bottom: none;
+        border-radius: 16px 16px 0 0 !important;
+        background: linear-gradient(135deg, #343a40, #198754);
+        color: #fff;
+      }
+
+      .card-header-app h2 {
+        font-size: 16px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin: 0;
+      }
+
+      .subtitle {
+        font-size: 11px;
+        opacity: 0.8;
+      }
+
+      .form-label {
+        font-size: 11px;
+        color: #495057;
+      }
+
+      .form-control,
+      .form-select {
+        font-size: 12px;
+        border-radius: 8px;
+      }
+
+      .form-control:focus,
+      .form-select:focus {
+        box-shadow: 0 0 0 0.15rem rgba(25, 135, 84, 0.3);
+        border-color: #198754;
+      }
+
+      .btn-app {
+        font-size: 12px;
+        border-radius: 999px;
+      }
+
+      .btn-app-outline {
+        border-width: 1px;
+      }
+
+      .btn-app:disabled {
+        opacity: 0.6;
+      }
+
+      #search-suggestions {
+        max-height: 200px;
+        overflow-y: auto;
+      }
+
+      /* ====== Layout móvil: una sola columna, pantalla completa ====== */
+
+
+/* ====== Layout móvil: una sola columna, elementos grandes ====== */
+@media (max-width: 576px) {
+  html,
+  body {
+    font-size: 16px;              /* base más grande */
+    background-color: #ffffff;
+  }
+
+  .page-wrapper {
+    padding: 0;
+  }
+
+  .card-app {
+    border-radius: 0;
+    box-shadow: none !important;
+    min-height: 100vh;
+  }
+
+  .card-header-app {
+    border-radius: 0 !important;
+  }
+
+  .card-body {
+    padding: 12px;
+  }
+
+  .card-footer {
+    padding: 8px 12px 16px 12px !important;
+  }
+
+  /* filas sin márgenes negativos, columnas 100% ancho */
+  .row {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  [class^="col-"],
+  [class*=" col-"] {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    flex: 0 0 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* Inputs y selects más altos y legibles */
+  .form-control,
+  .form-select {
+    font-size: 15px;
+    padding: 0.55rem 0.75rem;
+  }
+
+  .form-label {
+    font-size: 12px;
+  }
+
+  .input-group-text {
+    font-size: 13px;
+    padding: 0.55rem 0.6rem;
+  }
+
+  #search-query {
+    font-size: 15px;
+  }
+
+  .btn-app,
+  .btn,
+  .btn-sm {
+    font-size: 14px;
+    padding: 0.45rem 0.9rem;
+  }
+
+  /* lista de sugerencias pegada al buscador, ancho completo */
+  #search-suggestions {
+    position: static;
+    width: 100%;
+    max-height: 220px;
+    overflow-y: auto;
+    font-size: 14px;
+  }
+}
+
+
+
+      /* ====== Tablet ====== */
+      @media (min-width: 577px) and (max-width: 992px) {
+        .page-wrapper {
+          padding-top: 16px;
+          padding-bottom: 16px;
+        }
+
+        .card-app {
+          border-radius: 12px;
+        }
+
+        .card-header-app {
+          border-radius: 12px 12px 0 0 !important;
+        }
+      }
+
+      /* ====== PC / Escritorio ====== */
+      @media (min-width: 993px) {
+        .page-wrapper {
+          padding-top: 24px;
+          padding-bottom: 24px;
+        }
+
+        .card-app {
+          border-radius: 16px;
+        }
+
+        .card-header-app {
+          border-radius: 16px 16px 0 0 !important;
+        }
+      }
+      /* Fila de día pasado con asistencia (verde suave) */
+      .tr-asistio-pasado > td {
+        background-color: #D4FFF0 !important;
+      }
+
+      /* Fila de día pasado SIN asistencia (gris suave) */
+      .tr-noasistio-pasado > td {
+        background-color: #F7F7F7 !important;
+      }
