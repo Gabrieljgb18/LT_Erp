@@ -163,6 +163,9 @@ const ReferenceService = (() => {
 })();
 
 (() => {
+      if (typeof document === 'undefined') {
+        return;
+      }
       // Usa ApiService, ReferenceService y FORM_DEFINITIONS definidos en módulos cargados antes
       const CACHE_MS = (typeof CACHE_TTL_MS !== 'undefined') ? CACHE_TTL_MS : 5 * 60 * 1000;
 
