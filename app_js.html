@@ -32,6 +32,19 @@
           callLatest
         };
       })();
+
+      // ==== State / UI helpers ====
+      const UiState = {
+        renderLoading: function(componentId, title, message) {
+          const c = document.getElementById(componentId);
+          if (!c) return;
+          c.innerHTML =
+            '<div class="mt-2 p-2 border rounded bg-light">' +
+              '<div class="small fw-bold mb-1">' + title + '</div>' +
+              '<div class="small text-muted">' + message + '</div>' +
+            "</div>";
+        }
+      };
       // ==== Helpers para mensajes bonitos ====
 
       function clearAlerts() {
@@ -941,21 +954,19 @@ function fetchWeeklyPlanForClient() {
 
   const cliente = clienteSelect.value;
   if (!cliente) {
-    panel.innerHTML =
-      '<div class="mt-2 p-2 border rounded bg-light">' +
-        '<div class="small fw-bold mb-1">Plan semanal del cliente</div>' +
-        '<div class="small text-muted">Elegí un cliente para ver su plan.</div>' +
-      '</div>';
+    UiState.renderLoading(
+      "plan-semanal-panel",
+      "Plan semanal del cliente",
+      "Elegí un cliente para ver su plan."
+    );
     return;
   }
 
-  panel.innerHTML =
-    '<div class="mt-2 p-2 border rounded bg-light">' +
-      '<div class="small fw-bold mb-1">Plan semanal del cliente</div>' +
-      '<div class="small text-muted">Cargando plan de <strong>' +
-      escapeHtml(cliente) +
-      "</strong>...</div>" +
-    "</div>";
+  UiState.renderLoading(
+    "plan-semanal-panel",
+    "Plan semanal del cliente",
+    "Cargando plan de <strong>" + escapeHtml(cliente) + "</strong>..."
+  );
 
   ApiService.callLatest('weekly-plan-' + cliente, 'getWeeklyPlanForClient', cliente)
     .then(function (rows) {
@@ -975,13 +986,11 @@ function fetchWeeklyPlanForClient() {
         });
     })
     .catch(function (err) {
-      panel.innerHTML =
-        '<div class="mt-2 p-2 border rounded bg-light">' +
-          '<div class="small fw-bold mb-1">Plan semanal del cliente</div>' +
-          '<div class="small text-danger">Error al cargar plan: ' +
-          escapeHtml(err.message) +
-          "</div>" +
-        "</div>";
+      UiState.renderLoading(
+        "plan-semanal-panel",
+        "Plan semanal del cliente",
+        "Error al cargar plan: " + escapeHtml(err.message)
+      );
     });
 }
 
@@ -1296,21 +1305,19 @@ function fetchDailyAttendance() {
   const fecha = fechaInput ? fechaInput.value : "";
 
   if (!fecha) {
-    panel.innerHTML =
-      '<div class="mt-2 p-2 border rounded bg-light">' +
-      '<div class="small fw-bold mb-1">Asistencia del día</div>' +
-      '<div class="small text-muted">Elegí primero una fecha.</div>' +
-      "</div>";
+    UiState.renderLoading(
+      "asistencia-dia-panel",
+      "Asistencia del día",
+      "Elegí primero una fecha."
+    );
     return;
   }
 
-  panel.innerHTML =
-    '<div class="mt-2 p-2 border rounded bg-light">' +
-    '<div class="small fw-bold mb-1">Asistencia del día</div>' +
-    '<div class="small text-muted">Cargando plan y asistencia para la fecha ' +
-    fecha +
-    "...</div>" +
-    "</div>";
+  UiState.renderLoading(
+    "asistencia-dia-panel",
+    "Asistencia del día",
+    "Cargando plan y asistencia para la fecha " + fecha + "..."
+  );
 
   ApiService.callLatest('attendance-day-' + fecha, 'getDailyAttendancePlan', fecha)
     .then(function (rowsRaw) {
@@ -1321,12 +1328,11 @@ function fetchDailyAttendance() {
       buildDailyAttendancePanel(rows, fecha);
     })
     .catch(function (err) {
-      panel.innerHTML =
-        '<div class="mt-2 p-2 border rounded bg-light">' +
-        '<div class="small fw-bold mb-1">Asistencia del día</div>' +
-        '<div class="small text-danger">Error al cargar: ' +
-        err.message +
-        "</div></div>";
+      UiState.renderLoading(
+        "asistencia-dia-panel",
+        "Asistencia del día",
+        "Error al cargar: " + err.message
+      );
     });
 }
 
