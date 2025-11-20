@@ -1,7 +1,5 @@
 const DB_SPREADSHEET_ID = '1qgza62aFhIF4SWn7_S-AJLpIx3P7tz3_08N1JMeDQiY';
 
-
-
 const DB_SHEETS_BY_FORMAT = {
   CLIENTES: 'CLIENTES_DB',
   EMPLEADOS: 'EMPLEADOS_DB',
@@ -12,9 +10,13 @@ const DB_SHEETS_BY_FORMAT = {
 };
 
 const DatabaseService = (function () {
+  let cachedSpreadsheet = null;
 
   function getDbSpreadsheet() {
-    return SpreadsheetApp.openById(DB_SPREADSHEET_ID);
+    if (!cachedSpreadsheet) {
+      cachedSpreadsheet = SpreadsheetApp.openById(DB_SPREADSHEET_ID);
+    }
+    return cachedSpreadsheet;
   }
 
   function getDbSheetForFormat(tipoFormato) {
@@ -34,7 +36,7 @@ const DatabaseService = (function () {
   // ====== LOG VALOR HORA ======
 
   function appendHoraLogCliente(clienteNombre, valorHora) {
-    const ss = SpreadsheetApp.openById(DB_SPREADSHEET_ID);
+    const ss = getDbSpreadsheet();
     let sheet = ss.getSheetByName("CLIENTES_VHORA_DB");
 
     if (!sheet) {
@@ -50,7 +52,7 @@ const DatabaseService = (function () {
   }
 
   function appendHoraLogEmpleado(empleadoNombre, valorHora) {
-    const ss = SpreadsheetApp.openById(DB_SPREADSHEET_ID);
+    const ss = getDbSpreadsheet();
     let sheet = ss.getSheetByName("EMPLEADOS_VHORA_DB");
 
     if (!sheet) {
@@ -68,7 +70,7 @@ const DatabaseService = (function () {
   // ====== HELPER GENÉRICO (array de STRINGS) ======
 
   function getActiveNames_(sheetName, nameHeader, statusHeader) {
-    const ss = SpreadsheetApp.openById(DB_SPREADSHEET_ID);
+    const ss = getDbSpreadsheet();
     const sheet = ss.getSheetByName(sheetName);
     if (!sheet) return [];
 
@@ -91,14 +93,7 @@ const DatabaseService = (function () {
 
       let isActive = true;
       if (statusIdx > -1) {
-        const st = row[statusIdx];
-        isActive =
-          st === true ||
-          st === 'TRUE' ||
-          st === 'true' ||
-          st === 1 ||
-          st === '1' ||
-          st === 'Activo';   // por si usás la palabra "Activo"
+        isActive = Util ? Util.isTruthy(row[statusIdx]) : !!row[statusIdx];
       }
 
       if (isActive) {
@@ -114,7 +109,7 @@ const DatabaseService = (function () {
   // Esto es lo que usa la UI (referenceData.clientes)
 
   function getClientesActivos() {
-    const ss = SpreadsheetApp.openById(DB_SPREADSHEET_ID);
+    const ss = getDbSpreadsheet();
     const sheet = ss.getSheetByName('CLIENTES_DB');
     if (!sheet) return [];
 
@@ -139,14 +134,7 @@ const DatabaseService = (function () {
 
       let isActive = true;
       if (idxEstado > -1) {
-        const st = row[idxEstado];
-        isActive =
-          st === true ||
-          st === 'TRUE' ||
-          st === 'true' ||
-          st === 1 ||
-          st === '1' ||
-          st === 'Activo';
+        isActive = Util ? Util.isTruthy(row[idxEstado]) : !!row[idxEstado];
       }
 
       if (isActive && (nombre || razon)) {
