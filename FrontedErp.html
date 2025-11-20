@@ -1104,16 +1104,18 @@ function buildPlanVsRealPanel(rows, fecha, cliente) {
 
   html +=
     '<div class="d-flex justify-content-end">' +
-    '<button type="button" class="btn btn-success btn-sm btn-app" onclick="saveAsistenciaPanel(\'' +
-    fecha +
-    "','" +
-    cliente.replace(/'/g, "\\'") +
-    "')\">Guardar asistencia</button>" +
-    "</div>";
+    '<button type="button" class="btn btn-success btn-sm btn-app" ' +
+    'data-action="save-asistencia-plan" ' +
+    'data-fecha="' + fecha + '" ' +
+    'data-cliente="' + cliente.replace(/"/g, "&quot;") + '">' +
+    'Guardar asistencia</button>' +
+    '</div>';
 
   html += "</div>";
 
   panel.innerHTML = html;
+
+  attachPlanVsHandlers(panel);
 }
 
 function saveAsistenciaPanel(fecha, cliente) {
@@ -1437,7 +1439,7 @@ function buildWeeklyPlanPanel(rows, cliente, infoHoras) {
         "</td>" +
         "<td class='text-center'>" +
           '<button type="button" class="btn btn-outline-danger btn-sm" ' +
-          'onclick="deletePlanRow(' + idx + ')">🗑️</button>' +
+          'data-action="delete-plan-row" data-idx="' + idx + '">🗑️</button>' +
         "</td>" +
       "</tr>";
   });
@@ -1447,14 +1449,16 @@ function buildWeeklyPlanPanel(rows, cliente, infoHoras) {
   html +=
     '<div class="d-flex justify-content-between align-items-center mt-2">' +
       '<button type="button" class="btn btn-outline-secondary btn-sm btn-app" ' +
-      'onclick="addEmptyPlanRow()">+ Agregar fila</button>' +
+      'data-action="add-plan-row">+ Agregar fila</button>' +
       '<button type="button" class="btn btn-success btn-sm btn-app" ' +
-      'onclick="saveWeeklyPlanForClient()">Guardar plan del cliente</button>' +
+      'data-action="save-weekly-plan">Guardar plan del cliente</button>' +
     "</div>";
 
   html += "</div>";
 
   panel.innerHTML = html;
+
+  attachWeeklyPlanHandlers(panel);
 }
 
 function addEmptyPlanRow() {
@@ -1499,7 +1503,7 @@ function addEmptyPlanRow() {
     "</td>" +
     "<td class='text-center'>" +
       '<button type="button" class="btn btn-outline-danger btn-sm" ' +
-      'onclick="deletePlanRow(' + idx + ')">🗑️</button>' +
+      'data-action="delete-plan-row" data-idx="' + idx + '">🗑️</button>' +
     "</td>";
 
   tbody.appendChild(tr);
@@ -1546,7 +1550,6 @@ function saveWeeklyPlanForClient() {
     const activo = document.getElementById(rowId + "-activo")?.checked || false;
     const observaciones = document.getElementById(rowId + "-obs")?.value || "";
 
-    // Filtramos filas totalmente vacías
     if (!empleado && !diaSemana && !horaEntrada && !horasPlan && !observaciones) {
       return;
     }
@@ -1569,7 +1572,6 @@ function saveWeeklyPlanForClient() {
         "</strong>.",
         "success"
       );
-      // Recargamos para ver la versión limpia guardada
       fetchWeeklyPlanForClient();
     })
     .withFailureHandler(function (err) {
@@ -1751,14 +1753,56 @@ function buildDailyAttendancePanel(rows, fecha) {
   html +=
     '<div class="d-flex justify-content-end">' +
     '<button type="button" class="btn btn-success btn-sm btn-app" ' +
-    'onclick="saveDailyAttendancePanel(\'' +
-    fecha +
-    "')\">Guardar asistencia del día</button>" +
-    "</div>";
+    'data-action="save-daily-attendance" data-fecha="' + fecha + '">' +
+    'Guardar asistencia del día</button>' +
+    '</div>';
 
   html += "</div>";
 
   panel.innerHTML = html;
+
+  attachDailyAttendanceHandlers(panel, fecha);
+}
+
+// ==== Event attachment helpers (delegated for dynamic panels) ====
+
+function attachPlanVsHandlers(panel) {
+  const btn = panel.querySelector('[data-action="save-asistencia-plan"]');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    const fecha = btn.getAttribute('data-fecha');
+    const cliente = btn.getAttribute('data-cliente');
+    saveAsistenciaPanel(fecha, cliente);
+  });
+}
+
+function attachWeeklyPlanHandlers(panel) {
+  if (!panel) return;
+
+  panel.addEventListener('click', function (e) {
+    const actionBtn = e.target.closest('[data-action]');
+    if (!actionBtn) return;
+
+    const action = actionBtn.getAttribute('data-action');
+    if (action === 'delete-plan-row') {
+      const idx = actionBtn.getAttribute('data-idx');
+      deletePlanRow(idx);
+    } else if (action === 'add-plan-row') {
+      addEmptyPlanRow();
+    } else if (action === 'save-weekly-plan') {
+      saveWeeklyPlanForClient();
+    }
+  });
+}
+
+function attachDailyAttendanceHandlers(panel) {
+  if (!panel) return;
+  const btn = panel.querySelector('[data-action="save-daily-attendance"]');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    const fecha = btn.getAttribute('data-fecha');
+    saveDailyAttendancePanel(fecha);
+  });
 }
 
 
@@ -2355,25 +2399,18 @@ function saveDailyAttendancePanel(fecha) {
         const searchBar = document.getElementById("search-bar-wrapper");
 
         // Formatos donde NO usamos barra de búsqueda ni botones grandes
-        const hideChrome =
-          currentFormat === "ASISTENCIA" ||
-          currentFormat === "ASISTENCIA_PLAN";
+      const hideChrome =
+        currentFormat === "ASISTENCIA" ||
+        currentFormat === "ASISTENCIA_PLAN";
 
-        if (hideChrome) {
-          if (footer) footer.classList.add("d-none");
-          if (searchBar) searchBar.classList.add("d-none");
-        } else {
-          if (footer) footer.classList.remove("d-none");
-          if (searchBar) searchBar.classList.remove("d-none");
-        }
+      if (hideChrome) {
+        if (footer) footer.classList.add("d-none");
+        if (searchBar) searchBar.classList.add("d-none");
+      } else {
+        if (footer) footer.classList.remove("d-none");
+        if (searchBar) searchBar.classList.remove("d-none");
       }
-
-      // Expose only the functions used by inline handlers
-      window.saveAsistenciaPanel = saveAsistenciaPanel;
-      window.deletePlanRow = deletePlanRow;
-      window.addEmptyPlanRow = addEmptyPlanRow;
-      window.saveWeeklyPlanForClient = saveWeeklyPlanForClient;
-      window.saveDailyAttendancePanel = saveDailyAttendancePanel;
+    }
 })();
 
     </script>
