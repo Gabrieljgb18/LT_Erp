@@ -177,6 +177,20 @@ const ReferenceService = (() => {
               '<div class="small fw-bold mb-1">' + title + '</div>' +
               '<div class="small text-muted">' + message + '</div>' +
             "</div>";
+        },
+        setGlobalLoading: function(isLoading, message) {
+          const badge = document.getElementById("global-loading");
+          const btn = document.getElementById("btn-grabar");
+          if (btn) btn.disabled = !!isLoading;
+          if (!badge) return;
+          if (isLoading) {
+            badge.classList.remove("d-none");
+            badge.innerHTML = '<div class="spinner-border spinner-border-sm me-2" role="status"></div>' +
+              '<span class="small">' + (message || 'Procesando...') + '</span>';
+          } else {
+            badge.classList.add("d-none");
+            badge.innerHTML = "";
+          }
         }
       };
       // ==== Helpers para mensajes bonitos ====
@@ -218,7 +232,7 @@ const ReferenceService = (() => {
       let referenceLoaded = ReferenceService ? ReferenceService.isLoaded() : false;
 
 
-      function loadReferenceData() {
+  function loadReferenceData() {
         return ReferenceService.load()
           .then(function () {
             referenceData = ReferenceService.get();
@@ -709,7 +723,7 @@ function buildPlanVsRealPanel(rows, fecha, cliente) {
   attachPlanVsHandlers(panel);
 }
 
-function saveAsistenciaPanel(fecha, cliente) {
+  function saveAsistenciaPanel(fecha, cliente) {
   const panel = document.getElementById("asistencia-plan-panel");
   if (!panel) return;
 
@@ -739,6 +753,7 @@ function saveAsistenciaPanel(fecha, cliente) {
     };
   });
 
+  UiState.setGlobalLoading(true, "Guardando asistencia...");
   ApiService.call('saveAsistenciaFromPlan', fecha, cliente, items)
     .then(function () {
       showAlert(
@@ -749,6 +764,9 @@ function saveAsistenciaPanel(fecha, cliente) {
     })
     .catch(function (err) {
       showAlert("Error al guardar asistencia: " + err.message, "danger");
+    })
+    .finally(function () {
+      UiState.setGlobalLoading(false);
     });
 }
 
@@ -1425,6 +1443,7 @@ function saveDailyAttendancePanel(fecha) {
     };
   });
 
+  UiState.setGlobalLoading(true, "Guardando asistencia del día...");
   ApiService.call('saveDailyAttendance', fecha, items)
     .then(function () {
       showAlert(
@@ -1438,6 +1457,9 @@ function saveDailyAttendancePanel(fecha) {
         "Error al guardar asistencia: " + err.message,
         "danger"
       );
+    })
+    .finally(function () {
+      UiState.setGlobalLoading(false);
     });
 }
 
@@ -1784,15 +1806,16 @@ function saveDailyAttendancePanel(fecha) {
       }
 
 
-      const errors = validateForm(formDef);
-      if (errors.length > 0) {
-        showAlert(errors.join("<br>"), "danger");
-        return;
-      }
+        const errors = validateForm(formDef);
+        if (errors.length > 0) {
+          showAlert(errors.join("<br>"), "danger");
+          return;
+        }
+        UiState.setGlobalLoading(true, "Guardando...");
 
-      const record = buildRecordFromForm(formDef);
+        const record = buildRecordFromForm(formDef);
 
-      
+        
 
       if (currentMode === "edit" && selectedRowNumber != null) {
         ApiService.call('updateRecord', currentFormat, selectedRowNumber, record)
@@ -1831,6 +1854,9 @@ function saveDailyAttendancePanel(fecha) {
           })
           .catch(function (err) {
             showAlert("Error al actualizar: " + err.message, "danger");
+          })
+          .finally(function () {
+            UiState.setGlobalLoading(false);
           });
 
       } else {
@@ -1890,6 +1916,9 @@ function saveDailyAttendancePanel(fecha) {
           })
           .catch(function (err) {
             showAlert("Error al guardar: " + err.message, "danger");
+          })
+          .finally(function () {
+            UiState.setGlobalLoading(false);
           });
       }
     }
