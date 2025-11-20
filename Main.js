@@ -1,42 +1,3 @@
-function onOpen() {
-  const ui = SpreadsheetApp.getUi();
-  ui.createMenu('Formatos')
-    .addItem('Formulario (sistema de gestión)', 'showFormDialog')
-    .addSeparator()
-    .addItem('Panel de formatos (maquetar hoja)', 'showSidebar')
-    .addToUi();
-}
-
-/**
- * Abre el formulario principal como un diálogo modal.
- */
-function showFormDialog() {
-  const html = HtmlService.createHtmlOutputFromFile('Sidebar')
-    .setWidth(600)
-    .setHeight(500);
-  SpreadsheetApp.getUi().showModalDialog(html, 'Sistema de gestión');
-}
-
-/**
- * Panel lateral (en caso de que lo quieras usar para maquetar).
- * Si no usás esta opción, igual no rompe nada.
- */
-function showSidebar() {
-  const html = HtmlService.createHtmlOutputFromFile('Sidebar')
-    .setTitle('Panel de formatos');
-  SpreadsheetApp.getUi().showSidebar(html);
-}
-
-/**
- * Aplica el layout de un formato a la hoja activa.
- * Esta función está pensada para ser llamada desde algún UI de maquetado.
- */
-function applyFormatToActiveSheet(tipoFormato) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getActiveSheet();
-  LayoutService.applyFormatToSheet(tipoFormato, sheet);
-}
-
 /**
  * Devuelve la lista de formatos disponibles al front-end.
  */
@@ -1188,4 +1149,3 @@ function saveWeeklyPlanForClient(cliente, items) {
     sheet.getRange(2, 1, all.length, lastCol).setValues(all);
   }
 }
-

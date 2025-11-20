@@ -1,5 +1,5 @@
 function doGet() {
   return HtmlService
-    .createHtmlOutputFromFile('Sidebar')  // o el nombre de tu HTML
+    .createHtmlOutputFromFile('frontederp')  // HTML principal para la Web App
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
