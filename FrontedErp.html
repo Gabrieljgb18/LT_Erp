@@ -10,7 +10,9 @@
       rel="stylesheet"
     />
 
-    <style><?!= include('frontend_css'); ?></style>
+    <style>
+      <?!= HtmlService.createHtmlOutputFromFile("frontend_css").getContent(); ?>
+    </style>
     <script>
       // Fuerza el viewport correcto en móviles (solución conocida para WebApps GAS)
       (function() {
@@ -123,6 +125,8 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script><?!= include('app_js'); ?></script>
+    <script>
+      <?!= HtmlService.createHtmlOutputFromFile("app_js").getContent(); ?>
+    </script>
   </body>
 </html>
