@@ -1,43 +1,6 @@
 (() => {
-      // ==== API wrapper with concurrency control ====
-      const ApiService = (() => {
-        const latestTokens = new Map();
-        const dataCache = {
-          reference: null,
-          referenceTs: 0,
-          search: new Map() // key: format|query -> {ts, results}
-        };
-        const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
-
-        function call(functionName, ...args) {
-          return new Promise((resolve, reject) => {
-            google.script.run
-              .withSuccessHandler(resolve)
-              .withFailureHandler(reject)[functionName](...args);
-          });
-        }
-
-        function callLatest(key, functionName, ...args) {
-          const token = Date.now() + '-' + Math.random().toString(16).slice(2);
-          latestTokens.set(key, token);
-          return call(functionName, ...args).then((res) => {
-            if (latestTokens.get(key) !== token) {
-              return { ignored: true };
-            }
-            return res;
-          }).catch((err) => {
-            if (latestTokens.get(key) !== token) {
-              return { ignored: true };
-            }
-            throw err;
-          });
-        }
-
-        return {
-          call,
-          callLatest
-        };
-      })();
+      // Usa ApiService, ReferenceService y FORM_DEFINITIONS definidos en módulos cargados antes
+      const CACHE_MS = (typeof CACHE_TTL_MS !== 'undefined') ? CACHE_TTL_MS : 5 * 60 * 1000;
 
       // ==== State / UI helpers ====
       const UiState = {
@@ -309,40 +272,18 @@
       let selectedRowNumber = null;
       let suggestionResults = [];
       let searchDebounce = null;
-      let referenceData = { clientes: [], empleados: [] };
-      let referenceLoaded = false;
+      let referenceData = ReferenceService ? ReferenceService.get() : { clientes: [], empleados: [] };
+      let referenceLoaded = ReferenceService ? ReferenceService.isLoaded() : false;
 
 
       function loadReferenceData() {
-        // Cache en memoria (validez 5 min)
-        const now = Date.now();
-        if (
-          ApiService.dataCache &&
-          ApiService.dataCache.reference &&
-          now - ApiService.dataCache.referenceTs < 5 * 60 * 1000
-        ) {
-          referenceData = ApiService.dataCache.reference;
-          referenceLoaded = true;
-          if (currentFormat) renderForm(currentFormat);
-          return Promise.resolve(referenceData);
-        }
-
-        return ApiService.call('getReferenceData')
-          .then(function (data) {
-            if (data && data.ignored) return;
-            referenceData = data || { clientes: [], empleados: [] };
-            ApiService.dataCache.reference = referenceData;
-            ApiService.dataCache.referenceTs = Date.now();
-          })
-          .catch(function (err) {
-            console.error("Error obteniendo referencia:", err);
-            referenceData = { clientes: [], empleados: [] };
+        return ReferenceService.load()
+          .then(function () {
+            referenceData = ReferenceService.get();
           })
           .finally(function () {
-            referenceLoaded = true;
-            if (currentFormat) {
-              renderForm(currentFormat);
-            }
+            referenceLoaded = ReferenceService.isLoaded();
+            if (currentFormat) renderForm(currentFormat);
           });
       }
 
