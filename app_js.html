@@ -1,4 +1,37 @@
 (() => {
+      // ==== API wrapper with concurrency control ====
+      const ApiService = (() => {
+        const latestTokens = new Map();
+
+        function call(functionName, ...args) {
+          return new Promise((resolve, reject) => {
+            google.script.run
+              .withSuccessHandler(resolve)
+              .withFailureHandler(reject)[functionName](...args);
+          });
+        }
+
+        function callLatest(key, functionName, ...args) {
+          const token = Date.now() + '-' + Math.random().toString(16).slice(2);
+          latestTokens.set(key, token);
+          return call(functionName, ...args).then((res) => {
+            if (latestTokens.get(key) !== token) {
+              return { ignored: true };
+            }
+            return res;
+          }).catch((err) => {
+            if (latestTokens.get(key) !== token) {
+              return { ignored: true };
+            }
+            throw err;
+          });
+        }
+
+        return {
+          call,
+          callLatest
+        };
+      })();
       // ==== Helpers para mensajes bonitos ====
 
       function clearAlerts() {
@@ -262,21 +295,21 @@
 
 
       function loadReferenceData() {
-        google.script.run
-          .withSuccessHandler(function (data) {
+        return ApiService.call('getReferenceData')
+          .then(function (data) {
+            if (data && data.ignored) return;
             referenceData = data || { clientes: [], empleados: [] };
+          })
+          .catch(function (err) {
+            console.error("Error obteniendo referencia:", err);
+            referenceData = { clientes: [], empleados: [] };
+          })
+          .finally(function () {
             referenceLoaded = true;
-            // Si ya sabemos qué formato está seleccionado, re-render
             if (currentFormat) {
               renderForm(currentFormat);
             }
-          })
-          .withFailureHandler(function (err) {
-            console.error("Error obteniendo referencia:", err);
-            referenceData = { clientes: [], empleados: [] };
-            referenceLoaded = true;
-          })
-          .getReferenceData();
+          });
       }
 
       function refreshReferenceAndRerender() {
@@ -289,9 +322,10 @@
 
       // ==== Cargar formatos ====
 
-            function loadFormats() {
-        google.script.run
-          .withSuccessHandler(function (formats) {
+      function loadFormats() {
+        return ApiService.call('getAvailableFormats')
+          .then(function (formats) {
+            if (!Array.isArray(formats)) return;
             const select = document.getElementById("formato");
             select.innerHTML = "";
 
@@ -305,13 +339,14 @@
             if (formats.length > 0) {
               currentFormat = formats[0].id;
               select.value = currentFormat;
-              // Solo renderizamos cuando ya tengamos referencia cargada
               if (referenceLoaded) {
                 renderForm(currentFormat);
               }
             }
           })
-          .getAvailableFormats();
+          .catch(function (err) {
+            console.error("Error obteniendo formatos:", err);
+          });
       }
 
 
@@ -576,8 +611,9 @@ function updateCoveragePanel() {
     "...</div>" +
     "</div>";
 
-  google.script.run
-    .withSuccessHandler(function (res) {
+  ApiService.callLatest('coverage-' + cliente + '-' + dia, 'getClientDayCoverage', cliente, dia)
+    .then(function (res) {
+      if (res && res.ignored) return;
       const required = res && typeof res.required === "number" ? res.required : 0;
       const planned = res && typeof res.planned === "number" ? res.planned : 0;
       const diff = planned - required;
@@ -620,15 +656,14 @@ function updateCoveragePanel() {
         "</div>" +
         "</div>";
     })
-    .withFailureHandler(function (err) {
+    .catch(function (err) {
       panel.innerHTML =
         '<div class="mt-2 p-2 border rounded bg-light">' +
         '<div class="small fw-bold mb-1">Cobertura de horas del cliente</div>' +
         '<div class="small text-danger">Error al calcular cobertura: ' +
         err.message +
         "</div></div>";
-    })
-    .getClientDayCoverage(cliente, dia);
+    });
 }
 
 
@@ -654,11 +689,12 @@ function fetchPlanVsAsistencia() {
     return;
   }
 
-  google.script.run
-    .withSuccessHandler(function (data) {
+  ApiService.callLatest('plan-vs-' + fecha + '-' + cliente, 'getPlanVsAsistencia', fecha, cliente)
+    .then(function (data) {
+      if (data && data.ignored) return;
       buildPlanVsRealPanel(data || [], fecha, cliente);
     })
-    .withFailureHandler(function (err) {
+    .catch(function (err) {
       const panel = document.getElementById("asistencia-plan-panel");
       if (panel) {
         panel.innerHTML =
@@ -668,8 +704,7 @@ function fetchPlanVsAsistencia() {
           err.message +
           "</div></div>";
       }
-    })
-    .getPlanVsAsistencia(fecha, cliente);
+    });
 }
 
 function buildPlanVsRealPanel(rows, fecha, cliente) {
@@ -800,19 +835,17 @@ function saveAsistenciaPanel(fecha, cliente) {
     };
   });
 
-  google.script.run
-    .withSuccessHandler(function () {
+  ApiService.call('saveAsistenciaFromPlan', fecha, cliente, items)
+    .then(function () {
       showAlert(
         "✅ Se guardó la asistencia real para los empleados planificados.",
         "success"
       );
-      // refrescamos para ver los cambios
       fetchPlanVsAsistencia();
     })
-    .withFailureHandler(function (err) {
+    .catch(function (err) {
       showAlert("Error al guardar asistencia: " + err.message, "danger");
-    })
-    .saveAsistenciaFromPlan(fecha, cliente, items);
+    });
 }
 
 
@@ -924,24 +957,24 @@ function fetchWeeklyPlanForClient() {
       "</strong>...</div>" +
     "</div>";
 
-    google.script.run
-    .withSuccessHandler(function (rows) {
+  ApiService.callLatest('weekly-plan-' + cliente, 'getWeeklyPlanForClient', cliente)
+    .then(function (rows) {
+      if (rows && rows.ignored) return;
       const planRows = Array.isArray(rows) ? rows : [];
+      const currentCliente = document.getElementById("field-CLIENTE")?.value || '';
+      if (currentCliente !== cliente) return; // selección cambió
 
-      // ahora pedimos info de horas contratadas
-      google.script.run
-        .withSuccessHandler(function (infoHoras) {
-          // infoHoras puede ser null si no se encuentra
+      return ApiService.callLatest('weekly-hours-' + cliente, 'getClientWeeklyRequestedHours', cliente)
+        .then(function (infoHoras) {
+          if (infoHoras && infoHoras.ignored) return;
           buildWeeklyPlanPanel(planRows, cliente, infoHoras || null);
         })
-        .withFailureHandler(function (err2) {
+        .catch(function (err2) {
           console.error("Error obteniendo horas pedidas:", err2);
           buildWeeklyPlanPanel(planRows, cliente, null);
-        })
-        .getClientWeeklyRequestedHours(cliente);
+        });
     })
-
-    .withFailureHandler(function (err) {
+    .catch(function (err) {
       panel.innerHTML =
         '<div class="mt-2 p-2 border rounded bg-light">' +
           '<div class="small fw-bold mb-1">Plan semanal del cliente</div>' +
@@ -949,8 +982,7 @@ function fetchWeeklyPlanForClient() {
           escapeHtml(err.message) +
           "</div>" +
         "</div>";
-    })
-    .getWeeklyPlanForClient(cliente);
+    });
 }
 
 // helper para que la hora se vea como "HH:MM" en el <input type="time">
@@ -1216,8 +1248,8 @@ function saveWeeklyPlanForClient() {
     });
   });
 
-  google.script.run
-    .withSuccessHandler(function () {
+  ApiService.call('saveWeeklyPlanForClient', cliente, items)
+    .then(function () {
       showAlert(
         "✅ Se guardó el plan semanal para el cliente <strong>" +
           escapeHtml(cliente) +
@@ -1226,10 +1258,9 @@ function saveWeeklyPlanForClient() {
       );
       fetchWeeklyPlanForClient();
     })
-    .withFailureHandler(function (err) {
+    .catch(function (err) {
       showAlert("Error al guardar plan: " + escapeHtml(err.message), "danger");
-    })
-    .saveWeeklyPlanForClient(cliente, items);
+    });
 }
 
 
@@ -1281,22 +1312,22 @@ function fetchDailyAttendance() {
     "...</div>" +
     "</div>";
 
-  google.script.run
-    .withSuccessHandler(function (rowsRaw) {
-      
+  ApiService.callLatest('attendance-day-' + fecha, 'getDailyAttendancePlan', fecha)
+    .then(function (rowsRaw) {
+      if (rowsRaw && rowsRaw.ignored) return;
       const rows = Array.isArray(rowsRaw) ? rowsRaw : [];
-      
+      const currentFecha = document.getElementById("field-FECHA")?.value || '';
+      if (currentFecha !== fecha) return; // selección cambió
       buildDailyAttendancePanel(rows, fecha);
     })
-    .withFailureHandler(function (err) {
+    .catch(function (err) {
       panel.innerHTML =
         '<div class="mt-2 p-2 border rounded bg-light">' +
         '<div class="small fw-bold mb-1">Asistencia del día</div>' +
         '<div class="small text-danger">Error al cargar: ' +
         err.message +
         "</div></div>";
-    })
-    .getDailyAttendancePlan(fecha);
+    });
 }
 
 
@@ -1501,21 +1532,20 @@ function saveDailyAttendancePanel(fecha) {
     };
   });
 
-  google.script.run
-    .withSuccessHandler(function () {
+  ApiService.call('saveDailyAttendance', fecha, items)
+    .then(function () {
       showAlert(
         "✅ Se guardó la asistencia del día.",
         "success"
       );
       fetchDailyAttendance();
     })
-    .withFailureHandler(function (err) {
+    .catch(function (err) {
       showAlert(
         "Error al guardar asistencia: " + err.message,
         "danger"
       );
-    })
-    .saveDailyAttendance(fecha, items);
+    });
 }
 
 
@@ -1801,14 +1831,14 @@ function saveDailyAttendancePanel(fecha) {
           return;
         }
 
-        google.script.run
-          .withSuccessHandler(function (results) {
-            renderSuggestions(results, query);
+        ApiService.callLatest('search-' + currentFormat, 'searchRecords', currentFormat, query)
+          .then(function (results) {
+            if (results && results.ignored) return;
+            renderSuggestions(results || [], query);
           })
-          .withFailureHandler(function (err) {
+          .catch(function (err) {
             showAlert("Error al buscar: " + err.message, "danger");
-          })
-          .searchRecords(currentFormat, query);
+          });
       }
 
       // ==== Grabar / actualizar / eliminar ====
@@ -1855,9 +1885,8 @@ function saveDailyAttendancePanel(fecha) {
       
 
       if (currentMode === "edit" && selectedRowNumber != null) {
-        // UPDATE
-        google.script.run
-          .withSuccessHandler(function () {
+        ApiService.call('updateRecord', currentFormat, selectedRowNumber, record)
+          .then(function () {
             let mainLabel = "";
             switch (currentFormat) {
               case "CLIENTES":
@@ -1886,20 +1915,18 @@ function saveDailyAttendancePanel(fecha) {
               "success"
             );
 
-            // 👇 IMPORTANTE: si cambiamos CLIENTES o EMPLEADOS, recargamos referencia
             if (currentFormat === "CLIENTES" || currentFormat === "EMPLEADOS") {
               refreshReferenceAndRerender();
             }
           })
-          .withFailureHandler(function (err) {
+          .catch(function (err) {
             showAlert("Error al actualizar: " + err.message, "danger");
-          })
-          .updateRecord(currentFormat, selectedRowNumber, record);
+          });
 
       } else {
         // CREATE
-        google.script.run
-          .withSuccessHandler(function () {
+        ApiService.call('saveFormRecord', currentFormat, record)
+          .then(function () {
             let mainLabel = "";
             let entityType = "";
             switch (currentFormat) {
@@ -1947,15 +1974,13 @@ function saveDailyAttendancePanel(fecha) {
             );
             clearForm();
 
-            // 👇 IMPORTANTE: si creamos CLIENTES o EMPLEADOS, recargamos referencia
             if (currentFormat === "CLIENTES" || currentFormat === "EMPLEADOS") {
               loadReferenceData();
             }
           })
-          .withFailureHandler(function (err) {
+          .catch(function (err) {
             showAlert("Error al guardar: " + err.message, "danger");
-          })
-          .saveFormRecord(currentFormat, record);
+          });
       }
     }
 
@@ -1974,16 +1999,15 @@ function saveDailyAttendancePanel(fecha) {
         );
         if (!ok) return;
 
-        google.script.run
-          .withSuccessHandler(function () {
+        ApiService.call('deleteRecord', currentFormat, selectedRowNumber)
+          .then(function () {
             showAlert("🗑️ Registro eliminado correctamente.", "success");
             clearForm();
             enterCreateMode(false);
           })
-          .withFailureHandler(function (err) {
+          .catch(function (err) {
             showAlert("Error al eliminar: " + err.message, "danger");
-          })
-          .deleteRecord(currentFormat, selectedRowNumber);
+          });
       }
 
       // ==== Event listeners ====
