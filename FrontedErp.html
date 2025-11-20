@@ -346,6 +346,7 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
     <script>
+(() => {
       // ==== Helpers para mensajes bonitos ====
 
       function clearAlerts() {
@@ -2367,7 +2368,13 @@ function saveDailyAttendancePanel(fecha) {
         }
       }
 
-
+      // Expose only the functions used by inline handlers
+      window.saveAsistenciaPanel = saveAsistenciaPanel;
+      window.deletePlanRow = deletePlanRow;
+      window.addEmptyPlanRow = addEmptyPlanRow;
+      window.saveWeeklyPlanForClient = saveWeeklyPlanForClient;
+      window.saveDailyAttendancePanel = saveDailyAttendancePanel;
+})();
 
     </script>
   </body>
