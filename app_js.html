@@ -972,7 +972,8 @@ function fetchWeeklyPlanForClient() {
     .then(function (rows) {
       if (rows && rows.ignored) return;
       const planRows = Array.isArray(rows) ? rows : [];
-      const currentCliente = document.getElementById("field-CLIENTE")?.value || '';
+      const currentClienteEl = document.getElementById("field-CLIENTE");
+      const currentCliente = currentClienteEl ? currentClienteEl.value : '';
       if (currentCliente !== cliente) return; // selección cambió
 
       return ApiService.callLatest('weekly-hours-' + cliente, 'getClientWeeklyRequestedHours', cliente)
@@ -1236,12 +1237,19 @@ function saveWeeklyPlanForClient() {
     const idx = tr.getAttribute("data-idx");
     const rowId = "plan-row-" + idx;
 
-    const empleado = document.getElementById(rowId + "-empleado")?.value || "";
-    const diaSemana = document.getElementById(rowId + "-dia")?.value || "";
-    const horaEntrada = document.getElementById(rowId + "-hora")?.value || "";
-    const horasPlan = document.getElementById(rowId + "-horas")?.value || "";
-    const activo = document.getElementById(rowId + "-activo")?.checked || false;
-    const observaciones = document.getElementById(rowId + "-obs")?.value || "";
+    const empleadoEl = document.getElementById(rowId + "-empleado");
+    const diaSemanaEl = document.getElementById(rowId + "-dia");
+    const horaEntradaEl = document.getElementById(rowId + "-hora");
+    const horasPlanEl = document.getElementById(rowId + "-horas");
+    const activoEl = document.getElementById(rowId + "-activo");
+    const observacionesEl = document.getElementById(rowId + "-obs");
+
+    const empleado = empleadoEl ? empleadoEl.value : "";
+    const diaSemana = diaSemanaEl ? diaSemanaEl.value : "";
+    const horaEntrada = horaEntradaEl ? horaEntradaEl.value : "";
+    const horasPlan = horasPlanEl ? horasPlanEl.value : "";
+    const activo = activoEl ? activoEl.checked : false;
+    const observaciones = observacionesEl ? observacionesEl.value : "";
 
     if (!empleado && !diaSemana && !horaEntrada && !horasPlan && !observaciones) {
       return;
@@ -1323,8 +1331,9 @@ function fetchDailyAttendance() {
     .then(function (rowsRaw) {
       if (rowsRaw && rowsRaw.ignored) return;
       const rows = Array.isArray(rowsRaw) ? rowsRaw : [];
-      const currentFecha = document.getElementById("field-FECHA")?.value || '';
-      if (currentFecha !== fecha) return; // selección cambió
+      const currentFechaEl = document.getElementById("field-FECHA");
+      const currentFecha = currentFechaEl ? currentFechaEl.value : '';
+      if (currentFecha !== fecha) return;
       buildDailyAttendancePanel(rows, fecha);
     })
     .catch(function (err) {
