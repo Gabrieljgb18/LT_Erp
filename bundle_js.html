@@ -435,6 +435,9 @@
       const CACHE_MS = (typeof CACHE_TTL_MS !== 'undefined') ? CACHE_TTL_MS : 5 * 60 * 1000;
 
       // UiState y alerts se definen en /src/ui/*.js
+      const noop = function () {};
+      const clearAlerts = (typeof Alerts !== "undefined" && Alerts.clearAlerts) ? Alerts.clearAlerts : noop;
+      const showAlert = (typeof Alerts !== "undefined" && Alerts.showAlert) ? Alerts.showAlert : noop;
 
       // FORM_DEFINITIONS se carga desde app_constants.js
 
