@@ -1,173 +1,267 @@
-// Nota: el bundle puede evaluarse en el server de Apps Script al renderizar la
-// plantilla. Si no hay `document`, salimos para evitar errores de referencia.
-if (typeof document === 'undefined') {
-  // Execution on server context; skip client-only code.
-} else {
+// Archivo generado. Editá los módulos en /src y corré `node generate_bundle_html.js`.
+(function (global) {
+  // Constantes y definiciones de campos para cada formato.
+  const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
 
-// Constantes compartidas para el frontend
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
-
-const FORM_DEFINITIONS = {
-  CLIENTES: {
-    title: "Registro de clientes",
-    fields: [
-      { id: "NOMBRE", label: "Nombre", type: "text", placeholder: "Nombre del cliente" },
-      { id: "ESTADO", label: "Estado", type: "boolean", trueLabel: "Activo" },
-      { id: "RAZON SOCIAL", label: "Razón social", type: "text" },
-      { id: "CUIT", label: "CUIT", type: "text" },
-      { id: "ENCARGADO", label: "Encargado", type: "text" },
-      { id: "TELEFONO", label: "Teléfono", type: "phone" },
-      { id: "DIRECCION", label: "Dirección", type: "text", full: true },
-      { id: "CORREO ADMINISTRACION", label: "Correo administración", type: "email" },
-      { id: "CORREO FACTURACION", label: "Correo facturación", type: "email" },
-      { id: "FECHA CONTRATO", label: "Fecha contrato", type: "date" },
-      { id: "VALOR DE HORA", label: "Valor de hora", type: "number", step: "0.01" },
-      { id: "LUNES HS", label: "Horas lunes", type: "number", step: "0.5" },
-      { id: "MARTES HS", label: "Horas martes", type: "number", step: "0.5" },
-      { id: "MIERCOLES HS", label: "Horas miércoles", type: "number", step: "0.5" },
-      { id: "JUEVES HS", label: "Horas jueves", type: "number", step: "0.5" },
-      { id: "VIERNES HS", label: "Horas viernes", type: "number", step: "0.5" },
-      { id: "SABADO HS", label: "Horas sábado", type: "number", step: "0.5" },
-      { id: "DOMINGO HS", label: "Horas domingo", type: "number", step: "0.5" }
-    ]
-  },
-  EMPLEADOS: {
-    title: "Registro de empleados",
-    fields: [
-      { id: "ESTADO", label: "Estado", type: "boolean", trueLabel: "Activo" },
-      { id: "EMPLEADO", label: "Empleado", type: "text", full: true },
-      { id: "CUIL", label: "CUIL", type: "text" },
-      { id: "DIRECCCION", label: "Dirección", type: "text", full: true },
-      { id: "TELEFONO", label: "Teléfono", type: "phone" },
-      { id: "CONTACTO DE EMERGENCIA", label: "Contacto de emergencia", type: "phone", full: true },
-      { id: "CBU - ALIAS", label: "CBU / Alias", type: "text", full: true },
-      { id: "DNI", label: "DNI", type: "dni" },
-      { id: "VALOR DE HORA", label: "Valor de hora", type: "number", step: "0.01" }
-    ]
-  },
-  FACTURACION: {
-    title: "Registro de facturación",
-    fields: [
-      { id: "FECHA", label: "Fecha", type: "date" },
-      { id: "COMPROBANTE", label: "Comprobante", type: "text" },
-      { id: "NÚMERO", label: "Número", type: "text" },
-      { id: "RAZÓN SOCIAL", label: "Razón social", type: "cliente", full: true },
-      { id: "CUIT", label: "CUIT", type: "text" },
-      { id: "IMPORTE", label: "Importe", type: "number", step: "0.01" },
-      { id: "SUBTOTAL", label: "Subtotal", type: "number", step: "0.01" },
-      { id: "TOTAL", label: "Total", type: "number", step: "0.01" }
-    ]
-  },
-  PAGOS: {
-    title: "Registro de pagos",
-    fields: [
-      { id: "FECHA", label: "Fecha", type: "date" },
-      { id: "RAZÓN SOCIAL", label: "Razón social", type: "cliente", full: true },
-      { id: "CUIT", label: "CUIT", type: "text" },
-      { id: "DETALLE", label: "Detalle", type: "text", full: true },
-      { id: "Nº COMPROBANTE", label: "Nº comprobante", type: "text" },
-      { id: "MEDIO DE PAGO", label: "Medio de pago", type: "text" },
-      { id: "MONTO", label: "Monto", type: "number", step: "0.01" }
-    ]
-  },
-  ASISTENCIA_PLAN: {
-    title: "Plan de asistencia semanal",
-    fields: [{ id: "CLIENTE", label: "Cliente", type: "cliente", full: true }]
-  },
-  ASISTENCIA: {
-    title: "Registro de asistencia",
-    fields: [{ id: "FECHA", label: "Fecha", type: "date" }]
-  }
-};
-
-// Servicios frontend (API + referencia)
-const ApiService = (() => {
-  const latestTokens = new Map();
-  const dataCache = {
-    reference: null,
-    referenceTs: 0,
-    search: new Map() // key: format|query -> {ts, results}
+  const FORM_DEFINITIONS = {
+    CLIENTES: {
+      title: "Registro de clientes",
+      fields: [
+        { id: "NOMBRE", label: "Nombre", type: "text", placeholder: "Nombre del cliente" },
+        { id: "ESTADO", label: "Estado", type: "boolean", trueLabel: "Activo" },
+        { id: "RAZON SOCIAL", label: "Razón social", type: "text" },
+        { id: "CUIT", label: "CUIT", type: "text" },
+        { id: "ENCARGADO", label: "Encargado", type: "text" },
+        { id: "TELEFONO", label: "Teléfono", type: "phone" },
+        { id: "DIRECCION", label: "Dirección", type: "text", full: true },
+        { id: "CORREO ADMINISTRACION", label: "Correo administración", type: "email" },
+        { id: "CORREO FACTURACION", label: "Correo facturación", type: "email" },
+        { id: "FECHA CONTRATO", label: "Fecha contrato", type: "date" },
+        { id: "VALOR DE HORA", label: "Valor de hora", type: "number", step: "0.01" },
+        { id: "LUNES HS", label: "Horas lunes", type: "number", step: "0.5" },
+        { id: "MARTES HS", label: "Horas martes", type: "number", step: "0.5" },
+        { id: "MIERCOLES HS", label: "Horas miércoles", type: "number", step: "0.5" },
+        { id: "JUEVES HS", label: "Horas jueves", type: "number", step: "0.5" },
+        { id: "VIERNES HS", label: "Horas viernes", type: "number", step: "0.5" },
+        { id: "SABADO HS", label: "Horas sábado", type: "number", step: "0.5" },
+        { id: "DOMINGO HS", label: "Horas domingo", type: "number", step: "0.5" }
+      ]
+    },
+    EMPLEADOS: {
+      title: "Registro de empleados",
+      fields: [
+        { id: "ESTADO", label: "Estado", type: "boolean", trueLabel: "Activo" },
+        { id: "EMPLEADO", label: "Empleado", type: "text", full: true },
+        { id: "CUIL", label: "CUIL", type: "text" },
+        { id: "DIRECCCION", label: "Dirección", type: "text", full: true },
+        { id: "TELEFONO", label: "Teléfono", type: "phone" },
+        { id: "CONTACTO DE EMERGENCIA", label: "Contacto de emergencia", type: "phone", full: true },
+        { id: "CBU - ALIAS", label: "CBU / Alias", type: "text", full: true },
+        { id: "DNI", label: "DNI", type: "dni" },
+        { id: "VALOR DE HORA", label: "Valor de hora", type: "number", step: "0.01" }
+      ]
+    },
+    FACTURACION: {
+      title: "Registro de facturación",
+      fields: [
+        { id: "FECHA", label: "Fecha", type: "date" },
+        { id: "COMPROBANTE", label: "Comprobante", type: "text" },
+        { id: "NÚMERO", label: "Número", type: "text" },
+        { id: "RAZÓN SOCIAL", label: "Razón social", type: "cliente", full: true },
+        { id: "CUIT", label: "CUIT", type: "text" },
+        { id: "IMPORTE", label: "Importe", type: "number", step: "0.01" },
+        { id: "SUBTOTAL", label: "Subtotal", type: "number", step: "0.01" },
+        { id: "TOTAL", label: "Total", type: "number", step: "0.01" }
+      ]
+    },
+    PAGOS: {
+      title: "Registro de pagos",
+      fields: [
+        { id: "FECHA", label: "Fecha", type: "date" },
+        { id: "RAZÓN SOCIAL", label: "Razón social", type: "cliente", full: true },
+        { id: "CUIT", label: "CUIT", type: "text" },
+        { id: "DETALLE", label: "Detalle", type: "text", full: true },
+        { id: "Nº COMPROBANTE", label: "Nº comprobante", type: "text" },
+        { id: "MEDIO DE PAGO", label: "Medio de pago", type: "text" },
+        { id: "MONTO", label: "Monto", type: "number", step: "0.01" }
+      ]
+    },
+    ASISTENCIA_PLAN: {
+      title: "Plan de asistencia semanal",
+      fields: [{ id: "CLIENTE", label: "Cliente", type: "cliente", full: true }]
+    },
+    ASISTENCIA: {
+      title: "Registro de asistencia",
+      fields: [{ id: "FECHA", label: "Fecha", type: "date" }]
+    }
   };
 
-  function call(functionName, ...args) {
-    return new Promise((resolve, reject) => {
-      google.script.run
-        .withSuccessHandler(resolve)
-        .withFailureHandler(reject)[functionName](...args);
-    });
-  }
+  global.CACHE_TTL_MS = CACHE_TTL_MS;
+  global.FORM_DEFINITIONS = FORM_DEFINITIONS;
+})(typeof window !== "undefined" ? window : this);
 
-  function callLatest(key, functionName, ...args) {
-    const token = Date.now() + '-' + Math.random().toString(16).slice(2);
-    latestTokens.set(key, token);
-    return call(functionName, ...args).then((res) => {
-      if (latestTokens.get(key) !== token) {
-        return { ignored: true };
-      }
-      return res;
-    }).catch((err) => {
-      if (latestTokens.get(key) !== token) {
-        return { ignored: true };
-      }
-      throw err;
-    });
-  }
 
-  return {
-    call,
-    callLatest,
-    dataCache
-  };
-})();
+(function (global) {
+  // Wrappers para llamadas a google.script.run con control de concurrencia.
+  const ApiService = (() => {
+    const latestTokens = new Map();
+    const dataCache = {
+      reference: null,
+      referenceTs: 0,
+      search: new Map() // key: format|query -> {ts, results}
+    };
 
-const ReferenceService = (() => {
-  const state = {
-    data: { clientes: [], empleados: [] },
-    loaded: false
-  };
-
-  function load() {
-    const now = Date.now();
-    if (
-      ApiService.dataCache.reference &&
-      now - ApiService.dataCache.referenceTs < CACHE_TTL_MS
-    ) {
-      state.data = ApiService.dataCache.reference;
-      state.loaded = true;
-      return Promise.resolve(state.data);
+    function call(functionName, ...args) {
+      return new Promise((resolve, reject) => {
+        google.script.run
+          .withSuccessHandler(resolve)
+          .withFailureHandler(reject)[functionName](...args);
+      });
     }
 
-    return ApiService.call('getReferenceData')
-      .then(function (data) {
-        if (data && data.ignored) return;
-        state.data = data || { clientes: [], empleados: [] };
-        ApiService.dataCache.reference = state.data;
-        ApiService.dataCache.referenceTs = Date.now();
-      })
-      .catch(function (err) {
-        console.error("Error obteniendo referencia:", err);
-        state.data = { clientes: [], empleados: [] };
-      })
-      .finally(function () {
+    function callLatest(key, functionName, ...args) {
+      const token = Date.now() + "-" + Math.random().toString(16).slice(2);
+      latestTokens.set(key, token);
+      return call(functionName, ...args)
+        .then((res) => {
+          if (latestTokens.get(key) !== token) {
+            return { ignored: true };
+          }
+          return res;
+        })
+        .catch((err) => {
+          if (latestTokens.get(key) !== token) {
+            return { ignored: true };
+          }
+          throw err;
+        });
+    }
+
+    return {
+      call,
+      callLatest,
+      dataCache
+    };
+  })();
+
+  global.ApiService = ApiService;
+})(typeof window !== "undefined" ? window : this);
+
+
+(function (global) {
+  // Manejo de datos de referencia (clientes/empleados) con cache.
+  const ReferenceService = (() => {
+    const state = {
+      data: { clientes: [], empleados: [] },
+      loaded: false
+    };
+
+    function load() {
+      const now = Date.now();
+      if (
+        ApiService.dataCache.reference &&
+        now - ApiService.dataCache.referenceTs < CACHE_TTL_MS
+      ) {
+        state.data = ApiService.dataCache.reference;
         state.loaded = true;
-      });
+        return Promise.resolve(state.data);
+      }
+
+      return ApiService.call("getReferenceData")
+        .then(function (data) {
+          if (data && data.ignored) return;
+          state.data = data || { clientes: [], empleados: [] };
+          ApiService.dataCache.reference = state.data;
+          ApiService.dataCache.referenceTs = Date.now();
+        })
+        .catch(function (err) {
+          console.error("Error obteniendo referencia:", err);
+          state.data = { clientes: [], empleados: [] };
+        })
+        .finally(function () {
+          state.loaded = true;
+        });
+    }
+
+    function get() {
+      return state.data;
+    }
+
+    function isLoaded() {
+      return state.loaded;
+    }
+
+    return {
+      load,
+      get,
+      isLoaded
+    };
+  })();
+
+  global.ReferenceService = ReferenceService;
+})(typeof window !== "undefined" ? window : this);
+
+
+(function (global) {
+  function clearAlerts() {
+    const c = document.getElementById("alert-container");
+    if (c) c.innerHTML = "";
   }
 
-  function get() {
-    return state.data;
+  function showAlert(message, type = "info") {
+    const container = document.getElementById("alert-container");
+    if (!container) return;
+    container.innerHTML = "";
+
+    const div = document.createElement("div");
+    div.className =
+      "alert alert-" +
+      type +
+      " alert-dismissible fade show py-2 px-3 mb-2";
+    div.setAttribute("role", "alert");
+
+    div.innerHTML =
+      '<div class="small">' +
+      message +
+      '</div><button type="button" class="btn-close btn-sm" data-bs-dismiss="alert" aria-label="Close"></button>';
+
+    container.appendChild(div);
   }
 
-  function isLoaded() {
-    return state.loaded;
-  }
-
-  return {
-    load,
-    get,
-    isLoaded
+  global.Alerts = {
+    clearAlerts,
+    showAlert
   };
-})();
+})(typeof window !== "undefined" ? window : this);
 
+
+(function (global) {
+  function toggleControls(disabled) {
+    ["formato", "search-query", "btn-nuevo"].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.disabled = !!disabled;
+    });
+  }
+
+  const UiState = {
+    renderLoading: function (componentId, title, message) {
+      const c = document.getElementById(componentId);
+      if (!c) return;
+      c.innerHTML =
+        '<div class="mt-2 p-2 border rounded bg-light">' +
+        '<div class="small fw-bold mb-1">' +
+        title +
+        "</div>" +
+        '<div class="small text-muted">' +
+        message +
+        "</div>" +
+        "</div>";
+    },
+    setGlobalLoading: function (isLoading, message) {
+      const badge = document.getElementById("global-loading");
+      const btn = document.getElementById("btn-grabar");
+      toggleControls(isLoading);
+      if (btn) btn.disabled = !!isLoading;
+      if (!badge) return;
+      if (isLoading) {
+        badge.classList.remove("d-none");
+        badge.innerHTML =
+          '<div class="spinner-border spinner-border-sm me-2" role="status"></div>' +
+          '<span class="small">' +
+          (message || "Procesando...") +
+          "</span>";
+      } else {
+        badge.classList.add("d-none");
+        badge.innerHTML = "";
+      }
+    }
+  };
+
+  global.UiState = UiState;
+})(typeof window !== "undefined" ? window : this);
+
+
+// UI bootstrap: requiere FORM_DEFINITIONS, ApiService y ReferenceService cargados antes.
 (() => {
       if (typeof document === 'undefined') {
         return;
@@ -175,66 +269,7 @@ const ReferenceService = (() => {
       // Usa ApiService, ReferenceService y FORM_DEFINITIONS definidos en módulos cargados antes
       const CACHE_MS = (typeof CACHE_TTL_MS !== 'undefined') ? CACHE_TTL_MS : 5 * 60 * 1000;
 
-      // ==== State / UI helpers ====
-      const UiState = {
-        renderLoading: function(componentId, title, message) {
-          const c = document.getElementById(componentId);
-          if (!c) return;
-          c.innerHTML =
-            '<div class="mt-2 p-2 border rounded bg-light">' +
-              '<div class="small fw-bold mb-1">' + title + '</div>' +
-              '<div class="small text-muted">' + message + '</div>' +
-            "</div>";
-        },
-        setGlobalLoading: function(isLoading, message) {
-          const badge = document.getElementById("global-loading");
-          const btn = document.getElementById("btn-grabar");
-          toggleControls(isLoading);
-          if (btn) btn.disabled = !!isLoading;
-          if (!badge) return;
-          if (isLoading) {
-            badge.classList.remove("d-none");
-            badge.innerHTML = '<div class="spinner-border spinner-border-sm me-2" role="status"></div>' +
-              '<span class="small">' + (message || 'Procesando...') + '</span>';
-          } else {
-            badge.classList.add("d-none");
-            badge.innerHTML = "";
-          }
-        }
-      };
-      function toggleControls(disabled) {
-        ["formato", "search-query", "btn-nuevo"].forEach(function(id) {
-          var el = document.getElementById(id);
-          if (el) el.disabled = !!disabled;
-        });
-      }
-      // ==== Helpers para mensajes bonitos ====
-
-      function clearAlerts() {
-        const c = document.getElementById("alert-container");
-        if (c) c.innerHTML = "";
-      }
-
-      function showAlert(message, type = "info") {
-        const container = document.getElementById("alert-container");
-        if (!container) return;
-
-        container.innerHTML = "";
-
-        const div = document.createElement("div");
-        div.className =
-          "alert alert-" +
-          type +
-          " alert-dismissible fade show py-2 px-3 mb-2";
-        div.setAttribute("role", "alert");
-
-        div.innerHTML =
-          '<div class="small">' +
-          message +
-          '</div><button type="button" class="btn-close btn-sm" data-bs-dismiss="alert" aria-label="Close"></button>';
-
-        container.appendChild(div);
-      }
+      // UiState y alerts se definen en /src/ui/*.js
 
       // FORM_DEFINITIONS se carga desde app_constants.js
 
@@ -340,115 +375,7 @@ const ReferenceService = (() => {
     const colDiv = document.createElement("div");
     colDiv.className = "col-12";
 
-    const formGroup = document.createElement("div");
-    formGroup.className = "mb-1";
-
-    const label = document.createElement("label");
-    label.className = "form-label mb-1";
-    label.htmlFor = "field-" + field.id;
-    label.textContent = field.label;
-
-    let input;
-
-    // BOOLEAN
-    if (field.type === "boolean") {
-      const switchDiv = document.createElement("div");
-      switchDiv.className = "form-check form-switch";
-
-      input = document.createElement("input");
-      input.type = "checkbox";
-      input.className = "form-check-input";
-      input.id = "field-" + field.id;
-      input.checked = true;
-
-      const switchLabel = document.createElement("label");
-      switchLabel.className = "form-check-label small";
-      switchLabel.htmlFor = input.id;
-      switchLabel.textContent = field.trueLabel || "Activo";
-
-      switchDiv.appendChild(input);
-      switchDiv.appendChild(switchLabel);
-
-      formGroup.appendChild(label);
-      formGroup.appendChild(switchDiv);
-
-    } else if (field.type === "dayOfWeek") {
-      input = document.createElement("select");
-      input.id = "field-" + field.id;
-      input.className = "form-select form-select-sm";
-
-      const placeholder = document.createElement("option");
-      placeholder.value = "";
-      placeholder.textContent = "Seleccionar día...";
-      input.appendChild(placeholder);
-
-      const days = [
-        "LUNES",
-        "MARTES",
-        "MIERCOLES",
-        "JUEVES",
-        "VIERNES",
-        "SABADO",
-        "DOMINGO",
-      ];
-
-      days.forEach(d => {
-        const opt = document.createElement("option");
-        opt.value = d;
-        opt.textContent = d; // se muestra en mayúsculas, si querés se puede “embellecer”
-        input.appendChild(opt);
-      });
-
-      formGroup.appendChild(label);
-      formGroup.appendChild(input);
-
-    // SELECT CLIENTES / EMPLEADOS
-    } else if (field.type === "cliente" || field.type === "empleado") {
-      input = document.createElement("select");
-      input.id = "field-" + field.id;
-      input.className = "form-select form-select-sm";
-
-      const placeholder = document.createElement("option");
-      placeholder.value = "";
-      placeholder.textContent = "Seleccionar...";
-      input.appendChild(placeholder);
-
-      if (field.type === "cliente") {
-        referenceData.clientes.forEach(cli => {
-          const label = cli.razonSocial || cli.nombre;
-          const opt = document.createElement("option");
-          opt.value = label;
-          opt.textContent = label;
-          opt.dataset.cuit = cli.cuit || "";
-          input.appendChild(opt);
-        });
-      } else {
-        referenceData.empleados.forEach(emp => {
-          const opt = document.createElement("option");
-          opt.value = emp;
-          opt.textContent = emp;
-          input.appendChild(opt);
-        });
-      }
-
-      formGroup.appendChild(label);
-      formGroup.appendChild(input);
-
-    // INPUT NORMAL
-    } else {
-      input = document.createElement("input");
-      input.id = "field-" + field.id;
-      input.className = "form-control form-control-sm";
-      input.type = field.type === "phone" || field.type === "dni"
-        ? "text"
-        : field.type;
-
-      if (field.step) input.step = field.step;
-
-      formGroup.appendChild(label);
-      formGroup.appendChild(input);
-    }
-
+    const formGroup = FormRenderer.renderField(field, referenceData);
     colDiv.appendChild(formGroup);
     container.appendChild(colDiv);
   });
@@ -2059,4 +1986,3 @@ function saveDailyAttendancePanel(fecha) {
     }
 })();
 
-} // end guard document check
