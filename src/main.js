@@ -3,9 +3,6 @@
       if (typeof document === 'undefined') {
         return;
       }
-      // Usa ApiService, ReferenceService y FORM_DEFINITIONS definidos en módulos cargados antes
-      const CACHE_MS = (typeof CACHE_TTL_MS !== 'undefined') ? CACHE_TTL_MS : 5 * 60 * 1000;
-
       // UiState y alerts se definen en /src/ui/*.js
       const noop = function () {};
       const clearAlerts = (typeof Alerts !== "undefined" && Alerts.clearAlerts) ? Alerts.clearAlerts : noop;
