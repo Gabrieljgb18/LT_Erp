@@ -120,8 +120,6 @@ const ApiService = (() => {
   };
 })();
 
-} // end guard document check
-
 const ReferenceService = (() => {
   const state = {
     data: { clientes: [], empleados: [] },
@@ -2060,3 +2058,5 @@ function saveDailyAttendancePanel(fecha) {
       }
     }
 })();
+
+} // end guard document check
