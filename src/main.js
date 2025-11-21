@@ -1515,28 +1515,8 @@ function saveDailyAttendancePanel(fecha) {
       if (currentMode === "edit" && selectedRowNumber != null) {
         ApiService.call('updateRecord', currentFormat, selectedRowNumber, record)
           .then(function () {
-            let mainLabel = "";
-            switch (currentFormat) {
-              case "CLIENTES":
-                mainLabel = record["NOMBRE"] || "";
-                break;
-              case "EMPLEADOS":
-                mainLabel = record["EMPLEADO"] || "";
-                break;
-              case "FACTURACION":
-                mainLabel =
-                  record["COMPROBANTE"] ||
-                  record["NÚMERO"] ||
-                  record["RAZÓN SOCIAL"] ||
-                  "";
-                break;
-              case "PAGOS":
-                mainLabel = record["RAZÓN SOCIAL"] || "";
-                break;
-              case "ASISTENCIA":
-                mainLabel = record["EMPLEADO"] || record["CLIENTE"] || "";
-                break;
-            }
+            const meta = DomainMeta.getMeta(currentFormat);
+            const mainLabel = meta.label(record);
             const niceName = mainLabel ? " <strong>" + mainLabel + "</strong>" : "";
             showAlert(
               "✅ Se actualizó correctamente el registro" + niceName + ".",
@@ -1558,44 +1538,11 @@ function saveDailyAttendancePanel(fecha) {
         // CREATE
         ApiService.call('saveFormRecord', currentFormat, record)
           .then(function () {
-            let mainLabel = "";
-            let entityType = "";
-            switch (currentFormat) {
-              case "CLIENTES":
-                entityType = "cliente";
-                mainLabel = record["NOMBRE"] || "";
-                break;
-              case "EMPLEADOS":
-                entityType = "empleado";
-                mainLabel = record["EMPLEADO"] || "";
-                break;
-              case "FACTURACION":
-                entityType = "comprobante";
-                mainLabel =
-                  record["COMPROBANTE"] ||
-                  record["NÚMERO"] ||
-                  record["RAZÓN SOCIAL"] ||
-                  "";
-                break;
-              case "PAGOS":
-                entityType = "pago";
-                mainLabel = record["RAZÓN SOCIAL"] || "";
-                break;
-              case "ASISTENCIA":
-                entityType = "registro de asistencia";
-                mainLabel = record["EMPLEADO"] || record["CLIENTE"] || "";
-                break;
-              case "ASISTENCIA_PLAN":
-                entityType = "plan de asistencia";
-                mainLabel = record["EMPLEADO"] || record["CLIENTE"] || "";
-                break;
-              default:
-                entityType = "registro";
-            }
+            const meta = DomainMeta.getMeta(currentFormat);
+            const mainLabel = meta.label(record);
+            const entityType = meta.entity;
+            const niceName = mainLabel ? " <strong>" + mainLabel + "</strong>" : "";
 
-            const niceName = mainLabel
-              ? " <strong>" + mainLabel + "</strong>"
-              : "";
             showAlert(
               "✅ Se guardó correctamente el " +
                 entityType +
@@ -1605,9 +1552,7 @@ function saveDailyAttendancePanel(fecha) {
             );
             clearForm();
 
-            if (currentFormat === "CLIENTES" || currentFormat === "EMPLEADOS") {
-              loadReferenceData();
-            }
+            if (meta.refreshReference) loadReferenceData();
           })
           .catch(function (err) {
             showAlert("Error al guardar: " + err.message, "danger");

@@ -183,6 +183,72 @@
 
 
 (function (global) {
+  // Metadata y helpers por formato (CLIENTES, EMPLEADOS, etc.)
+  const DEFAULTS = {
+    entity: "registro",
+    label: function (record) {
+      return "";
+    },
+    refreshReference: false
+  };
+
+  const META_BY_FORMAT = {
+    CLIENTES: {
+      entity: "cliente",
+      label: function (record) {
+        return record["NOMBRE"] || "";
+      },
+      refreshReference: true
+    },
+    EMPLEADOS: {
+      entity: "empleado",
+      label: function (record) {
+        return record["EMPLEADO"] || "";
+      },
+      refreshReference: true
+    },
+    FACTURACION: {
+      entity: "comprobante",
+      label: function (record) {
+        return (
+          record["COMPROBANTE"] ||
+          record["NÚMERO"] ||
+          record["RAZÓN SOCIAL"] ||
+          ""
+        );
+      }
+    },
+    PAGOS: {
+      entity: "pago",
+      label: function (record) {
+        return record["RAZÓN SOCIAL"] || "";
+      }
+    },
+    ASISTENCIA: {
+      entity: "registro de asistencia",
+      label: function (record) {
+        return record["EMPLEADO"] || record["CLIENTE"] || "";
+      }
+    },
+    ASISTENCIA_PLAN: {
+      entity: "plan de asistencia",
+      label: function (record) {
+        return record["EMPLEADO"] || record["CLIENTE"] || "";
+      }
+    }
+  };
+
+  function getMeta(format) {
+    return META_BY_FORMAT[format] || DEFAULTS;
+  }
+
+  global.DomainMeta = {
+    getMeta
+  };
+})(typeof window !== "undefined" ? window : this);
+
+
+(function (global) {
   function clearAlerts() {
     const c = document.getElementById("alert-container");
     if (c) c.innerHTML = "";
@@ -1942,28 +2008,8 @@ function saveDailyAttendancePanel(fecha) {
       if (currentMode === "edit" && selectedRowNumber != null) {
         ApiService.call('updateRecord', currentFormat, selectedRowNumber, record)
           .then(function () {
-            let mainLabel = "";
-            switch (currentFormat) {
-              case "CLIENTES":
-                mainLabel = record["NOMBRE"] || "";
-                break;
-              case "EMPLEADOS":
-                mainLabel = record["EMPLEADO"] || "";
-                break;
-              case "FACTURACION":
-                mainLabel =
-                  record["COMPROBANTE"] ||
-                  record["NÚMERO"] ||
-                  record["RAZÓN SOCIAL"] ||
-                  "";
-                break;
-              case "PAGOS":
-                mainLabel = record["RAZÓN SOCIAL"] || "";
-                break;
-              case "ASISTENCIA":
-                mainLabel = record["EMPLEADO"] || record["CLIENTE"] || "";
-                break;
-            }
+            const meta = DomainMeta.getMeta(currentFormat);
+            const mainLabel = meta.label(record);
             const niceName = mainLabel ? " <strong>" + mainLabel + "</strong>" : "";
             showAlert(
               "✅ Se actualizó correctamente el registro" + niceName + ".",
@@ -1985,44 +2031,11 @@ function saveDailyAttendancePanel(fecha) {
         // CREATE
         ApiService.call('saveFormRecord', currentFormat, record)
           .then(function () {
-            let mainLabel = "";
-            let entityType = "";
-            switch (currentFormat) {
-              case "CLIENTES":
-                entityType = "cliente";
-                mainLabel = record["NOMBRE"] || "";
-                break;
-              case "EMPLEADOS":
-                entityType = "empleado";
-                mainLabel = record["EMPLEADO"] || "";
-                break;
-              case "FACTURACION":
-                entityType = "comprobante";
-                mainLabel =
-                  record["COMPROBANTE"] ||
-                  record["NÚMERO"] ||
-                  record["RAZÓN SOCIAL"] ||
-                  "";
-                break;
-              case "PAGOS":
-                entityType = "pago";
-                mainLabel = record["RAZÓN SOCIAL"] || "";
-                break;
-              case "ASISTENCIA":
-                entityType = "registro de asistencia";
-                mainLabel = record["EMPLEADO"] || record["CLIENTE"] || "";
-                break;
-              case "ASISTENCIA_PLAN":
-                entityType = "plan de asistencia";
-                mainLabel = record["EMPLEADO"] || record["CLIENTE"] || "";
-                break;
-              default:
-                entityType = "registro";
-            }
+            const meta = DomainMeta.getMeta(currentFormat);
+            const mainLabel = meta.label(record);
+            const entityType = meta.entity;
+            const niceName = mainLabel ? " <strong>" + mainLabel + "</strong>" : "";
 
-            const niceName = mainLabel
-              ? " <strong>" + mainLabel + "</strong>"
-              : "";
             showAlert(
               "✅ Se guardó correctamente el " +
                 entityType +
@@ -2032,9 +2045,7 @@ function saveDailyAttendancePanel(fecha) {
             );
             clearForm();
 
-            if (currentFormat === "CLIENTES" || currentFormat === "EMPLEADOS") {
-              loadReferenceData();
-            }
+            if (meta.refreshReference) loadReferenceData();
           })
           .catch(function (err) {
             showAlert("Error al guardar: " + err.message, "danger");
