@@ -145,11 +145,19 @@ const RecordController = (function () {
             currentRecord[h] = currentRowValues[idx];
         });
 
-        // Preserve ID
+        // CRITICAL: Ensure ID is set BEFORE buildRowValues
+        // Frontend doesn't send ID field, so we must add it explicitly
         newRecord['ID'] = id;
 
-        // Actualizar la fila
+        // Build new row values with ID in correct position
         const newRowValues = buildRowValues(headers, newRecord);
+
+        // Verify ID is in first position (safety check)
+        if (newRowValues[0] != id) {
+            Logger.log('WARNING: ID not in first position. Forcing ID=' + id);
+            newRowValues[0] = id;
+        }
+
         sheet.getRange(rowNumber, 1, 1, headers.length).setValues([newRowValues]);
 
         // Log de cambios en valor de hora para CLIENTES
