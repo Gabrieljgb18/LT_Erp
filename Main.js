@@ -70,54 +70,54 @@ function getPlanVsAsistencia(fechaStr, cliente) {
  * Guarda la asistencia real basada en el plan
  */
 function saveAsistenciaFromPlan(fechaStr, cliente, items) {
-  return AttendanceController.saveAsistenciaFromPlan(fechaStr, cliente, items);
+  return AttendancePlanVsReal.saveAsistenciaFromPlan(fechaStr, cliente, items);
 }
 
 /**
  * Obtiene el plan de asistencia diaria
  */
 function getDailyAttendancePlan(fechaStr) {
-  return AttendanceController.getDailyAttendancePlan(fechaStr);
+  return AttendanceDailyAttendance.getDailyAttendancePlan(fechaStr);
 }
 
 /**
  * Guarda la asistencia diaria
  */
 function saveDailyAttendance(fechaStr, rows) {
-  return AttendanceController.saveDailyAttendance(fechaStr, rows);
+  return AttendanceDailyAttendance.saveDailyAttendance(fechaStr, rows);
 }
 
 /**
  * Calcula la cobertura de horas para un cliente en un día
  */
 function getClientDayCoverage(clienteLabel, dayName) {
-  return AttendanceController.getClientDayCoverage(clienteLabel, dayName);
+  return AttendanceCoverage.getClientDayCoverage(clienteLabel, dayName);
 }
 
 /**
  * Construye un template semanal desde las horas contratadas del cliente
  */
 function buildWeeklyTemplateFromClient(cliente) {
-  return AttendanceController.buildWeeklyTemplateFromClient(cliente);
+  return AttendanceWeeklyPlan.buildWeeklyTemplateFromClient(cliente);
 }
 
 /**
  * Obtiene las horas semanales contratadas para un cliente
  */
 function getClientWeeklyRequestedHours(clienteLabel) {
-  return AttendanceController.getClientWeeklyRequestedHours(clienteLabel);
+  return AttendanceCoverage.getClientWeeklyRequestedHours(clienteLabel);
 }
 
 /**
  * Obtiene el plan semanal completo para un cliente
  */
 function getWeeklyPlanForClient(cliente) {
-  return AttendanceController.getWeeklyPlanForClient(cliente);
+  return AttendanceWeeklyPlan.getWeeklyPlanForClient(cliente);
 }
 
 /**
  * Guarda el plan semanal completo para un cliente
  */
 function saveWeeklyPlanForClient(cliente, items) {
-  return AttendanceController.saveWeeklyPlanForClient(cliente, items);
+  return AttendanceWeeklyPlan.saveWeeklyPlanForClient(cliente, items);
 }
