@@ -17,7 +17,7 @@
         { id: "CORREO ADMINISTRACION", label: "Correo administración", type: "email" },
         { id: "CORREO FACTURACION", label: "Correo facturación", type: "email" },
         { id: "FECHA CONTRATO", label: "Fecha contrato", type: "date" },
-        { id: "VALOR DE HORA", label: "Valor de hora", type: "number", step: "0.01" },
+        { id: "VALOR HORA", label: "Valor de hora", type: "number", step: "0.01" },
         { id: "LUNES HS", label: "Horas lunes", type: "number", step: "0.5" },
         { id: "MARTES HS", label: "Horas martes", type: "number", step: "0.5" },
         { id: "MIERCOLES HS", label: "Horas miércoles", type: "number", step: "0.5" },
@@ -46,7 +46,7 @@
       fields: [
         { id: "FECHA", label: "Fecha", type: "date" },
         { id: "COMPROBANTE", label: "Comprobante", type: "text" },
-        { id: "NÚMERO", label: "Número", type: "text" },
+        { id: "NUMERO", label: "Número", type: "text" },
         { id: "RAZÓN SOCIAL", label: "Razón social", type: "cliente", full: true },
         { id: "CUIT", label: "CUIT", type: "text" },
         { id: "IMPORTE", label: "Importe", type: "number", step: "0.01" },
@@ -61,7 +61,7 @@
         { id: "RAZÓN SOCIAL", label: "Razón social", type: "cliente", full: true },
         { id: "CUIT", label: "CUIT", type: "text" },
         { id: "DETALLE", label: "Detalle", type: "text", full: true },
-        { id: "Nº COMPROBANTE", label: "Nº comprobante", type: "text" },
+        { id: "N° COMPROBANTE", label: "Nº comprobante", type: "text" },
         { id: "MEDIO DE PAGO", label: "Medio de pago", type: "text" },
         { id: "MONTO", label: "Monto", type: "number", step: "0.01" }
       ]
