@@ -44,6 +44,7 @@ const RecordController = (function () {
                 });
 
                 results.push({
+                    id: row[0], // First column is ID
                     rowNumber: index + 2,
                     record: record
                 });
@@ -82,6 +83,10 @@ const RecordController = (function () {
             throw new Error('El formato no tiene headers definidos: ' + tipoFormato);
         }
 
+        // Generate new ID
+        const newId = DatabaseService.getNextId(sheet);
+        record['ID'] = newId;
+
         const row = buildRowValues(headers, record);
         sheet.appendRow(row);
 
@@ -102,15 +107,17 @@ const RecordController = (function () {
                 DatabaseService.appendHoraLogEmpleado(empleadoNombre, valorHora);
             }
         }
+
+        return newId;
     }
 
     /**
-     * Actualiza un registro existente
-     * @param {string} tipoFormato - Tipo de formato
-     * @param {number} rowNumber - Número de fila a actualizar
-     * @param {Object} newRecord - Nuevos datos del registro
-     */
-    function updateRecord(tipoFormato, rowNumber, newRecord) {
+   * Actualiza un registro existente
+   * @param {string} tipoFormato - Tipo de formato
+   * @param {number} id - ID del registro a actualizar
+   * @param {Object} newRecord - Nuevos datos del registro
+   */
+    function updateRecord(tipoFormato, id, newRecord) {
         const sheet = DatabaseService.getDbSheetForFormat(tipoFormato);
         const template = Formats.getFormatTemplate(tipoFormato);
         if (!template) {
@@ -122,6 +129,12 @@ const RecordController = (function () {
             throw new Error('El formato no tiene headers definidos: ' + tipoFormato);
         }
 
+        // Find row by ID
+        const rowNumber = DatabaseService.findRowById(sheet, id);
+        if (!rowNumber) {
+            throw new Error('Registro con ID ' + id + ' no encontrado');
+        }
+
         const lastCol = sheet.getLastColumn();
         const headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
 
@@ -131,6 +144,9 @@ const RecordController = (function () {
         headerRow.forEach(function (h, idx) {
             currentRecord[h] = currentRowValues[idx];
         });
+
+        // Preserve ID
+        newRecord['ID'] = id;
 
         // Actualizar la fila
         const newRowValues = buildRowValues(headers, newRecord);
@@ -160,10 +176,17 @@ const RecordController = (function () {
     /**
      * Elimina un registro
      * @param {string} tipoFormato - Tipo de formato
-     * @param {number} rowNumber - Número de fila a eliminar
+     * @param {number} id - ID del registro a eliminar
      */
-    function deleteRecord(tipoFormato, rowNumber) {
+    function deleteRecord(tipoFormato, id) {
         const sheet = DatabaseService.getDbSheetForFormat(tipoFormato);
+
+        // Find row by ID
+        const rowNumber = DatabaseService.findRowById(sheet, id);
+        if (!rowNumber) {
+            throw new Error('Registro con ID ' + id + ' no encontrado');
+        }
+
         sheet.deleteRow(rowNumber);
     }
 

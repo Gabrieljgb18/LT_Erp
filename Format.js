@@ -1,10 +1,11 @@
 const Formats = (function () {
 
   const FORMAT_TEMPLATES = {
-  CLIENTES: {
+    CLIENTES: {
       id: 'CLIENTES',
       displayName: 'Clientes',
       headers: [
+        'ID',
         'NOMBRE',
         'ESTADO',
         'RAZON SOCIAL',
@@ -26,6 +27,7 @@ const Formats = (function () {
       ],
       // Anchos aproximados, luego los ajustamos si hace falta
       columnWidths: [
+        60,  // ID
         150, // NOMBRE
         100, // ESTADO
         200, // RAZON SOCIAL
@@ -46,32 +48,34 @@ const Formats = (function () {
         90   // DOMINGO HS
       ],
       freezeRows: 1
-  },
+    },
 
 
-  EMPLEADOS: {
-    id: 'EMPLEADOS',
-    displayName: 'Empleados',
-    headers: [
-      'ESTADO',
-      'EMPLEADO',
-      'CUIL',
-      'DIRECCCION',
-      'TELEFONO',
-      'CONTACTO DE EMERGENCIA',
-      'CBU - ALIAS',
-      'DNI',
-      'VALOR DE HORA'          // <--- NUEVO
-    ],
-    columnWidths: [100, 180, 120, 220, 120, 200, 160, 100, 120], // <--- agregá un width
-    freezeRows: 1
-  },
+    EMPLEADOS: {
+      id: 'EMPLEADOS',
+      displayName: 'Empleados',
+      headers: [
+        'ID',
+        'ESTADO',
+        'EMPLEADO',
+        'CUIL',
+        'DIRECCCION',
+        'TELEFONO',
+        'CONTACTO DE EMERGENCIA',
+        'CBU - ALIAS',
+        'DNI',
+        'VALOR DE HORA'
+      ],
+      columnWidths: [60, 100, 180, 120, 220, 120, 200, 160, 100, 120],
+      freezeRows: 1
+    },
 
 
     FACTURACION: {
       id: 'FACTURACION',
       displayName: 'Facturación',
       headers: [
+        'ID',
         'FECHA',
         'COMPROBANTE',
         'NÚMERO',
@@ -81,7 +85,7 @@ const Formats = (function () {
         'SUBTOTAL',
         'TOTAL'
       ],
-      columnWidths: [100, 140, 120, 220, 120, 100, 100, 100],
+      columnWidths: [60, 100, 140, 120, 220, 120, 100, 100, 100],
       freezeRows: 1
     },
 
@@ -89,6 +93,7 @@ const Formats = (function () {
       id: 'PAGOS',
       displayName: 'Pagos',
       headers: [
+        'ID',
         'FECHA',
         'RAZÓN SOCIAL',
         'CUIT',
@@ -97,14 +102,15 @@ const Formats = (function () {
         'MEDIO DE PAGO',
         'MONTO'
       ],
-      columnWidths: [100, 220, 120, 220, 140, 140, 100],
+      columnWidths: [60, 100, 220, 120, 220, 140, 140, 100],
       freezeRows: 1
     },
 
-        ASISTENCIA: {
+    ASISTENCIA: {
       id: 'ASISTENCIA',
       displayName: 'Registro de asistencia',
       headers: [
+        'ID',
         'EMPLEADO',
         'CLIENTE',
         'FECHA',
@@ -112,7 +118,7 @@ const Formats = (function () {
         'HORAS',
         'OBSERVACIONES'
       ],
-      columnWidths: [180, 180, 100, 120, 80, 250],
+      columnWidths: [60, 180, 180, 100, 120, 80, 250],
       freezeRows: 1
     },
 
@@ -120,6 +126,7 @@ const Formats = (function () {
       id: 'ASISTENCIA_PLAN',
       displayName: 'Plan de asistencia semanal',
       headers: [
+        'ID',
         'CLIENTE',
         'EMPLEADO',
         'DIA SEMANA',
@@ -128,10 +135,10 @@ const Formats = (function () {
         'ACTIVO',
         'OBSERVACIONES'
       ],
-      columnWidths: [180, 180, 120, 100, 90, 80, 220],
+      columnWidths: [60, 180, 180, 120, 100, 90, 80, 220],
       freezeRows: 1
     },
-  
+
 
   };
 

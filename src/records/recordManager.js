@@ -25,9 +25,9 @@
             }
         }
 
-        function enterEditMode(rowNumber, record) {
+        function enterEditMode(id, record) {
             currentMode = "edit";
-            selectedRowNumber = rowNumber;
+            selectedRowNumber = id; // Now stores ID instead of rowNumber
             loadRecordIntoForm(record);
 
             if (global.FooterManager) {
@@ -35,12 +35,15 @@
             }
         }
 
-        function loadRecordForEdit(rowNumber, record) {
-            enterEditMode(rowNumber, record);
+        function loadRecordForEdit(id, record) {
+            enterEditMode(id, record);
         }
 
         function loadRecordIntoForm(record) {
             Object.keys(record).forEach(function (fieldId) {
+                // Skip ID field - it's not editable
+                if (fieldId === 'ID') return;
+
                 const input = document.getElementById("field-" + fieldId);
                 if (!input) return;
 
@@ -91,7 +94,7 @@
             UiState.setGlobalLoading(true, "Guardando...");
 
             if (currentMode === "edit" && selectedRowNumber) {
-                // Update existing
+                // Update existing (selectedRowNumber now contains ID)
                 ApiService.call('updateRecord', tipoFormato, selectedRowNumber, record)
                     .then(function () {
                         if (Alerts) Alerts.showAlert("✅ Registro actualizado correctamente.", "success");

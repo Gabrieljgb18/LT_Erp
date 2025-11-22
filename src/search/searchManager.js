@@ -86,7 +86,8 @@
 
             const item = suggestionResults[idx];
             if (global.RecordManager) {
-                global.RecordManager.loadRecordForEdit(item.rowNumber, item.record);
+                // Pass id instead of rowNumber
+                global.RecordManager.loadRecordForEdit(item.id, item.record);
             }
 
             clearSearch();
