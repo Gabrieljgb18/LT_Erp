@@ -41,15 +41,8 @@ function saveFormRecord(tipoFormato, record) {
 /**
  * Actualiza un registro existente
  */
-function updateRecord(tipoFormato, rowNumber, newRecord) {
-  return RecordController.updateRecord(tipoFormato, rowNumber, newRecord);
-}
-
-/**
- * Elimina un registro
- */
-function deleteRecord(tipoFormato, rowNumber) {
-  return RecordController.deleteRecord(tipoFormato, rowNumber);
+function updateRecord(tipoFormato, id, newRecord) {
+  return RecordController.updateRecord(tipoFormato, id, newRecord);
 }
 
 /**
@@ -63,7 +56,7 @@ function getReferenceData() {
  * Obtiene la comparación entre plan y asistencia real
  */
 function getPlanVsAsistencia(fechaStr, cliente) {
-  return AttendanceController.getPlanVsAsistencia(fechaStr, cliente);
+  return AttendancePlanVsReal.getPlanVsAsistencia(fechaStr, cliente);
 }
 
 /**

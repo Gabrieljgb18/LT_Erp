@@ -7,6 +7,7 @@ if (typeof require === "undefined") {
 
   const root = __dirname;
   const sources = [
+    path.join(root, "src", "utils", "htmlHelpers.js"),
     path.join(root, "src", "formDefinitions.js"),
     path.join(root, "src", "apiService.js"),
     path.join(root, "src", "referenceService.js"),
@@ -14,6 +15,12 @@ if (typeof require === "undefined") {
     path.join(root, "src", "ui", "alerts.js"),
     path.join(root, "src", "ui", "state.js"),
     path.join(root, "src", "ui", "formRenderer.js"),
+    path.join(root, "src", "ui", "footer.js"),
+    path.join(root, "src", "search", "searchManager.js"),
+    path.join(root, "src", "attendance", "weeklyPlanPanel.js"),
+    path.join(root, "src", "attendance", "attendancePanels.js"),
+    path.join(root, "src", "forms", "formManager.js"),
+    path.join(root, "src", "records", "recordManager.js"),
     path.join(root, "src", "main.js")
   ];
 

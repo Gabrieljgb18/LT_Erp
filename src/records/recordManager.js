@@ -50,9 +50,16 @@
                 const value = record[fieldId];
 
                 if (input.type === "checkbox") {
-                    input.checked = value === true || value === "TRUE" || value === "Activo";
+                    // Recognize various truthy values including normalized strings
+                    input.checked = value === true ||
+                        value === "TRUE" ||
+                        value === "true" ||  // Added for normalized boolean
+                        value === "Activo" ||
+                        value === 1 ||
+                        value === "1";
                 } else {
-                    input.value = value || "";
+                    // For text inputs, use the value as-is (even if empty string)
+                    input.value = value !== null && value !== undefined ? value : "";
                 }
             });
         }

@@ -1,4 +1,4 @@
-const Formats = (function () {
+var Formats = (function () {
 
   const FORMAT_TEMPLATES = {
     CLIENTES: {
@@ -59,7 +59,7 @@ const Formats = (function () {
         'ESTADO',
         'EMPLEADO',
         'CUIL',
-        'DIRECCCION',
+        'DIRECCION',
         'TELEFONO',
         'CONTACTO DE EMERGENCIA',
         'CBU - ALIAS',

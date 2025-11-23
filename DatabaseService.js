@@ -9,7 +9,7 @@ const DB_SHEETS_BY_FORMAT = {
   ASISTENCIA_PLAN: 'ASISTENCIA_PLAN_DB'
 };
 
-const DatabaseService = (function () {
+var DatabaseService = (function () {
   let cachedSpreadsheet = null;
 
   function getDbSpreadsheet() {
@@ -142,7 +142,7 @@ const DatabaseService = (function () {
 
       let isActive = true;
       if (statusIdx > -1) {
-        isActive = Util ? Util.isTruthy(row[statusIdx]) : !!row[statusIdx];
+        isActive = DataUtils ? DataUtils.isTruthy(row[statusIdx]) : !!row[statusIdx];
       }
 
       if (isActive) {
@@ -183,7 +183,7 @@ const DatabaseService = (function () {
 
       let isActive = true;
       if (idxEstado > -1) {
-        isActive = Util ? Util.isTruthy(row[idxEstado]) : !!row[idxEstado];
+        isActive = DataUtils ? DataUtils.isTruthy(row[idxEstado]) : !!row[idxEstado];
       }
 
       if (isActive && (nombre || razon)) {

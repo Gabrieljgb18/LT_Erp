@@ -26,7 +26,12 @@
   // ===== Bootstrap Application =====
 
   function initApp() {
-    // Load reference data first
+    // 1. Load formats immediately
+    if (FormManager) {
+      FormManager.loadFormats();
+    }
+
+    // 2. Load reference data
     ReferenceService.load()
       .then(function () {
         const refData = ReferenceService.get();
@@ -34,7 +39,8 @@
         // Initialize modules with reference data
         if (FormManager) {
           FormManager.init(refData);
-          FormManager.loadFormats();
+          // Update UI with loaded data
+          FormManager.updateReferenceData(refData);
         }
 
         if (WeeklyPlanPanel) {
@@ -61,18 +67,26 @@
     }
 
     // Search input
-    const searchInput = document.getElementById("search");
+    const searchInput = document.getElementById("search-query");
     if (searchInput) {
       searchInput.addEventListener("input", function () {
         const tipoFormato = FormManager ? FormManager.getCurrentFormat() : null;
-        if (tipoFormato && SearchManager) {
+
+        if (!tipoFormato) {
+          if (this.value.length > 0 && Alerts) {
+            Alerts.showAlert("Selecciona un formato primero para buscar", "warning");
+          }
+          return;
+        }
+
+        if (SearchManager) {
           SearchManager.handleSearch(tipoFormato, this.value);
         }
       });
     }
 
     // Footer buttons
-    const btnSave = document.getElementById("btn-save");
+    const btnSave = document.getElementById("btn-grabar");
     if (btnSave) {
       btnSave.addEventListener("click", function () {
         if (RecordManager) {
@@ -81,7 +95,7 @@
       });
     }
 
-    const btnCancel = document.getElementById("btn-cancel");
+    const btnCancel = document.getElementById("btn-limpiar");
     if (btnCancel) {
       btnCancel.addEventListener("click", function () {
         if (RecordManager) {
@@ -90,7 +104,7 @@
       });
     }
 
-    const btnDelete = document.getElementById("btn-delete");
+    const btnDelete = document.getElementById("btn-eliminar");
     if (btnDelete) {
       btnDelete.addEventListener("click", function () {
         if (RecordManager) {

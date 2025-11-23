@@ -32,7 +32,7 @@
         { id: "ESTADO", label: "Estado", type: "boolean", trueLabel: "Activo" },
         { id: "EMPLEADO", label: "Empleado", type: "text", full: true },
         { id: "CUIL", label: "CUIL", type: "text" },
-        { id: "DIRECCCION", label: "Dirección", type: "text", full: true },
+        { id: "DIRECCION", label: "Dirección", type: "text", full: true },
         { id: "TELEFONO", label: "Teléfono", type: "phone" },
         { id: "CONTACTO DE EMERGENCIA", label: "Contacto de emergencia", type: "phone", full: true },
         { id: "CBU - ALIAS", label: "CBU / Alias", type: "text", full: true },

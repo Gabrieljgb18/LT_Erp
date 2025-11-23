@@ -1,4 +1,104 @@
 // Archivo generado. Editá los módulos en /src y corré `node generate_bundle_html.js`.
+/**
+ * HTML Helpers
+ * Utilidades para generación de HTML y escape de strings
+ */
+
+(function (global) {
+    const HtmlHelpers = (() => {
+
+        /**
+         * Escapa caracteres HTML para prevenir XSS
+         * @param {string} str - String a escapar
+         * @returns {string} String escapado
+         */
+        function escapeHtml(str) {
+            return String(str || "")
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#39;");
+        }
+
+        /**
+         * Genera opciones HTML para select de empleados
+         * @param {string} selected - Empleado seleccionado
+         * @param {Array} empleados - Lista de empleados
+         * @returns {string} HTML de opciones
+         */
+        function getEmpleadoOptionsHtml(selected, empleados = []) {
+            const opts = ['<option value="">Seleccionar...</option>'];
+            empleados.forEach(emp => {
+                const sel = emp === selected ? " selected" : "";
+                opts.push('<option value="' + escapeHtml(emp) + '"' + sel + ">" +
+                    escapeHtml(emp) + "</option>");
+            });
+            return opts.join("");
+        }
+
+        /**
+         * Genera opciones HTML para select de días de la semana
+         * @param {string} selected - Día seleccionado
+         * @returns {string} HTML de opciones
+         */
+        function getDiaOptionsHtml(selected) {
+            const days = [
+                "LUNES",
+                "MARTES",
+                "MIERCOLES",
+                "JUEVES",
+                "VIERNES",
+                "SABADO",
+                "DOMINGO",
+            ];
+            const opts = ['<option value="">Día...</option>'];
+            days.forEach(d => {
+                const sel = d === selected ? " selected" : "";
+                opts.push('<option value="' + d + '"' + sel + ">" + d + "</option>");
+            });
+            return opts.join("");
+        }
+
+        /**
+         * Formatea hora de entrada para input type="time"
+         * @param {Date|string} horaEntrada - Hora a formatear
+         * @returns {string} Hora en formato HH:MM
+         */
+        function formatHoraEntradaForInput(horaEntrada) {
+            if (!horaEntrada) return "";
+
+            // Si viene como Date desde Apps Script
+            if (Object.prototype.toString.call(horaEntrada) === "[object Date]" && !isNaN(horaEntrada)) {
+                const hh = String(horaEntrada.getHours()).padStart(2, "0");
+                const mm = String(horaEntrada.getMinutes()).padStart(2, "0");
+                return `${hh}:${mm}`;
+            }
+
+            // Si viene como string, tratamos de rescatar hh:mm
+            const s = String(horaEntrada).trim();
+            const match = s.match(/(\d{1,2}):(\d{2})/);
+            if (match) {
+                const hh = match[1].padStart(2, "0");
+                const mm = match[2];
+                return `${hh}:${mm}`;
+            }
+
+            return "";
+        }
+
+        return {
+            escapeHtml,
+            getEmpleadoOptionsHtml,
+            getDiaOptionsHtml,
+            formatHoraEntradaForInput
+        };
+    })();
+
+    global.HtmlHelpers = HtmlHelpers;
+})(typeof window !== "undefined" ? window : this);
+
+
 (function (global) {
   // Constantes y definiciones de campos para cada formato.
   const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
@@ -33,7 +133,7 @@
         { id: "ESTADO", label: "Estado", type: "boolean", trueLabel: "Activo" },
         { id: "EMPLEADO", label: "Empleado", type: "text", full: true },
         { id: "CUIL", label: "CUIL", type: "text" },
-        { id: "DIRECCCION", label: "Dirección", type: "text", full: true },
+        { id: "DIRECCION", label: "Dirección", type: "text", full: true },
         { id: "TELEFONO", label: "Teléfono", type: "phone" },
         { id: "CONTACTO DE EMERGENCIA", label: "Contacto de emergencia", type: "phone", full: true },
         { id: "CBU - ALIAS", label: "CBU / Alias", type: "text", full: true },
@@ -283,7 +383,8 @@
 
 (function (global) {
   function toggleControls(disabled) {
-    ["formato", "search-query", "btn-nuevo"].forEach(function (id) {
+    // Don't disable search-query so users can keep typing during search
+    ["formato", "btn-nuevo"].forEach(function (id) {
       var el = document.getElementById(id);
       if (el) el.disabled = !!disabled;
     });
@@ -492,6 +593,995 @@
 
 
 /**
+ * Footer Manager
+ * Gestiona la visibilidad y estado del footer
+ */
+
+(function (global) {
+    const FooterManager = (() => {
+
+        function updateVisibility() {
+            const footer = document.getElementById("footer-buttons");
+            if (footer) {
+                footer.classList.remove("d-none");
+            }
+        }
+
+        function showCreateMode() {
+            const btnSave = document.getElementById("btn-save");
+            const btnCancel = document.getElementById("btn-cancel");
+            const btnDelete = document.getElementById("btn-delete");
+
+            if (btnSave) btnSave.textContent = "Guardar";
+            if (btnCancel) btnCancel.classList.add("d-none");
+            if (btnDelete) btnDelete.classList.add("d-none");
+        }
+
+        function showEditMode() {
+            const btnSave = document.getElementById("btn-save");
+            const btnCancel = document.getElementById("btn-cancel");
+            const btnDelete = document.getElementById("btn-delete");
+
+            if (btnSave) btnSave.textContent = "Actualizar";
+            if (btnCancel) btnCancel.classList.remove("d-none");
+            if (btnDelete) btnDelete.classList.remove("d-none");
+        }
+
+        return {
+            updateVisibility,
+            showCreateMode,
+            showEditMode
+        };
+    })();
+
+    global.FooterManager = FooterManager;
+})(typeof window !== "undefined" ? window : this);
+
+
+/**
+ * Search Manager
+ * Maneja la búsqueda de registros
+ */
+
+(function (global) {
+    const SearchManager = (() => {
+        let searchDebounce = null;
+        let suggestionResults = [];
+
+        /**
+         * Builds a preview string for a search result based on its content
+         */
+        function buildPreview(record) {
+            const parts = [];
+
+            // Always show ID first if available
+            if (record.ID) {
+                parts.push(`<strong>ID:</strong> ${record.ID}`);
+            }
+
+            // Format-specific key fields
+            if (record.NOMBRE) {
+                parts.push(`<strong>NOMBRE:</strong> ${record.NOMBRE}`);
+            } else if (record.EMPLEADO) {
+                parts.push(`<strong>EMPLEADO:</strong> ${record.EMPLEADO}`);
+            } else if (record.CLIENTE) {
+                parts.push(`<strong>CLIENTE:</strong> ${record.CLIENTE}`);
+            }
+
+            // Additional context field
+            if (record["RAZON SOCIAL"]) {
+                parts.push(`<strong>RAZÓN SOCIAL:</strong> ${record["RAZON SOCIAL"]}`);
+            } else if (record.CUIT) {
+                parts.push(`<strong>CUIT:</strong> ${record.CUIT}`);
+            } else if (record.CUIL) {
+                parts.push(`<strong>CUIL:</strong> ${record.CUIL}`);
+            } else if (record.FECHA) {
+                parts.push(`<strong>FECHA:</strong> ${record.FECHA}`);
+            }
+
+            // If we don't have enough parts, add first non-ID field
+            if (parts.length < 2) {
+                const keys = Object.keys(record).filter(k => k !== 'ID');
+                if (keys.length > 0) {
+                    parts.push(`<strong>${keys[0]}:</strong> ${record[keys[0]]}`);
+                }
+            }
+
+            return parts.join(" · ");
+        }
+
+        function handleSearch(tipoFormato, query) {
+            if (searchDebounce) {
+                clearTimeout(searchDebounce);
+            }
+
+            const sugg = document.getElementById("search-suggestions");
+            if (!sugg) return;
+
+            if (!query || query.length < 2) {
+                sugg.classList.add("d-none");
+                sugg.innerHTML = "";
+                return;
+            }
+
+            UiState.setGlobalLoading(true, "Buscando...");
+
+            searchDebounce = setTimeout(function () {
+                ApiService.callLatest('search-' + tipoFormato, 'searchRecords', tipoFormato, query)
+                    .then(function (results) {
+                        if (results && results.ignored) return;
+                        suggestionResults = results || [];
+                        renderSearchResults(suggestionResults);
+                    })
+                    .catch(function (err) {
+                        console.error("Error en búsqueda:", err);
+                        if (Alerts) Alerts.showAlert("Error al buscar: " + err.message, "danger");
+                    })
+                    .finally(function () {
+                        UiState.setGlobalLoading(false);
+                    });
+            }, 300);
+        }
+
+        function renderSearchResults(results) {
+            const sugg = document.getElementById("search-suggestions");
+            if (!sugg) return;
+
+            if (!results.length) {
+                sugg.classList.add("d-none");
+                sugg.innerHTML = "";
+                return;
+            }
+
+            sugg.classList.remove("d-none");
+            const list = document.createElement("ul");
+            list.className = "list-group list-group-flush";
+
+            results.slice(0, 10).forEach(function (item, idx) {
+                const li = document.createElement("li");
+                li.className = "list-group-item list-group-item-action p-2 cursor-pointer";
+                li.setAttribute("data-suggestion-idx", idx);
+
+                // Build format-specific preview
+                const preview = buildPreview(item.record);
+
+                li.innerHTML = `<small>${preview}</small>`;
+                list.appendChild(li);
+            });
+
+            sugg.innerHTML = "";
+            sugg.appendChild(list);
+
+            sugg.addEventListener("click", function (e) {
+                const li = e.target.closest("[data-suggestion-idx]");
+                if (li) {
+                    const idx = parseInt(li.getAttribute("data-suggestion-idx"));
+                    selectSearchResult(idx);
+                }
+            });
+        }
+
+        function selectSearchResult(idx) {
+            if (!suggestionResults[idx]) return;
+
+            const item = suggestionResults[idx];
+            if (global.RecordManager) {
+                // Pass id instead of rowNumber
+                global.RecordManager.loadRecordForEdit(item.id, item.record);
+            }
+
+            clearSearch();
+        }
+
+        function clearSearch() {
+            const searchInput = document.getElementById("search-query");
+            const sugg = document.getElementById("search-suggestions");
+
+            if (searchInput) searchInput.value = "";
+            if (sugg) {
+                sugg.classList.add("d-none");
+                sugg.innerHTML = "";
+            }
+
+            suggestionResults = [];
+        }
+
+        return {
+            handleSearch,
+            clearSearch
+        };
+    })();
+
+    global.SearchManager = SearchManager;
+})(typeof window !== "undefined" ? window : this);
+
+
+/**
+ * Weekly Plan Panel
+ * UI para gestión de planificación semanal de asistencia
+ */
+
+(function (global) {
+    const WeeklyPlanPanel = (() => {
+        let referenceData = { clientes: [], empleados: [] };
+
+        function init(refData) {
+            referenceData = refData;
+        }
+
+        function setup() {
+            const container = document.getElementById("form-fields");
+            if (!container) return;
+
+            let panel = document.getElementById("plan-semanal-panel");
+            if (!panel) {
+                panel = document.createElement("div");
+                panel.id = "plan-semanal-panel";
+                panel.className = "mt-2";
+                container.appendChild(panel);
+            }
+
+            panel.innerHTML =
+                '<div class="mt-2 p-2 border rounded bg-light">' +
+                '<div class="small fw-bold mb-1">Plan semanal del cliente</div>' +
+                '<div class="small text-muted">Elegí un cliente para ver y editar todas las asignaciones semanales de una sola vez.</div>' +
+                '</div>';
+
+            const clienteSelect = document.getElementById("field-CLIENTE");
+            if (clienteSelect) {
+                clienteSelect.addEventListener("change", fetchWeeklyPlanForClient);
+            }
+        }
+
+        function fetchWeeklyPlanForClient() {
+            const panel = document.getElementById("plan-semanal-panel");
+            const clienteSelect = document.getElementById("field-CLIENTE");
+            if (!panel || !clienteSelect) return;
+
+            const cliente = clienteSelect.value;
+            if (!cliente) {
+                UiState.renderLoading(
+                    "plan-semanal-panel",
+                    "Plan semanal del cliente",
+                    "Elegí un cliente para ver su plan."
+                );
+                return;
+            }
+
+            UiState.renderLoading(
+                "plan-semanal-panel",
+                "Plan semanal del cliente",
+                "Cargando plan de <strong>" + HtmlHelpers.escapeHtml(cliente) + "</strong>..."
+            );
+
+            ApiService.callLatest('weekly-plan-' + cliente, 'getWeeklyPlanForClient', cliente)
+                .then(function (rows) {
+                    if (rows && rows.ignored) return;
+                    const planRows = Array.isArray(rows) ? rows : [];
+                    const currentClienteEl = document.getElementById("field-CLIENTE");
+                    const currentCliente = currentClienteEl ? currentClienteEl.value : '';
+                    if (currentCliente !== cliente) return;
+
+                    return ApiService.callLatest('weekly-hours-' + cliente, 'getClientWeeklyRequestedHours', cliente)
+                        .then(function (infoHoras) {
+                            if (infoHoras && infoHoras.ignored) return;
+                            buildWeeklyPlanPanel(planRows, cliente, infoHoras || null);
+                        })
+                        .catch(function (err2) {
+                            console.error("Error obteniendo horas pedidas:", err2);
+                            buildWeeklyPlanPanel(planRows, cliente, null);
+                        });
+                })
+                .catch(function (err) {
+                    UiState.renderLoading(
+                        "plan-semanal-panel",
+                        "Plan semanal del cliente",
+                        "Error al cargar plan: " + HtmlHelpers.escapeHtml(err.message)
+                    );
+                });
+        }
+
+        function buildWeeklyPlanPanel(rows, cliente, infoHoras) {
+            const panel = document.getElementById("plan-semanal-panel");
+            if (!panel) return;
+
+            if (!rows.length) {
+                rows = [{
+                    empleado: "",
+                    diaSemana: "",
+                    horaEntrada: "",
+                    horasPlan: "",
+                    activo: true,
+                    observaciones: ""
+                }];
+            }
+
+            let html = "";
+            html += '<div class="mt-2 p-2 border rounded bg-light">';
+            html += '<div class="small fw-bold mb-1">Plan semanal del cliente</div>';
+            html +=
+                '<div class="small mb-2">Cliente: <strong>' +
+                HtmlHelpers.escapeHtml(cliente) +
+                "</strong></div>";
+
+            if (infoHoras) {
+                const partes = [];
+                const pushSiTieneHoras = (label, valor) => {
+                    const num = Number(valor || 0);
+                    if (num > 0) {
+                        partes.push(label + ': <strong>' + num + ' hs</strong>');
+                    }
+                };
+
+                pushSiTieneHoras('Lu', infoHoras.lunes);
+                pushSiTieneHoras('Ma', infoHoras.martes);
+                pushSiTieneHoras('Mi', infoHoras.miercoles);
+                pushSiTieneHoras('Ju', infoHoras.jueves);
+                pushSiTieneHoras('Vi', infoHoras.viernes);
+                pushSiTieneHoras('Sa', infoHoras.sabado);
+                pushSiTieneHoras('Do', infoHoras.domingo);
+
+                if (partes.length) {
+                    html +=
+                        '<div class="small text-muted mb-2">' +
+                        'Horas contratadas · ' +
+                        partes.join(' · ') +
+                        '</div>';
+                }
+            }
+
+            html += '<div class="table-responsive">';
+            html +=
+                '<table class="table table-sm table-bordered align-middle mb-2">' +
+                "<thead>" +
+                "<tr>" +
+                '<th class="small">Empleado</th>' +
+                '<th class="small text-center">Día</th>' +
+                '<th class="small text-center">Hora entrada</th>' +
+                '<th class="small text-center">Horas plan</th>' +
+                '<th class="small text-center">Activo</th>' +
+                '<th class="small">Observaciones</th>' +
+                '<th class="small text-center" style="width:60px;">Acciones</th>' +
+                "</tr>" +
+                "</thead><tbody></tbody></table></div>";
+
+            html +=
+                '<div class="d-flex justify-content-between align-items-center mt-2">' +
+                '<button type="button" class="btn btn-outline-secondary btn-sm btn-app" ' +
+                'data-action="add-plan-row">+ Agregar fila</button>' +
+                '<button type="button" class="btn btn-success btn-sm btn-app" ' +
+                'data-action="save-weekly-plan">Guardar plan del cliente</button>' +
+                "</div>";
+
+            html += "</div>";
+
+            panel.innerHTML = html;
+
+            const tbody = panel.querySelector("tbody");
+            if (tbody) {
+                const frag = document.createDocumentFragment();
+                rows.forEach(function (r, idx) {
+                    const rowId = "plan-row-" + idx;
+                    const empleadoOptions = HtmlHelpers.getEmpleadoOptionsHtml(r.empleado || "", referenceData.empleados);
+                    const diaOptions = HtmlHelpers.getDiaOptionsHtml(r.diaSemana || "");
+                    const checkedActivo = r.activo ? "checked" : "";
+                    const horaFormatted = HtmlHelpers.formatHoraEntradaForInput(r.horaEntrada);
+
+                    const tr = document.createElement("tr");
+                    tr.setAttribute("data-idx", idx);
+                    tr.innerHTML =
+                        "<td>" +
+                        '<select class="form-select form-select-sm" ' +
+                        'id="' + rowId + '-empleado">' +
+                        empleadoOptions +
+                        "</select>" +
+                        "</td>" +
+                        "<td>" +
+                        '<select class="form-select form-select-sm text-center" ' +
+                        'id="' + rowId + '-dia">' +
+                        diaOptions +
+                        "</select>" +
+                        "</td>" +
+                        "<td>" +
+                        '<input type="time" class="form-control form-control-sm text-center" ' +
+                        'id="' + rowId + '-hora" value="' +
+                        HtmlHelpers.escapeHtml(horaFormatted) +
+                        '" step="1800">' +
+                        "</td>" +
+                        "<td>" +
+                        '<input type="number" step="0.5" min="0" ' +
+                        'class="form-control form-control-sm text-end" ' +
+                        'id="' + rowId + '-horas" value="' +
+                        HtmlHelpers.escapeHtml(r.horasPlan != null ? String(r.horasPlan) : "") +
+                        '">' +
+                        "</td>" +
+                        "<td class='text-center'>" +
+                        '<input type="checkbox" class="form-check-input" ' +
+                        'id="' + rowId + '-activo" ' + checkedActivo + ">" +
+                        "</td>" +
+                        "<td>" +
+                        '<input type="text" class="form-control form-control-sm" ' +
+                        'id="' + rowId + '-obs" value="' +
+                        HtmlHelpers.escapeHtml(r.observaciones || "") +
+                        '">' +
+                        "</td>" +
+                        "<td class='text-center'>" +
+                        '<button type="button" class="btn btn-outline-danger btn-sm" ' +
+                        'data-action="delete-plan-row" data-idx="' + idx + '">🗑️</button>' +
+                        "</td>";
+
+                    frag.appendChild(tr);
+                });
+                tbody.appendChild(frag);
+            }
+
+            attachWeeklyPlanHandlers(panel);
+        }
+
+        function attachWeeklyPlanHandlers(panel) {
+            panel.addEventListener("click", function (e) {
+                const target = e.target;
+                const action = target.getAttribute("data-action");
+
+                if (action === "add-plan-row") {
+                    addEmptyPlanRow();
+                } else if (action === "delete-plan-row") {
+                    const idx = target.getAttribute("data-idx");
+                    deletePlanRow(idx);
+                } else if (action === "save-weekly-plan") {
+                    saveWeeklyPlan();
+                }
+            });
+        }
+
+        function addEmptyPlanRow() {
+            const panel = document.getElementById("plan-semanal-panel");
+            if (!panel) return;
+
+            const tbody = panel.querySelector("tbody");
+            if (!tbody) return;
+
+            const idx = tbody.querySelectorAll("tr").length;
+            const rowId = "plan-row-" + idx;
+
+            const tr = document.createElement("tr");
+            tr.setAttribute("data-idx", idx);
+
+            tr.innerHTML =
+                "<td>" +
+                '<select class="form-select form-select-sm" id="' + rowId + '-empleado">' +
+                HtmlHelpers.getEmpleadoOptionsHtml("", referenceData.empleados) +
+                "</select>" +
+                "</td>" +
+                "<td>" +
+                '<select class="form-select form-select-sm text-center" id="' + rowId + '-dia">' +
+                HtmlHelpers.getDiaOptionsHtml("") +
+                "</select>" +
+                "</td>" +
+                "<td>" +
+                '<input type="time" class="form-control form-control-sm text-center" ' +
+                'id="' + rowId + '-hora" step="1800">' +
+                "</td>" +
+                "<td>" +
+                '<input type="number" step="0.5" min="0" ' +
+                'class="form-control form-control-sm text-end" ' +
+                'id="' + rowId + '-horas">' +
+                "</td>" +
+                "<td class='text-center'>" +
+                '<input type="checkbox" class="form-check-input" ' +
+                'id="' + rowId + '-activo" checked>' +
+                "</td>" +
+                "<td>" +
+                '<input type="text" class="form-control form-control-sm" ' +
+                'id="' + rowId + '-obs">' +
+                "</td>" +
+                "<td class='text-center'>" +
+                '<button type="button" class="btn btn-outline-danger btn-sm" ' +
+                'data-action="delete-plan-row" data-idx="' + idx + '">🗑️</button>' +
+                "</td>";
+
+            tbody.appendChild(tr);
+        }
+
+        function deletePlanRow(idx) {
+            const panel = document.getElementById("plan-semanal-panel");
+            if (!panel) return;
+
+            const tbody = panel.querySelector("tbody");
+            if (!tbody) return;
+
+            const tr = tbody.querySelector('tr[data-idx="' + idx + '"]');
+            if (tr) {
+                tr.remove();
+            }
+        }
+
+        function saveWeeklyPlan() {
+            const clienteSelect = document.getElementById("field-CLIENTE");
+            if (!clienteSelect) return;
+
+            const cliente = clienteSelect.value;
+            if (!cliente) {
+                if (Alerts) Alerts.showAlert("Seleccioná un cliente primero.", "warning");
+                return;
+            }
+
+            const panel = document.getElementById("plan-semanal-panel");
+            if (!panel) return;
+
+            const tbody = panel.querySelector("tbody");
+            if (!tbody) return;
+
+            const rows = Array.from(tbody.querySelectorAll("tr"));
+            const items = rows.map(function (tr) {
+                const idx = tr.getAttribute("data-idx");
+                const empleadoSelect = document.getElementById(`plan-row-${idx}-empleado`);
+                const diaSelect = document.getElementById(`plan-row-${idx}-dia`);
+                const horaInput = document.getElementById(`plan-row-${idx}-hora`);
+                const horasInput = document.getElementById(`plan-row-${idx}-horas`);
+                const activoCheck = document.getElementById(`plan-row-${idx}-activo`);
+                const obsInput = document.getElementById(`plan-row-${idx}-obs`);
+
+                return {
+                    empleado: empleadoSelect ? empleadoSelect.value : "",
+                    diaSemana: diaSelect ? diaSelect.value : "",
+                    horaEntrada: horaInput ? horaInput.value : "",
+                    horasPlan: horasInput ? horasInput.value : "",
+                    activo: activoCheck ? activoCheck.checked : true,
+                    observaciones: obsInput ? obsInput.value : ""
+                };
+            }).filter(item => item.empleado || item.diaSemana || item.horasPlan);
+
+            UiState.setGlobalLoading(true, "Guardando plan semanal...");
+            ApiService.call('saveWeeklyPlanForClient', cliente, items)
+                .then(function () {
+                    if (Alerts) Alerts.showAlert("✅ Plan semanal guardado correctamente.", "success");
+                    fetchWeeklyPlanForClient();
+                })
+                .catch(function (err) {
+                    if (Alerts) Alerts.showAlert("Error al guardar plan: " + err.message, "danger");
+                })
+                .finally(function () {
+                    UiState.setGlobalLoading(false);
+                });
+        }
+
+        return {
+            init,
+            setup,
+            fetchWeeklyPlanForClient
+        };
+    })();
+
+    global.WeeklyPlanPanel = WeeklyPlanPanel;
+})(typeof window !== "undefined" ? window : this);
+
+
+/**
+ * Attendance Panels - Consolidated
+ * Wrapper para todos los paneles de asistencia
+ */
+
+(function (global) {
+    const AttendancePanels = (() => {
+
+        function setupWeeklyPlanPanel() {
+            if (global.WeeklyPlanPanel) {
+                global.WeeklyPlanPanel.setup();
+            }
+        }
+
+        function setupDailyPanel() {
+            const container = document.getElementById('daily-attendance-panel');
+        }
+
+        return {
+            setupWeeklyPlanPanel,
+            setupDailyPanel
+        };
+    })();
+
+    global.AttendancePanels = AttendancePanels;
+})(typeof window !== "undefined" ? window : this);
+
+
+/**
+ * Form Manager
+ * Gestiona la carga, renderizado y configuración de formularios
+ */
+
+(function (global) {
+    const FormManager = (() => {
+        let currentFormat = null;
+        let referenceData = { clientes: [], empleados: [] };
+
+        /**
+         * Inicializa el form manager con datos de referencia
+         */
+        function init(refData) {
+            referenceData = refData || { clientes: [], empleados: [] };
+        }
+
+        /**
+         * Carga los formatos disponibles desde el servidor
+         */
+        function loadFormats() {
+            return ApiService.call('getAvailableFormats')
+                .then(function (formats) {
+                    if (!Array.isArray(formats) || !formats.length) {
+                        renderFormatsOptions(buildLocalFormats());
+                        if (Alerts) Alerts.showAlert("No pudimos cargar los formatos del servidor. Se usan formatos locales.", "warning");
+                        return;
+                    }
+                    renderFormatsOptions(formats);
+                })
+                .catch(function (err) {
+                    console.error("Error obteniendo formatos:", err);
+                    renderFormatsOptions(buildLocalFormats());
+                    if (Alerts) Alerts.showAlert("No pudimos cargar los formatos. Usando definiciones locales.", "warning");
+                });
+        }
+
+        /**
+         * Construye formatos desde definiciones locales
+         */
+        function buildLocalFormats() {
+            return Object.keys(FORM_DEFINITIONS).map(function (id) {
+                return { id: id, name: FORM_DEFINITIONS[id].title || id };
+            });
+        }
+
+        /**
+         * Renderiza las opciones del selector de formatos
+         */
+        function renderFormatsOptions(formats) {
+            if (!Array.isArray(formats)) return;
+            const select = document.getElementById("formato");
+            if (!select) return;
+
+            select.innerHTML = "";
+            formats.forEach(function (f) {
+                const option = document.createElement("option");
+                option.value = f.id;
+                option.textContent = f.name;
+                select.appendChild(option);
+            });
+
+            if (formats.length > 0) {
+                currentFormat = formats[0].id;
+                select.value = currentFormat;
+                renderForm(currentFormat);
+            }
+        }
+
+        /**
+         * Renderiza un formulario específico
+         */
+        function renderForm(tipoFormato) {
+            currentFormat = tipoFormato;
+
+            if (Alerts) Alerts.clearAlerts();
+
+            const formDef = FORM_DEFINITIONS[tipoFormato];
+            const container = document.getElementById("form-fields");
+            const titleEl = document.getElementById("form-title");
+            const sugg = document.getElementById("search-suggestions");
+
+            if (!container || !titleEl) return;
+
+            container.innerHTML = "";
+            if (sugg) {
+                sugg.classList.add("d-none");
+                sugg.innerHTML = "";
+            }
+
+            if (!formDef) {
+                titleEl.textContent = "Registro";
+                container.innerHTML =
+                    '<p class="text-muted small mb-0">No hay formulario definido para este formato.</p>';
+                return;
+            }
+
+            titleEl.textContent = formDef.title;
+
+            formDef.fields.forEach(field => {
+                const colDiv = document.createElement("div");
+                colDiv.className = "col-12";
+
+                const formGroup = FormRenderer.renderField(field, referenceData);
+                colDiv.appendChild(formGroup);
+                container.appendChild(colDiv);
+            });
+
+            // Autocompletar CUIT para FACTURACION y PAGOS
+            if (tipoFormato === "FACTURACION" || tipoFormato === "PAGOS") {
+                setupCuitAutocomplete();
+            }
+
+            // Setup panels específicos por tipo
+            if (tipoFormato === "ASISTENCIA" && global.AttendancePanels) {
+                global.AttendancePanels.setupDailyPanel();
+            }
+
+            if (tipoFormato === "ASISTENCIA_PLAN" && global.AttendancePanels) {
+                global.AttendancePanels.setupWeeklyPlanPanel();
+            }
+
+            // Actualizar visibilidad del footer
+            if (global.FooterManager) {
+                global.FooterManager.updateVisibility();
+            }
+        }
+
+        /**
+         * Configura autocompletado de CUIT
+         */
+        function setupCuitAutocomplete() {
+            const rsSelect = document.getElementById("field-RAZÓN SOCIAL");
+            const cuitInput = document.getElementById("field-CUIT");
+
+            if (rsSelect && cuitInput) {
+                rsSelect.addEventListener("change", function () {
+                    const selected = this.value;
+                    const cli = referenceData.clientes.find(c =>
+                        (c.razonSocial || c.nombre) === selected
+                    );
+                    cuitInput.value = cli ? cli.cuit : "";
+                });
+            }
+        }
+
+        /**
+         * Limpia el formulario actual
+         */
+        function clearForm() {
+            if (!currentFormat) return;
+            const formDef = FORM_DEFINITIONS[currentFormat];
+            if (!formDef) return;
+
+            formDef.fields.forEach(function (field) {
+                const input = document.getElementById("field-" + field.id);
+                if (!input) return;
+
+                input.classList.remove("is-invalid");
+
+                if (field.type === "boolean") {
+                    input.checked = true;
+                } else {
+                    input.value = "";
+                }
+            });
+        }
+
+        /**
+         * Actualiza los datos de referencia
+         */
+        function updateReferenceData(newRefData) {
+            referenceData = newRefData || { clientes: [], empleados: [] };
+            if (currentFormat) {
+                renderForm(currentFormat);
+            }
+        }
+
+        /**
+         * Obtiene el formato actual
+         */
+        function getCurrentFormat() {
+            return currentFormat;
+        }
+
+        return {
+            init,
+            loadFormats,
+            renderForm,
+            clearForm,
+            updateReferenceData,
+            getCurrentFormat
+        };
+    })();
+
+    global.FormManager = FormManager;
+})(typeof window !== "undefined" ? window : this);
+
+
+/**
+ * Record Manager
+ * Maneja CRUD de registros (Create, Read, Update, Delete)
+ */
+
+(function (global) {
+    const RecordManager = (() => {
+        let currentMode = "create"; // "create" | "edit"
+        let selectedRowNumber = null;
+
+        function enterCreateMode(clear = true) {
+            currentMode = "create";
+            selectedRowNumber = null;
+
+            if (clear && global.FormManager) {
+                global.FormManager.clearForm();
+            }
+
+            if (global.SearchManager) {
+                global.SearchManager.clearSearch();
+            }
+
+            if (global.FooterManager) {
+                global.FooterManager.showCreateMode();
+            }
+        }
+
+        function enterEditMode(id, record) {
+            currentMode = "edit";
+            selectedRowNumber = id; // Now stores ID instead of rowNumber
+            loadRecordIntoForm(record);
+
+            if (global.FooterManager) {
+                global.FooterManager.showEditMode();
+            }
+        }
+
+        function loadRecordForEdit(id, record) {
+            enterEditMode(id, record);
+        }
+
+        function loadRecordIntoForm(record) {
+            Object.keys(record).forEach(function (fieldId) {
+                // Skip ID field - it's not editable
+                if (fieldId === 'ID') return;
+
+                const input = document.getElementById("field-" + fieldId);
+                if (!input) return;
+
+                const value = record[fieldId];
+
+                if (input.type === "checkbox") {
+                    // Recognize various truthy values including normalized strings
+                    input.checked = value === true ||
+                        value === "TRUE" ||
+                        value === "true" ||  // Added for normalized boolean
+                        value === "Activo" ||
+                        value === 1 ||
+                        value === "1";
+                } else {
+                    // For text inputs, use the value as-is (even if empty string)
+                    input.value = value !== null && value !== undefined ? value : "";
+                }
+            });
+        }
+
+        function saveRecord() {
+            const tipoFormato = global.FormManager ? global.FormManager.getCurrentFormat() : null;
+            if (!tipoFormato) {
+                if (Alerts) Alerts.showAlert("No hay formato seleccionado.", "warning");
+                return;
+            }
+
+            const formDef = FORM_DEFINITIONS[tipoFormato];
+            if (!formDef) return;
+
+            const record = {};
+            let hasErrors = false;
+
+            formDef.fields.forEach(function (field) {
+                const input = document.getElementById("field-" + field.id);
+                if (!input) return;
+
+                input.classList.remove("is-invalid");
+
+                let value;
+                if (field.type === "boolean") {
+                    value = input.checked;
+                } else {
+                    value = input.value.trim();
+                }
+
+                record[field.id] = value;
+            });
+
+            if (hasErrors) {
+                if (Alerts) Alerts.showAlert("Por favor completá los campos requeridos.", "warning");
+                return;
+            }
+
+            UiState.setGlobalLoading(true, "Guardando...");
+
+            if (currentMode === "edit" && selectedRowNumber) {
+                // Update existing (selectedRowNumber now contains ID)
+                ApiService.call('updateRecord', tipoFormato, selectedRowNumber, record)
+                    .then(function () {
+                        if (Alerts) Alerts.showAlert("✅ Registro actualizado correctamente.", "success");
+                        enterCreateMode(true);
+                        if (ReferenceService) {
+                            ReferenceService.load().then(function () {
+                                if (global.FormManager) {
+                                    global.FormManager.updateReferenceData(ReferenceService.get());
+                                }
+                            });
+                        }
+                    })
+                    .catch(function (err) {
+                        if (Alerts) Alerts.showAlert("Error al actualizar: " + err.message, "danger");
+                    })
+                    .finally(function () {
+                        UiState.setGlobalLoading(false);
+                    });
+            } else {
+                // Create new
+                ApiService.call('saveFormRecord', tipoFormato, record)
+                    .then(function () {
+                        if (Alerts) Alerts.showAlert("✅ Registro guardado correctamente.", "success");
+                        enterCreateMode(true);
+                        if (ReferenceService) {
+                            ReferenceService.load().then(function () {
+                                if (global.FormManager) {
+                                    global.FormManager.updateReferenceData(ReferenceService.get());
+                                }
+                            });
+                        }
+                    })
+                    .catch(function (err) {
+                        if (Alerts) Alerts.showAlert("Error al guardar: " + err.message, "danger");
+                    })
+                    .finally(function () {
+                        UiState.setGlobalLoading(false);
+                    });
+            }
+        }
+
+        function deleteRecord() {
+            if (currentMode !== "edit" || !selectedRowNumber) {
+                if (Alerts) Alerts.showAlert("No hay registro seleccionado para eliminar.", "warning");
+                return;
+            }
+
+            if (!confirm("¿Estás seguro de que querés eliminar este registro?")) {
+                return;
+            }
+
+            const tipoFormato = global.FormManager ? global.FormManager.getCurrentFormat() : null;
+            if (!tipoFormato) return;
+
+            UiState.setGlobalLoading(true, "Eliminando...");
+
+            ApiService.call('deleteRecord', tipoFormato, selectedRowNumber)
+                .then(function () {
+                    if (Alerts) Alerts.showAlert("✅ Registro eliminado correctamente.", "success");
+                    enterCreateMode(true);
+                    if (ReferenceService) {
+                        ReferenceService.load().then(function () {
+                            if (global.FormManager) {
+                                global.FormManager.updateReferenceData(ReferenceService.get());
+                            }
+                        });
+                    }
+                })
+                .catch(function (err) {
+                    if (Alerts) Alerts.showAlert("Error al eliminar: " + err.message, "danger");
+                })
+                .finally(function () {
+                    UiState.setGlobalLoading(false);
+                });
+        }
+
+        function cancelEdit() {
+            enterCreateMode(true);
+        }
+
+        return {
+            enterCreateMode,
+            loadRecordForEdit,
+            saveRecord,
+            deleteRecord,
+            cancelEdit
+        };
+    })();
+
+    global.RecordManager = RecordManager;
+})(typeof window !== "undefined" ? window : this);
+
+
+/**
  * Main application - Reduced version
  * Bootstraps and connects all modules
  * 
@@ -519,7 +1609,12 @@
   // ===== Bootstrap Application =====
 
   function initApp() {
-    // Load reference data first
+    // 1. Load formats immediately
+    if (FormManager) {
+      FormManager.loadFormats();
+    }
+
+    // 2. Load reference data
     ReferenceService.load()
       .then(function () {
         const refData = ReferenceService.get();
@@ -527,7 +1622,8 @@
         // Initialize modules with reference data
         if (FormManager) {
           FormManager.init(refData);
-          FormManager.loadFormats();
+          // Update UI with loaded data
+          FormManager.updateReferenceData(refData);
         }
 
         if (WeeklyPlanPanel) {
@@ -554,18 +1650,26 @@
     }
 
     // Search input
-    const searchInput = document.getElementById("search");
+    const searchInput = document.getElementById("search-query");
     if (searchInput) {
       searchInput.addEventListener("input", function () {
         const tipoFormato = FormManager ? FormManager.getCurrentFormat() : null;
-        if (tipoFormato && SearchManager) {
+
+        if (!tipoFormato) {
+          if (this.value.length > 0 && Alerts) {
+            Alerts.showAlert("Selecciona un formato primero para buscar", "warning");
+          }
+          return;
+        }
+
+        if (SearchManager) {
           SearchManager.handleSearch(tipoFormato, this.value);
         }
       });
     }
 
     // Footer buttons
-    const btnSave = document.getElementById("btn-save");
+    const btnSave = document.getElementById("btn-grabar");
     if (btnSave) {
       btnSave.addEventListener("click", function () {
         if (RecordManager) {
@@ -574,7 +1678,7 @@
       });
     }
 
-    const btnCancel = document.getElementById("btn-cancel");
+    const btnCancel = document.getElementById("btn-limpiar");
     if (btnCancel) {
       btnCancel.addEventListener("click", function () {
         if (RecordManager) {
@@ -583,7 +1687,7 @@
       });
     }
 
-    const btnDelete = document.getElementById("btn-delete");
+    const btnDelete = document.getElementById("btn-eliminar");
     if (btnDelete) {
       btnDelete.addEventListener("click", function () {
         if (RecordManager) {

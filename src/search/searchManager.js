@@ -8,6 +8,48 @@
         let searchDebounce = null;
         let suggestionResults = [];
 
+        /**
+         * Builds a preview string for a search result based on its content
+         */
+        function buildPreview(record) {
+            const parts = [];
+
+            // Always show ID first if available
+            if (record.ID) {
+                parts.push(`<strong>ID:</strong> ${record.ID}`);
+            }
+
+            // Format-specific key fields
+            if (record.NOMBRE) {
+                parts.push(`<strong>NOMBRE:</strong> ${record.NOMBRE}`);
+            } else if (record.EMPLEADO) {
+                parts.push(`<strong>EMPLEADO:</strong> ${record.EMPLEADO}`);
+            } else if (record.CLIENTE) {
+                parts.push(`<strong>CLIENTE:</strong> ${record.CLIENTE}`);
+            }
+
+            // Additional context field
+            if (record["RAZON SOCIAL"]) {
+                parts.push(`<strong>RAZÓN SOCIAL:</strong> ${record["RAZON SOCIAL"]}`);
+            } else if (record.CUIT) {
+                parts.push(`<strong>CUIT:</strong> ${record.CUIT}`);
+            } else if (record.CUIL) {
+                parts.push(`<strong>CUIL:</strong> ${record.CUIL}`);
+            } else if (record.FECHA) {
+                parts.push(`<strong>FECHA:</strong> ${record.FECHA}`);
+            }
+
+            // If we don't have enough parts, add first non-ID field
+            if (parts.length < 2) {
+                const keys = Object.keys(record).filter(k => k !== 'ID');
+                if (keys.length > 0) {
+                    parts.push(`<strong>${keys[0]}:</strong> ${record[keys[0]]}`);
+                }
+            }
+
+            return parts.join(" · ");
+        }
+
         function handleSearch(tipoFormato, query) {
             if (searchDebounce) {
                 clearTimeout(searchDebounce);
@@ -60,10 +102,8 @@
                 li.className = "list-group-item list-group-item-action p-2 cursor-pointer";
                 li.setAttribute("data-suggestion-idx", idx);
 
-                const preview = Object.keys(item.record)
-                    .slice(0, 3)
-                    .map(k => `<strong>${k}:</strong> ${item.record[k]}`)
-                    .join(" · ");
+                // Build format-specific preview
+                const preview = buildPreview(item.record);
 
                 li.innerHTML = `<small>${preview}</small>`;
                 list.appendChild(li);
@@ -94,7 +134,7 @@
         }
 
         function clearSearch() {
-            const searchInput = document.getElementById("search");
+            const searchInput = document.getElementById("search-query");
             const sugg = document.getElementById("search-suggestions");
 
             if (searchInput) searchInput.value = "";

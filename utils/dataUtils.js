@@ -2,7 +2,7 @@
  * Utilidades para manejo y normalización de datos
  */
 
-const DataUtils = (function () {
+var DataUtils = (function () {
     /**
      * Normaliza el valor de una celda para búsqueda
      * Convierte fechas a strings y maneja valores nulos

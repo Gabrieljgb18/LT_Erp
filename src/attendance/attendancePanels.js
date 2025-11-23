@@ -13,9 +13,7 @@
         }
 
         function setupDailyPanel() {
-            // Placeholder for daily attendance panel
-            // Will be implemented when needed
-            console.log("Daily attendance panel setup");
+            const container = document.getElementById('daily-attendance-panel');
         }
 
         return {

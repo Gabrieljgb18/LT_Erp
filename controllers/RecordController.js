@@ -3,7 +3,7 @@
  * Maneja operaciones CRUD para todos los formatos del sistema
  */
 
-const RecordController = (function () {
+var RecordController = (function () {
 
     /**
      * Obtiene la lista de formatos disponibles
@@ -25,7 +25,9 @@ const RecordController = (function () {
         const lastRow = sheet.getLastRow();
         const lastCol = sheet.getLastColumn();
 
-        if (lastRow < 2 || lastCol === 0) return [];
+        if (lastRow < 2 || lastCol === 0) {
+            return [];
+        }
 
         const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
         const data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
@@ -40,6 +42,7 @@ const RecordController = (function () {
             if (!q || rowText.indexOf(q) !== -1) {
                 const record = {};
                 headers.forEach(function (h, colIdx) {
+                    // Use normalized strings - this handles Dates correctly
                     record[h] = rowStrings[colIdx];
                 });
 
@@ -70,36 +73,36 @@ const RecordController = (function () {
      * Guarda un nuevo registro
      * @param {string} tipoFormato - Tipo de formato
      * @param {Object} record - Datos del registro
+     * @returns {number} ID del nuevo registro
      */
     function saveRecord(tipoFormato, record) {
         const sheet = DatabaseService.getDbSheetForFormat(tipoFormato);
         const template = Formats.getFormatTemplate(tipoFormato);
-        if (!template) {
-            throw new Error('Formato no encontrado: ' + tipoFormato);
-        }
-
         const headers = template.headers || [];
-        if (!headers.length) {
-            throw new Error('El formato no tiene headers definidos: ' + tipoFormato);
-        }
 
         // Generate new ID
         const newId = DatabaseService.getNextId(sheet);
         record['ID'] = newId;
 
         const row = buildRowValues(headers, record);
+
+        // Ensure ID is in first position
+        if (row[0] != newId) {
+            row[0] = newId;
+        }
+
         sheet.appendRow(row);
 
-        // Log de cambios en valor de hora para CLIENTES
+        // Log value changes for CLIENTES
         if (tipoFormato === 'CLIENTES') {
             const clienteNombre = record['NOMBRE'] || record['RAZON SOCIAL'] || '';
-            const valorHora = record['VALOR DE HORA'];
+            const valorHora = record['VALOR HORA'];
             if (clienteNombre && valorHora !== undefined && valorHora !== '') {
                 DatabaseService.appendHoraLogCliente(clienteNombre, valorHora);
             }
         }
 
-        // Log de cambios en valor de hora para EMPLEADOS
+        // Log value changes for EMPLEADOS
         if (tipoFormato === 'EMPLEADOS') {
             const empleadoNombre = record['EMPLEADO'] || '';
             const valorHora = record['VALOR DE HORA'];
@@ -112,14 +115,16 @@ const RecordController = (function () {
     }
 
     /**
-   * Actualiza un registro existente
-   * @param {string} tipoFormato - Tipo de formato
-   * @param {number} id - ID del registro a actualizar
-   * @param {Object} newRecord - Nuevos datos del registro
-   */
+     * Actualiza un registro existente
+     * @param {string} tipoFormato - Tipo de formato
+     * @param {number} id - ID del registro a actualizar
+     * @param {Object} newRecord - Nuevos datos del registro
+     * @returns {boolean} true si se actualizó correctamente
+     */
     function updateRecord(tipoFormato, id, newRecord) {
         const sheet = DatabaseService.getDbSheetForFormat(tipoFormato);
         const template = Formats.getFormatTemplate(tipoFormato);
+
         if (!template) {
             throw new Error('Formato no encontrado: ' + tipoFormato);
         }
@@ -138,15 +143,14 @@ const RecordController = (function () {
         const lastCol = sheet.getLastColumn();
         const headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
 
-        // Obtener valores actuales para comparación
+        // Get current values for comparison
         const currentRowValues = sheet.getRange(rowNumber, 1, 1, lastCol).getValues()[0];
         const currentRecord = {};
         headerRow.forEach(function (h, idx) {
             currentRecord[h] = currentRowValues[idx];
         });
 
-        // CRITICAL: Ensure ID is set BEFORE buildRowValues
-        // Frontend doesn't send ID field, so we must add it explicitly
+        // Ensure ID is set (frontend doesn't send ID field)
         newRecord['ID'] = id;
 
         // Build new row values with ID in correct position
@@ -154,23 +158,22 @@ const RecordController = (function () {
 
         // Verify ID is in first position (safety check)
         if (newRowValues[0] != id) {
-            Logger.log('WARNING: ID not in first position. Forcing ID=' + id);
             newRowValues[0] = id;
         }
 
         sheet.getRange(rowNumber, 1, 1, headers.length).setValues([newRowValues]);
 
-        // Log de cambios en valor de hora para CLIENTES
+        // Log value changes for CLIENTES
         if (tipoFormato === 'CLIENTES') {
-            const oldValor = currentRecord['VALOR DE HORA'];
-            const newValor = newRecord['VALOR DE HORA'];
+            const oldValor = currentRecord['VALOR HORA'];
+            const newValor = newRecord['VALOR HORA'];
             const clienteNombre = newRecord['NOMBRE'] || newRecord['RAZON SOCIAL'] || '';
             if (clienteNombre && newValor !== undefined && newValor !== '' && newValor !== oldValor) {
                 DatabaseService.appendHoraLogCliente(clienteNombre, newValor);
             }
         }
 
-        // Log de cambios en valor de hora para EMPLEADOS
+        // Log value changes for EMPLEADOS
         if (tipoFormato === 'EMPLEADOS') {
             const oldValor = currentRecord['VALOR DE HORA'];
             const newValor = newRecord['VALOR DE HORA'];
@@ -179,6 +182,8 @@ const RecordController = (function () {
                 DatabaseService.appendHoraLogEmpleado(empleadoNombre, newValor);
             }
         }
+
+        return true;
     }
 
     /**
