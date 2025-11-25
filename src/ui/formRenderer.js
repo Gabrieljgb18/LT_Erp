@@ -152,6 +152,53 @@
             })) || [];
           return renderDeclarativeSelect(field, options);
         }
+        case "select": {
+          // Select con opciones definidas en el campo
+          const options = (field.options || []).map(opt => ({
+            value: opt,
+            label: opt
+          }));
+          return renderDeclarativeSelect(field, options);
+        }
+        case "textarea": {
+          // Textarea para textos largos
+          const wrapper = document.createElement("div");
+          wrapper.className = "mb-1";
+
+          const label = document.createElement("label");
+          label.className = "form-label mb-1";
+          label.htmlFor = "field-" + field.id;
+          label.textContent = field.label;
+
+          const textarea = document.createElement("textarea");
+          textarea.id = "field-" + field.id;
+          textarea.className = "form-control form-control-sm";
+          textarea.rows = field.rows || 3;
+          if (field.placeholder) textarea.placeholder = field.placeholder;
+
+          wrapper.appendChild(label);
+          wrapper.appendChild(textarea);
+          return wrapper;
+        }
+        case "time": {
+          // Input type time
+          const wrapper = document.createElement("div");
+          wrapper.className = "mb-1";
+
+          const label = document.createElement("label");
+          label.className = "form-label mb-1";
+          label.htmlFor = "field-" + field.id;
+          label.textContent = field.label;
+
+          const input = document.createElement("input");
+          input.id = "field-" + field.id;
+          input.className = "form-control form-control-sm";
+          input.type = "time";
+
+          wrapper.appendChild(label);
+          wrapper.appendChild(input);
+          return wrapper;
+        }
         default:
           return renderInput(field);
       }

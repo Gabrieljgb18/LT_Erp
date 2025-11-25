@@ -69,18 +69,35 @@
 
         /**
          * Renderiza un formulario específico
+         * @param {string} tipoFormato - Tipo de formato a renderizar
+         * @param {string} containerId - ID del contenedor (opcional, por defecto "form-fields")
          */
-        function renderForm(tipoFormato) {
+        function renderForm(tipoFormato, containerId) {
             currentFormat = tipoFormato;
 
             if (Alerts) Alerts.clearAlerts();
 
             const formDef = FORM_DEFINITIONS[tipoFormato];
-            const container = document.getElementById("form-fields");
+            const container = document.getElementById(containerId || "form-fields");
             const titleEl = document.getElementById("form-title");
             const sugg = document.getElementById("search-suggestions");
 
-            if (!container || !titleEl) return;
+            if (!container) {
+                console.error("Container not found:", containerId || "form-fields");
+                return;
+            }
+
+            // Renderizado custom para asistencia diaria
+            if (tipoFormato === "ASISTENCIA" && global.AttendanceDailyUI) {
+                container.innerHTML = "";
+                if (titleEl) titleEl.textContent = formDef ? formDef.title : "Registro";
+                global.AttendanceDailyUI.render(container);
+                // Actualizar visibilidad del footer si aplica
+                if (global.FooterManager) {
+                    global.FooterManager.updateVisibility();
+                }
+                return;
+            }
 
             container.innerHTML = "";
             if (sugg) {
@@ -89,13 +106,13 @@
             }
 
             if (!formDef) {
-                titleEl.textContent = "Registro";
+                if (titleEl) titleEl.textContent = "Registro";
                 container.innerHTML =
                     '<p class="text-muted small mb-0">No hay formulario definido para este formato.</p>';
                 return;
             }
 
-            titleEl.textContent = formDef.title;
+            if (titleEl) titleEl.textContent = formDef.title;
 
             formDef.fields.forEach(field => {
                 const colDiv = document.createElement("div");
@@ -111,13 +128,11 @@
                 setupCuitAutocomplete();
             }
 
-            // Setup panels específicos por tipo
-            if (tipoFormato === "ASISTENCIA" && global.AttendancePanels) {
-                global.AttendancePanels.setupDailyPanel();
-            }
-
+            // Setup panels específicos por tipo - con timeout para asegurar que el DOM esté listo
             if (tipoFormato === "ASISTENCIA_PLAN" && global.AttendancePanels) {
-                global.AttendancePanels.setupWeeklyPlanPanel();
+                setTimeout(() => {
+                    global.AttendancePanels.setupWeeklyPlanPanel();
+                }, 100);
             }
 
             // Actualizar visibilidad del footer

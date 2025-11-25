@@ -67,11 +67,35 @@
     },
     ASISTENCIA_PLAN: {
       title: "Plan de asistencia semanal",
-      fields: [{ id: "CLIENTE", label: "Cliente", type: "cliente", full: true }]
+      fields: [
+        { id: "CLIENTE", label: "Cliente", type: "cliente", full: true },
+        { id: "EMPLEADO", label: "Empleado", type: "empleado", full: true },
+        { id: "DIA SEMANA", label: "Día de la semana", type: "select", options: ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"] },
+        { id: "HORA ENTRADA", label: "Hora de entrada", type: "time" },
+        { id: "HORAS PLAN", label: "Horas planificadas", type: "number", step: "0.5" },
+        { id: "ACTIVO", label: "Activo", type: "boolean", trueLabel: "Activo" },
+        { id: "OBSERVACIONES", label: "Observaciones", type: "textarea", full: true }
+      ]
     },
     ASISTENCIA: {
       title: "Registro de asistencia",
-      fields: [{ id: "FECHA", label: "Fecha", type: "date" }]
+      fields: [
+        { id: "FECHA", label: "Fecha", type: "date" },
+        { id: "EMPLEADO", label: "Empleado", type: "empleado", full: true },
+        { id: "CLIENTE", label: "Cliente", type: "cliente", full: true },
+        { id: "ASISTENCIA", label: "Asistencia", type: "boolean", trueLabel: "Presente" },
+        { id: "HORAS", label: "Horas trabajadas", type: "number", step: "0.5" },
+        { id: "OBSERVACIONES", label: "Observaciones", type: "textarea", full: true }
+      ]
+    },
+    ADELANTOS: {
+      title: "Registro de adelantos",
+      fields: [
+        { id: "FECHA", label: "Fecha", type: "date" },
+        { id: "EMPLEADO", label: "Empleado", type: "empleado", full: true },
+        { id: "MONTO", label: "Monto", type: "number", step: "0.01" },
+        { id: "OBSERVACION", label: "Observación", type: "textarea", full: true }
+      ]
     }
   };
 

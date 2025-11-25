@@ -122,6 +122,7 @@ var Formats = (function () {
       freezeRows: 1
     },
 
+
     ASISTENCIA_PLAN: {
       id: 'ASISTENCIA_PLAN',
       displayName: 'Plan de asistencia semanal',
@@ -139,6 +140,19 @@ var Formats = (function () {
       freezeRows: 1
     },
 
+    ADELANTOS: {
+      id: 'ADELANTOS',
+      displayName: 'Adelantos de sueldo',
+      headers: [
+        'ID',
+        'FECHA',
+        'EMPLEADO',
+        'MONTO',
+        'OBSERVACION'
+      ],
+      columnWidths: [60, 100, 200, 120, 250],
+      freezeRows: 1
+    }
 
   };
 

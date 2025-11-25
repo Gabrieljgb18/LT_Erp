@@ -80,6 +80,11 @@ var RecordController = (function () {
         const template = Formats.getFormatTemplate(tipoFormato);
         const headers = template.headers || [];
 
+        // Si la hoja está vacía, agregar headers
+        if (sheet.getLastRow() === 0 && headers.length > 0) {
+            sheet.appendRow(headers);
+        }
+
         // Generate new ID
         const newId = DatabaseService.getNextId(sheet);
         record['ID'] = newId;

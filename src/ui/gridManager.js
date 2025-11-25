@@ -15,6 +15,12 @@
         function renderGrid(tipoFormato, records) {
             currentFormat = tipoFormato;
 
+            // Vista resumida especial para asistencia diaria
+            if (tipoFormato === 'ASISTENCIA' && global.AttendanceDailyUI) {
+                global.AttendanceDailyUI.renderSummary(records || []);
+                return;
+            }
+
             // Los registros vienen en formato {id, rowNumber, record}
             // Extraer solo los records y agregar el ID
             allRecords = (records || []).map(item => {

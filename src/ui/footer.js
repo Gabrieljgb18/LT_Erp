@@ -1,44 +1,60 @@
 /**
- * Footer Manager
- * Gestiona la visibilidad y estado del footer
+ * Footer UI Component
  */
-
 (function (global) {
-    const FooterManager = (() => {
+    const Footer = (function () {
+        const footerHtml = `
+            <footer class="fixed-bottom bg-white border-top py-2">
+                <div class="container d-flex justify-content-between align-items-center">
+                    <div class="d-flex gap-2">
+                        <button id="btn-nuevo" class="btn btn-primary rounded-pill px-4">
+                            <i class="bi bi-plus-lg me-1"></i> Nuevo
+                        </button>
+                    </div>
+                    <button id="btn-grabar" class="btn btn-success rounded-pill px-4" disabled>
+                        <i class="bi bi-check-lg me-1"></i> Grabar
+                    </button>
+                </div>
+            </footer>
+        `;
 
-        function updateVisibility() {
-            const footer = document.getElementById("footer-buttons");
-            if (footer) {
-                footer.classList.remove("d-none");
+        function render() {
+            const container = document.getElementById('footer-container');
+            if (container) {
+                container.innerHTML = footerHtml;
+                attachEvents();
             }
         }
 
-        function showCreateMode() {
-            const btnSave = document.getElementById("btn-save");
-            const btnCancel = document.getElementById("btn-cancel");
-            const btnDelete = document.getElementById("btn-delete");
+        function attachEvents() {
+            const btnNuevo = document.getElementById('btn-nuevo');
+            const btnGrabar = document.getElementById('btn-grabar');
 
-            if (btnSave) btnSave.textContent = "Guardar";
-            if (btnCancel) btnCancel.classList.add("d-none");
-            if (btnDelete) btnDelete.classList.add("d-none");
-        }
+            if (btnNuevo) {
+                btnNuevo.addEventListener('click', function () {
+                    if (global.FormManager) {
+                        global.FormManager.resetForm();
+                    }
 
-        function showEditMode() {
-            const btnSave = document.getElementById("btn-save");
-            const btnCancel = document.getElementById("btn-cancel");
-            const btnDelete = document.getElementById("btn-delete");
+                    // Reset buttons
+                    btnGrabar.disabled = false;
+                    btnNuevo.disabled = true;
+                });
+            }
 
-            if (btnSave) btnSave.textContent = "Actualizar";
-            if (btnCancel) btnCancel.classList.remove("d-none");
-            if (btnDelete) btnDelete.classList.remove("d-none");
+            if (btnGrabar) {
+                btnGrabar.addEventListener('click', function () {
+                    if (global.FormManager) {
+                        global.FormManager.submitForm();
+                    }
+                });
+            }
         }
 
         return {
-            updateVisibility,
-            showCreateMode,
-            showEditMode
+            render: render
         };
     })();
 
-    global.FooterManager = FooterManager;
+    global.Footer = Footer;
 })(typeof window !== "undefined" ? window : this);

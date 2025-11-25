@@ -1,3 +1,4 @@
+// WebApp entry point
 function doGet() {
   return HtmlService.createTemplateFromFile('FrontedErp')
     .evaluate()

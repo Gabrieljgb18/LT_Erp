@@ -73,9 +73,8 @@ const AttendanceDailyAttendance = (function () {
             });
         });
 
-        if (!planRows.length) {
-            return [];
-        }
+        // Si no hay plan para el día, igual intentamos mostrar la asistencia ya cargada
+        const noPlanForDay = planRows.length === 0;
 
         const asisSheet = DatabaseService.getDbSheetForFormat('ASISTENCIA');
         const lastRowAsis = asisSheet.getLastRow();
@@ -123,7 +122,46 @@ const AttendanceDailyAttendance = (function () {
             }
         }
 
-        const rawResult = planRows.map(function (p) {
+        // Base: plan + cualquier registro real que no esté en el plan (para mantener fuera de plan)
+        const baseMap = new Map();
+
+        planRows.forEach(function (p) {
+            const key = p.cliente + '||' + p.empleado;
+            baseMap.set(key, {
+                cliente: p.cliente,
+                empleado: p.empleado,
+                horaPlan: p.horaPlan,
+                horasPlan: p.horasPlan,
+                observacionesPlan: p.observacionesPlan || '',
+                fueraDePlan: false
+            });
+        });
+
+        Object.keys(realMap).forEach(function (key) {
+            if (baseMap.has(key)) return;
+            const parts = key.split('||');
+            baseMap.set(key, {
+                cliente: parts[0] || '',
+                empleado: parts[1] || '',
+                horaPlan: '',
+                horasPlan: '',
+                observacionesPlan: '',
+                fueraDePlan: true
+            });
+        });
+
+        // Si no hay plan ni registros reales para la fecha, devolvemos vacío
+        if (baseMap.size === 0 && noPlanForDay) {
+            return [];
+        }
+
+        const baseRows = Array.from(baseMap.values());
+
+        if (!baseRows.length) {
+            return [];
+        }
+
+        const rawResult = baseRows.map(function (p) {
             const key = p.cliente + '||' + p.empleado;
             const r = realMap[key];
 
@@ -135,7 +173,8 @@ const AttendanceDailyAttendance = (function () {
                 asistencia: r ? r.asistencia : false,
                 horasReales: r ? r.horasReales : '',
                 observaciones: r ? r.observaciones : (p.observacionesPlan || ''),
-                asistenciaRowNumber: r ? r.rowNumber : null
+                asistenciaRowNumber: r ? r.rowNumber : null,
+                fueraDePlan: p.fueraDePlan === true
             };
         });
 
@@ -148,7 +187,8 @@ const AttendanceDailyAttendance = (function () {
                 asistencia: !!row.asistencia,
                 horasReales: row.horasReales != null && row.horasReales !== '' ? String(row.horasReales) : '',
                 observaciones: row.observaciones != null ? String(row.observaciones) : '',
-                asistenciaRowNumber: row.asistenciaRowNumber != null ? Number(row.asistenciaRowNumber) : null
+                asistenciaRowNumber: row.asistenciaRowNumber != null ? Number(row.asistenciaRowNumber) : null,
+                fueraDePlan: !!row.fueraDePlan
             };
         });
 

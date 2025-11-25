@@ -71,6 +71,12 @@
                 return;
             }
 
+            // Flujo custom para asistencia diaria (plan vs real)
+            if (tipoFormato === "ASISTENCIA" && global.AttendanceDailyUI) {
+                global.AttendanceDailyUI.save();
+                return;
+            }
+
             const formDef = FORM_DEFINITIONS[tipoFormato];
             if (!formDef) return;
 
