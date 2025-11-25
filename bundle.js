@@ -168,11 +168,26 @@
     },
     ASISTENCIA_PLAN: {
       title: "Plan de asistencia semanal",
-      fields: [{ id: "CLIENTE", label: "Cliente", type: "cliente", full: true }]
+      fields: [
+        { id: "CLIENTE", label: "Cliente", type: "cliente", full: true },
+        { id: "EMPLEADO", label: "Empleado", type: "empleado", full: true },
+        { id: "DIA SEMANA", label: "Día de la semana", type: "select", options: ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"] },
+        { id: "HORA ENTRADA", label: "Hora de entrada", type: "time" },
+        { id: "HORAS PLAN", label: "Horas planificadas", type: "number", step: "0.5" },
+        { id: "ACTIVO", label: "Activo", type: "boolean", trueLabel: "Activo" },
+        { id: "OBSERVACIONES", label: "Observaciones", type: "textarea", full: true }
+      ]
     },
     ASISTENCIA: {
       title: "Registro de asistencia",
-      fields: [{ id: "FECHA", label: "Fecha", type: "date" }]
+      fields: [
+        { id: "FECHA", label: "Fecha", type: "date" },
+        { id: "EMPLEADO", label: "Empleado", type: "empleado", full: true },
+        { id: "CLIENTE", label: "Cliente", type: "cliente", full: true },
+        { id: "ASISTENCIA", label: "Asistencia", type: "boolean", trueLabel: "Presente" },
+        { id: "HORAS", label: "Horas trabajadas", type: "number", step: "0.5" },
+        { id: "OBSERVACIONES", label: "Observaciones", type: "textarea", full: true }
+      ]
     }
   };
 
@@ -582,6 +597,53 @@
             })) || [];
           return renderDeclarativeSelect(field, options);
         }
+        case "select": {
+          // Select con opciones definidas en el campo
+          const options = (field.options || []).map(opt => ({
+            value: opt,
+            label: opt
+          }));
+          return renderDeclarativeSelect(field, options);
+        }
+        case "textarea": {
+          // Textarea para textos largos
+          const wrapper = document.createElement("div");
+          wrapper.className = "mb-1";
+
+          const label = document.createElement("label");
+          label.className = "form-label mb-1";
+          label.htmlFor = "field-" + field.id;
+          label.textContent = field.label;
+
+          const textarea = document.createElement("textarea");
+          textarea.id = "field-" + field.id;
+          textarea.className = "form-control form-control-sm";
+          textarea.rows = field.rows || 3;
+          if (field.placeholder) textarea.placeholder = field.placeholder;
+
+          wrapper.appendChild(label);
+          wrapper.appendChild(textarea);
+          return wrapper;
+        }
+        case "time": {
+          // Input type time
+          const wrapper = document.createElement("div");
+          wrapper.className = "mb-1";
+
+          const label = document.createElement("label");
+          label.className = "form-label mb-1";
+          label.htmlFor = "field-" + field.id;
+          label.textContent = field.label;
+
+          const input = document.createElement("input");
+          input.id = "field-" + field.id;
+          input.className = "form-control form-control-sm";
+          input.type = "time";
+
+          wrapper.appendChild(label);
+          wrapper.appendChild(input);
+          return wrapper;
+        }
         default:
           return renderInput(field);
       }
@@ -593,49 +655,479 @@
 
 
 /**
- * Footer Manager
- * Gestiona la visibilidad y estado del footer
+ * Footer UI Component
  */
-
 (function (global) {
-    const FooterManager = (() => {
+    const Footer = (function () {
+        const footerHtml = `
+            <footer class="fixed-bottom bg-white border-top py-2">
+                <div class="container d-flex justify-content-between align-items-center">
+                    <div class="d-flex gap-2">
+                        <button id="btn-nuevo" class="btn btn-primary rounded-pill px-4">
+                            <i class="bi bi-plus-lg me-1"></i> Nuevo
+                        </button>
+                    </div>
+                    <button id="btn-grabar" class="btn btn-success rounded-pill px-4" disabled>
+                        <i class="bi bi-check-lg me-1"></i> Grabar
+                    </button>
+                </div>
+            </footer>
+        `;
 
-        function updateVisibility() {
-            const footer = document.getElementById("footer-buttons");
-            if (footer) {
-                footer.classList.remove("d-none");
+        function render() {
+            const container = document.getElementById('footer-container');
+            if (container) {
+                container.innerHTML = footerHtml;
+                attachEvents();
             }
         }
 
-        function showCreateMode() {
-            const btnSave = document.getElementById("btn-save");
-            const btnCancel = document.getElementById("btn-cancel");
-            const btnDelete = document.getElementById("btn-delete");
+        function attachEvents() {
+            const btnNuevo = document.getElementById('btn-nuevo');
+            const btnGrabar = document.getElementById('btn-grabar');
 
-            if (btnSave) btnSave.textContent = "Guardar";
-            if (btnCancel) btnCancel.classList.add("d-none");
-            if (btnDelete) btnDelete.classList.add("d-none");
-        }
+            if (btnNuevo) {
+                btnNuevo.addEventListener('click', function () {
+                    if (global.FormManager) {
+                        global.FormManager.resetForm();
+                    }
 
-        function showEditMode() {
-            const btnSave = document.getElementById("btn-save");
-            const btnCancel = document.getElementById("btn-cancel");
-            const btnDelete = document.getElementById("btn-delete");
+                    // Reset buttons
+                    btnGrabar.disabled = false;
+                    btnNuevo.disabled = true;
+                });
+            }
 
-            if (btnSave) btnSave.textContent = "Actualizar";
-            if (btnCancel) btnCancel.classList.remove("d-none");
-            if (btnDelete) btnDelete.classList.remove("d-none");
+            if (btnGrabar) {
+                btnGrabar.addEventListener('click', function () {
+                    if (global.FormManager) {
+                        global.FormManager.submitForm();
+                    }
+                });
+            }
         }
 
         return {
-            updateVisibility,
-            showCreateMode,
-            showEditMode
+            render: render
         };
     })();
 
-    global.FooterManager = FooterManager;
+    global.Footer = Footer;
 })(typeof window !== "undefined" ? window : this);
+
+
+/**
+ * Sidebar Component
+ * Handles the responsive sidebar navigation logic
+ */
+const Sidebar = (() => {
+    // State
+    let isOpen = false;
+    let activeItem = null;
+
+    // DOM Elements
+    const elements = {
+        sidebar: null,
+        overlay: null,
+        toggleBtn: null,
+        menuItems: []
+    };
+
+    /**
+     * Initialize the sidebar
+     */
+    function init() {
+        elements.sidebar = document.getElementById('app-sidebar');
+        elements.overlay = document.getElementById('sidebar-overlay');
+        elements.toggleBtn = document.getElementById('sidebar-toggle');
+
+        if (!elements.sidebar) return;
+
+        // Setup event listeners
+        if (elements.toggleBtn) {
+            elements.toggleBtn.addEventListener('click', toggle);
+        }
+
+        if (elements.overlay) {
+            elements.overlay.addEventListener('click', close);
+        }
+
+        // Setup menu items
+        const links = elements.sidebar.querySelectorAll('.nav-link');
+        links.forEach(link => {
+            link.addEventListener('click', (e) => {
+                const targetId = link.getAttribute('data-target');
+                if (targetId) {
+                    setActive(targetId);
+                    // On mobile, close sidebar after selection
+                    if (window.innerWidth < 992) {
+                        close();
+                    }
+                }
+            });
+            elements.menuItems.push(link);
+        });
+    }
+
+    /**
+     * Toggle sidebar state
+     */
+    function toggle() {
+        isOpen = !isOpen;
+        updateState();
+    }
+
+    /**
+     * Open sidebar
+     */
+    function open() {
+        isOpen = true;
+        updateState();
+    }
+
+    /**
+     * Close sidebar
+     */
+    function close() {
+        isOpen = false;
+        updateState();
+    }
+
+    /**
+     * Update DOM based on state
+     */
+    function updateState() {
+        if (isOpen) {
+            document.body.classList.add('sidebar-open');
+        } else {
+            document.body.classList.remove('sidebar-open');
+        }
+    }
+
+    /**
+     * Set active menu item
+     * @param {string} targetId - ID of the target view
+     */
+    function setActive(targetId) {
+        activeItem = targetId;
+
+        // Update menu items
+        elements.menuItems.forEach(item => {
+            if (item.getAttribute('data-target') === targetId) {
+                item.classList.add('active');
+            } else {
+                item.classList.remove('active');
+            }
+        });
+
+        // Trigger custom event for view change
+        const event = new CustomEvent('view-change', {
+            detail: { view: targetId }
+        });
+        document.dispatchEvent(event);
+    }
+
+    return {
+        init,
+        toggle,
+        open,
+        close,
+        setActive
+    };
+})();
+
+
+/**
+ * Grid Manager
+ * Maneja la visualización de datos en formato de grilla/tabla
+ */
+
+(function (global) {
+    const GridManager = (() => {
+        let currentFormat = null;
+        let allRecords = [];
+        let currentEditingRecord = null;
+
+        /**
+         * Renderiza la grilla con los registros del formato actual
+         */
+        function renderGrid(tipoFormato, records) {
+            currentFormat = tipoFormato;
+
+            // Los registros vienen en formato {id, rowNumber, record}
+            // Extraer solo los records y agregar el ID
+            allRecords = (records || []).map(item => {
+                if (item.record) {
+                    // Agregar el ID al record para poder usarlo después
+                    item.record.ID = item.id;
+                    item.record._rowNumber = item.rowNumber;
+                    return item.record;
+                }
+                return item;
+            });
+
+            const formDef = FORM_DEFINITIONS[tipoFormato];
+            if (!formDef) return;
+
+            // Obtener los 5 campos más relevantes
+            const relevantFields = formDef.fields.slice(0, 5);
+
+            // Renderizar headers
+            const headersRow = document.getElementById('grid-headers');
+            if (headersRow) {
+                headersRow.innerHTML = '';
+
+                relevantFields.forEach(field => {
+                    const th = document.createElement('th');
+                    th.textContent = field.label;
+                    headersRow.appendChild(th);
+                });
+
+                // Columna de acciones
+                const thActions = document.createElement('th');
+                thActions.textContent = 'Acciones';
+                thActions.style.width = '150px';
+                thActions.style.textAlign = 'center';
+                headersRow.appendChild(thActions);
+            }
+
+            // Renderizar body
+            const tbody = document.getElementById('grid-body');
+            if (!tbody) return;
+
+            tbody.innerHTML = '';
+
+            if (!allRecords.length) {
+                const tr = document.createElement('tr');
+                const td = document.createElement('td');
+                td.colSpan = relevantFields.length + 1;
+                td.className = 'text-center text-muted py-5';
+                td.textContent = 'No hay registros para mostrar';
+                tr.appendChild(td);
+                tbody.appendChild(tr);
+                return;
+            }
+
+            allRecords.forEach(record => {
+                const tr = document.createElement('tr');
+
+                relevantFields.forEach(field => {
+                    const td = document.createElement('td');
+                    // Buscar el valor usando el ID del campo (puede estar en mayúsculas o minúsculas)
+                    let value = record[field.id];
+
+                    // Si no encuentra, intentar con el label
+                    if (value === undefined || value === null) {
+                        value = record[field.label];
+                    }
+
+                    // Si aún no encuentra, intentar buscar case-insensitive
+                    if (value === undefined || value === null) {
+                        const keys = Object.keys(record);
+                        const matchingKey = keys.find(k => k.toUpperCase() === field.id.toUpperCase());
+                        if (matchingKey) {
+                            value = record[matchingKey];
+                        }
+                    }
+
+                    // Formatear según el tipo
+                    if (field.type === 'boolean') {
+                        value = value ? '✅ Activo' : '❌ Inactivo';
+                    } else if (field.type === 'date' && value) {
+                        try {
+                            value = new Date(value).toLocaleDateString('es-ES');
+                        } catch (e) {
+                            // Mantener el valor original si no se puede convertir
+                        }
+                    } else if (field.type === 'number' && value) {
+                        value = Number(value).toLocaleString('es-ES');
+                    }
+
+                    td.textContent = value || '-';
+                    td.style.maxWidth = '200px';
+                    td.style.overflow = 'hidden';
+                    td.style.textOverflow = 'ellipsis';
+                    td.style.whiteSpace = 'nowrap';
+                    tr.appendChild(td);
+                });
+
+                // Botones de acción - inline y más pequeños
+                const tdActions = document.createElement('td');
+                tdActions.style.textAlign = 'center';
+                tdActions.style.whiteSpace = 'nowrap';
+
+                const btnEdit = document.createElement('button');
+                btnEdit.className = 'btn btn-sm btn-primary me-1';
+                btnEdit.style.padding = '0.25rem 0.5rem';
+                btnEdit.style.fontSize = '0.75rem';
+                btnEdit.innerHTML = '✏️';
+                btnEdit.title = 'Editar';
+                btnEdit.onclick = () => editRecord(record);
+
+                const btnDelete = document.createElement('button');
+                btnDelete.className = 'btn btn-sm btn-danger';
+                btnDelete.style.padding = '0.25rem 0.5rem';
+                btnDelete.style.fontSize = '0.75rem';
+                btnDelete.innerHTML = '🗑️';
+                btnDelete.title = 'Eliminar';
+                btnDelete.onclick = () => deleteRecord(record);
+
+                tdActions.appendChild(btnEdit);
+                tdActions.appendChild(btnDelete);
+                tr.appendChild(tdActions);
+
+                tbody.appendChild(tr);
+            });
+        }
+
+        /**
+         * Abre el modal para editar un registro
+         */
+        function editRecord(record) {
+            currentEditingRecord = record;
+
+            // Abrir modal y renderizar formulario en el callback
+            openModal('Editar Registro', function () {
+                if (FormManager) {
+                    FormManager.renderForm(currentFormat);
+
+                    // Esperar un momento adicional para que se rendericen los campos
+                    setTimeout(() => {
+                        loadRecordIntoForm(record);
+
+                        // Mostrar botón eliminar
+                        const btnEliminar = document.getElementById('btn-eliminar-modal');
+                        if (btnEliminar) {
+                            btnEliminar.classList.remove('d-none');
+                        }
+                    }, 100);
+                }
+            });
+        }
+
+        /**
+         * Carga los datos del registro en el formulario
+         */
+        function loadRecordIntoForm(record) {
+            const formDef = FORM_DEFINITIONS[currentFormat];
+            if (!formDef) return;
+
+            formDef.fields.forEach(field => {
+                const input = document.getElementById('field-' + field.id);
+                if (!input) return;
+
+                const value = record[field.id];
+
+                if (field.type === 'boolean') {
+                    input.checked = !!value;
+                } else if (field.type === 'date' && value) {
+                    // Convertir fecha a formato YYYY-MM-DD
+                    const date = new Date(value);
+                    input.value = date.toISOString().split('T')[0];
+                } else {
+                    input.value = value || '';
+                }
+            });
+        }
+
+        /**
+         * Elimina un registro
+         */
+        function deleteRecord(record) {
+            if (!confirm('¿Estás seguro de que deseas eliminar este registro?')) {
+                return;
+            }
+
+            // Aquí iría la lógica de eliminación
+            if (RecordManager) {
+                // Simular clic en eliminar con el registro cargado
+                currentEditingRecord = record;
+                RecordManager.deleteRecord();
+            }
+        }
+
+        /**
+         * Abre el modal del formulario
+         * @param {string} title - Título del modal
+         * @param {function} callback - Función a ejecutar después de abrir el modal
+         */
+        function openModal(title, callback) {
+            const modal = document.getElementById('form-modal');
+            const modalTitle = document.getElementById('modal-title');
+
+            if (modal) {
+                modal.classList.remove('d-none');
+            }
+
+            if (modalTitle) {
+                modalTitle.textContent = title || 'Nuevo Registro';
+            }
+
+            // Ejecutar callback después de que el modal esté visible
+            if (callback && typeof callback === 'function') {
+                setTimeout(callback, 50);
+            }
+        }
+
+        /**
+         * Cierra el modal del formulario
+         */
+        function closeModal() {
+            const modal = document.getElementById('form-modal');
+            if (modal) {
+                modal.classList.add('d-none');
+            }
+
+            currentEditingRecord = null;
+
+            // Limpiar formulario
+            if (FormManager) {
+                FormManager.clearForm();
+            }
+
+            // Ocultar botón eliminar
+            const btnEliminar = document.getElementById('btn-eliminar-modal');
+            if (btnEliminar) {
+                btnEliminar.classList.add('d-none');
+            }
+        }
+
+        /**
+         * Obtiene el registro que se está editando actualmente
+         */
+        function getCurrentEditingRecord() {
+            return currentEditingRecord;
+        }
+
+        /**
+         * Recarga los datos de la grilla
+         */
+        function refreshGrid() {
+            if (!currentFormat) return;
+
+            // Aquí iría la lógica para recargar los datos desde el servidor
+            if (ApiService) {
+                ApiService.call('searchRecords', currentFormat, '')
+                    .then(records => {
+                        renderGrid(currentFormat, records);
+                    })
+                    .catch(err => {
+                        console.error('Error al recargar la grilla:', err);
+                    });
+            }
+        }
+
+        return {
+            renderGrid,
+            openModal,
+            closeModal,
+            getCurrentEditingRecord,
+            refreshGrid
+        };
+    })();
+
+    global.GridManager = GridManager;
+})(typeof window !== 'undefined' ? window : this);
 
 
 /**
@@ -1166,13 +1658,95 @@
     const AttendancePanels = (() => {
 
         function setupWeeklyPlanPanel() {
-            if (global.WeeklyPlanPanel) {
-                global.WeeklyPlanPanel.setup();
-            }
+            // Contenedor donde se mostrará el plan semanal
+            const container = document.getElementById('weekly-plan-panel');
+            if (!container) return;
+
+            // Limpiar contenido previo
+            container.innerHTML = '';
+
+            // Crear una vista basada en cards para cada día de la semana
+            const cardWrapper = document.createElement('div');
+            cardWrapper.className = 'row g-3'; // Grid de Bootstrap con gap
+            cardWrapper.id = 'weekly-plan-cards';
+            container.appendChild(cardWrapper);
+
+            // Cargar los datos del plan semanal desde el backend
+            ApiService.call('getWeeklyPlan', 'ASISTENCIA_PLAN', '')
+                .then(function (planData) {
+                    // Esperamos que planData sea un array de objetos {dia, registros}
+                    if (!Array.isArray(planData)) return;
+                    planData.forEach(function (day) {
+                        const col = document.createElement('div');
+                        col.className = 'col-md-4';
+                        const card = document.createElement('div');
+                        card.className = 'card h-100 shadow-sm';
+                        card.innerHTML = `
+                            <div class="card-header bg-indigo-100 text-white">
+                                <h6 class="mb-0">${day.dia}</h6>
+                            </div>
+                            <div class="card-body p-2">
+                                <ul class="list-group list-group-flush">
+                                    ${day.registros.map(r => `<li class="list-group-item py-1 small">${r}</li>`).join('')}
+                                </ul>
+                            </div>`;
+                        col.appendChild(card);
+                        cardWrapper.appendChild(col);
+                    });
+                })
+                .catch(function (err) {
+                    console.error('Error cargando plan semanal:', err);
+                });
         }
 
         function setupDailyPanel() {
+            // Contenedor donde se mostrará la grilla de asistencia diaria
             const container = document.getElementById('daily-attendance-panel');
+            if (!container) return;
+
+            // Limpiar contenido previo
+            container.innerHTML = '';
+
+            // Crear estructura de la grilla (tabla) dentro del contenedor
+            const gridWrapper = document.createElement('div');
+            gridWrapper.className = 'card shadow-sm p-3 mb-4'; // Card con sombra y padding
+            gridWrapper.innerHTML = `
+                <h5 class="card-title mb-3">Asistencia Diaria</h5>
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead><tr id="grid-headers"></tr></thead>
+                        <tbody id="grid-body"></tbody>
+                    </table>
+                </div>`;
+            container.appendChild(gridWrapper);
+
+            // Función para cargar los registros según la fecha seleccionada
+            function loadAttendance() {
+                const dateInput = document.getElementById('field-fecha'); // Asumiendo que el campo de fecha tiene este ID
+                const fecha = dateInput ? dateInput.value : '';
+                const tipoFormato = 'ASISTENCIA';
+                ApiService.call('searchRecords', tipoFormato, fecha)
+                    .then(function (records) {
+                        if (GridManager) {
+                            GridManager.renderGrid(tipoFormato, records || []);
+                        }
+                    })
+                    .catch(function (err) {
+                        console.error('Error cargando asistencia:', err);
+                        if (GridManager) {
+                            GridManager.renderGrid('ASISTENCIA', []);
+                        }
+                    });
+            }
+
+            // Cargar datos al iniciar
+            loadAttendance();
+
+            // Si el usuario cambia la fecha, recargar la grilla
+            const dateInput = document.getElementById('field-fecha');
+            if (dateInput) {
+                dateInput.addEventListener('change', loadAttendance);
+            }
         }
 
         return {
@@ -1183,6 +1757,351 @@
 
     global.AttendancePanels = AttendancePanels;
 })(typeof window !== "undefined" ? window : this);
+
+
+/**
+ * Panel de Detalle de Horas - Seguimiento por Empleado
+ */
+var HoursDetailPanel = (function () {
+    let containerId = 'hours-detail-panel';
+
+    function render() {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+
+        container.innerHTML = `
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-white py-3">
+                    <h5 class="mb-0 text-primary">
+                        <i class="bi bi-clock-history me-2"></i>Seguimiento de Horas por Empleado
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <!-- Filtros -->
+                    <div class="row g-3 mb-4 align-items-end">
+                        <div class="col-md-4">
+                            <label class="form-label small text-muted fw-semibold">Empleado</label>
+                            <select id="hours-filter-employee" class="form-select">
+                                <option value="">Seleccionar Empleado...</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small text-muted fw-semibold">Fecha Desde</label>
+                            <input type="date" id="hours-filter-start" class="form-control">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small text-muted fw-semibold">Fecha Hasta</label>
+                            <input type="date" id="hours-filter-end" class="form-control">
+                        </div>
+                        <div class="col-md-2">
+                            <button id="btn-search-hours" class="btn btn-primary w-100">
+                                <i class="bi bi-search me-1"></i> Buscar
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Loading State -->
+                    <div id="hours-loading" class="text-center py-5 d-none">
+                        <div class="spinner-border text-primary" role="status"></div>
+                        <p class="text-muted mt-2">Cargando registros...</p>
+                    </div>
+
+                    <!-- Tabla de Resultados -->
+                    <div id="hours-results-container" class="d-none">
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width: 120px;">Acciones</th>
+                                        <th>Cliente</th>
+                                        <th>Fecha</th>
+                                        <th class="text-center">Horas</th>
+                                        <th>Observaciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="hours-table-body">
+                                    <!-- Rows will be injected here -->
+                                </tbody>
+                                <tfoot class="table-light fw-bold">
+                                    <tr>
+                                        <td colspan="3" class="text-end">Total Horas:</td>
+                                        <td class="text-center" id="hours-total-sum">0</td>
+                                        <td></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+
+                        <!-- Acciones Globales -->
+                        <div class="d-flex justify-content-end mt-3 pt-3 border-top">
+                            <button id="btn-bill-hours" class="btn btn-success" disabled>
+                                <i class="bi bi-receipt me-1"></i> Generar Factura
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Empty State -->
+                    <div id="hours-empty-state" class="text-center py-5 d-none">
+                        <i class="bi bi-inbox text-muted" style="font-size: 2rem;"></i>
+                        <p class="text-muted mt-2">No se encontraron registros con los filtros seleccionados.</p>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Populate Employees
+        loadEmployees();
+
+        // Set default dates (current month)
+        setDefaultDates();
+
+        // Attach Events
+        document.getElementById('btn-search-hours').addEventListener('click', handleSearch);
+        document.getElementById('btn-bill-hours').addEventListener('click', () => {
+            Alerts.showAlert("Funcionalidad de facturación próximamente", "info");
+        });
+    }
+
+    function setDefaultDates() {
+        const now = new Date();
+        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+        const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+        document.getElementById('hours-filter-start').valueAsDate = firstDay;
+        document.getElementById('hours-filter-end').valueAsDate = lastDay;
+    }
+
+    function loadEmployees() {
+        // Reuse ReferenceService if available, or fetch fresh
+        if (typeof ReferenceService !== 'undefined') {
+            ReferenceService.getReferences().then(refs => {
+                const select = document.getElementById('hours-filter-employee');
+                if (!select) return;
+
+                const employees = refs.empleados || [];
+                employees.sort().forEach(employee => {
+                    const option = document.createElement('option');
+                    option.value = employee;
+                    option.textContent = employee;
+                    select.appendChild(option);
+                });
+            });
+        }
+    }
+
+    function handleSearch() {
+        const start = document.getElementById('hours-filter-start').value;
+        const end = document.getElementById('hours-filter-end').value;
+        const employee = document.getElementById('hours-filter-employee').value;
+
+        if (!employee) {
+            Alerts.showAlert("Por favor seleccione un empleado", "warning");
+            return;
+        }
+
+        // UI Loading
+        document.getElementById('hours-results-container').classList.add('d-none');
+        document.getElementById('hours-empty-state').classList.add('d-none');
+        document.getElementById('hours-loading').classList.remove('d-none');
+
+        ApiService.call('getHoursByEmployee', [start, end, employee])
+            .then(results => {
+                renderTable(results);
+            })
+            .catch(err => {
+                console.error(err);
+                Alerts.showAlert("Error al cargar horas: " + err.message, "danger");
+            })
+            .finally(() => {
+                document.getElementById('hours-loading').classList.add('d-none');
+            });
+    }
+
+    function renderTable(data) {
+        const tbody = document.getElementById('hours-table-body');
+        const container = document.getElementById('hours-results-container');
+        const emptyState = document.getElementById('hours-empty-state');
+        const totalSum = document.getElementById('hours-total-sum');
+        const btnBill = document.getElementById('btn-bill-hours');
+
+        tbody.innerHTML = '';
+
+        if (!data || data.length === 0) {
+            container.classList.add('d-none');
+            emptyState.classList.remove('d-none');
+            return;
+        }
+
+        let total = 0;
+
+        data.forEach(row => {
+            const tr = document.createElement('tr');
+            const hours = parseFloat(row.horas) || 0;
+            total += hours;
+
+            tr.innerHTML = `
+                <td>
+                    <button class="btn btn-sm btn-outline-primary me-1 btn-edit-hour" data-id="${row.id}">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger btn-delete-hour" data-id="${row.id}">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </td>
+                <td>${row.cliente || '-'}</td>
+                <td>${row.fecha}</td>
+                <td class="text-center fw-bold">${hours}</td>
+                <td class="text-muted small">${row.observaciones || '-'}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        // Update Total
+        totalSum.textContent = total.toFixed(2);
+
+        // Enable Export Button
+        const btnExport = document.getElementById('btn-bill-hours');
+        if (btnExport) {
+            btnExport.innerHTML = '<i class="bi bi-file-earmark-spreadsheet me-1"></i> Exportar CSV';
+            btnExport.classList.remove('btn-success');
+            btnExport.classList.add('btn-success'); // Keep green or change to other color
+            btnExport.disabled = false;
+
+            // Remove old listeners (cloning node is a simple way to clear listeners)
+            const newBtn = btnExport.cloneNode(true);
+            btnExport.parentNode.replaceChild(newBtn, btnExport);
+
+            newBtn.addEventListener('click', () => exportToCsv(data));
+        }
+
+        // Show Table
+        container.classList.remove('d-none');
+        emptyState.classList.add('d-none');
+
+        // Attach Action Events
+        attachActionEvents(data);
+    }
+
+    function exportToCsv(data) {
+        if (!data || data.length === 0) return;
+
+        // CSV Headers
+        const headers = ['ID', 'Fecha', 'Cliente', 'Empleado', 'Horas', 'Observaciones'];
+
+        // CSV Rows
+        const rows = data.map(row => [
+            row.id,
+            row.fecha,
+            `"${(row.cliente || '').replace(/"/g, '""')}"`, // Escape quotes
+            `"${(row.empleado || '').replace(/"/g, '""')}"`,
+            row.horas,
+            `"${(row.observaciones || '').replace(/"/g, '""')}"`
+        ]);
+
+        // Combine
+        const csvContent = [
+            headers.join(','),
+            ...rows.map(r => r.join(','))
+        ].join('\n');
+
+        // Create Blob and Download
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+
+        const timestamp = new Date().toISOString().slice(0, 10);
+        link.setAttribute('href', url);
+        link.setAttribute('download', `reporte_horas_${timestamp}.csv`);
+        link.style.visibility = 'hidden';
+
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    function attachActionEvents(data) {
+        // Edit
+        document.querySelectorAll('.btn-edit-hour').forEach(btn => {
+            btn.addEventListener('click', function () {
+                const id = this.dataset.id;
+                const record = data.find(r => r.id == id);
+                if (record) {
+                    editRecord(id, record);
+                }
+            });
+        });
+
+        // Delete
+        document.querySelectorAll('.btn-delete-hour').forEach(btn => {
+            btn.addEventListener('click', function () {
+                const id = this.dataset.id;
+                deleteRecord(id);
+            });
+        });
+    }
+
+    function editRecord(id, record) {
+        // We need to switch to the Registro view and open the modal
+        // First, trigger view change to 'registro'
+        const event = new CustomEvent('view-change', { detail: { view: 'registro' } });
+        document.dispatchEvent(event);
+
+        // Wait for view to load
+        setTimeout(() => {
+            // Set format to ASISTENCIA
+            const formatSelect = document.getElementById('formato');
+            if (formatSelect) {
+                formatSelect.value = 'ASISTENCIA';
+                formatSelect.dispatchEvent(new Event('change'));
+            }
+
+            // Wait for format to load
+            setTimeout(() => {
+                if (GridManager && FormManager && RecordManager) {
+                    const fullRecord = {
+                        ID: record.id,
+                        FECHA: record.fecha,
+                        EMPLEADO: record.empleado,
+                        HORAS: record.horas,
+                        OBSERVACIONES: record.observaciones,
+                        CLIENTE: record.cliente,
+                        ASISTENCIA: 'Presente' // Default assumption
+                    };
+
+                    // Open modal and load record
+                    GridManager.openModal("Editar Registro de Horas", function () {
+                        FormManager.renderForm('ASISTENCIA');
+                        RecordManager.loadRecordForEdit(id, fullRecord);
+                    });
+                }
+            }, 300);
+        }, 300);
+    }
+
+    function deleteRecord(id) {
+        if (!confirm('¿Está seguro de eliminar este registro de horas?')) return;
+
+        UiState.setGlobalLoading(true, "Eliminando...");
+
+        // Use existing delete logic
+        // We need to know the format, which is ASISTENCIA
+        ApiService.call('deleteRecord', ['ASISTENCIA', id])
+            .then(() => {
+                Alerts.showAlert("Registro eliminado correctamente", "success");
+                handleSearch(); // Refresh table
+            })
+            .catch(err => {
+                Alerts.showAlert("Error al eliminar: " + err.message, "danger");
+            })
+            .finally(() => {
+                UiState.setGlobalLoading(false);
+            });
+    }
+
+    return {
+        render: render
+    };
+})();
 
 
 /**
@@ -1256,18 +2175,23 @@
 
         /**
          * Renderiza un formulario específico
+         * @param {string} tipoFormato - Tipo de formato a renderizar
+         * @param {string} containerId - ID del contenedor (opcional, por defecto "form-fields")
          */
-        function renderForm(tipoFormato) {
+        function renderForm(tipoFormato, containerId) {
             currentFormat = tipoFormato;
 
             if (Alerts) Alerts.clearAlerts();
 
             const formDef = FORM_DEFINITIONS[tipoFormato];
-            const container = document.getElementById("form-fields");
+            const container = document.getElementById(containerId || "form-fields");
             const titleEl = document.getElementById("form-title");
             const sugg = document.getElementById("search-suggestions");
 
-            if (!container || !titleEl) return;
+            if (!container) {
+                console.error("Container not found:", containerId || "form-fields");
+                return;
+            }
 
             container.innerHTML = "";
             if (sugg) {
@@ -1276,13 +2200,13 @@
             }
 
             if (!formDef) {
-                titleEl.textContent = "Registro";
+                if (titleEl) titleEl.textContent = "Registro";
                 container.innerHTML =
                     '<p class="text-muted small mb-0">No hay formulario definido para este formato.</p>';
                 return;
             }
 
-            titleEl.textContent = formDef.title;
+            if (titleEl) titleEl.textContent = formDef.title;
 
             formDef.fields.forEach(field => {
                 const colDiv = document.createElement("div");
@@ -1298,13 +2222,17 @@
                 setupCuitAutocomplete();
             }
 
-            // Setup panels específicos por tipo
+            // Setup panels específicos por tipo - con timeout para asegurar que el DOM esté listo
             if (tipoFormato === "ASISTENCIA" && global.AttendancePanels) {
-                global.AttendancePanels.setupDailyPanel();
+                setTimeout(() => {
+                    global.AttendancePanels.setupDailyPanel();
+                }, 100);
             }
 
             if (tipoFormato === "ASISTENCIA_PLAN" && global.AttendancePanels) {
-                global.AttendancePanels.setupWeeklyPlanPanel();
+                setTimeout(() => {
+                    global.AttendancePanels.setupWeeklyPlanPanel();
+                }, 100);
             }
 
             // Actualizar visibilidad del footer
@@ -1611,7 +2539,27 @@
   function initApp() {
     // 1. Load formats immediately
     if (FormManager) {
-      FormManager.loadFormats();
+      FormManager.loadFormats().then(function () {
+        // Después de cargar los formatos, cargar la grilla del primer formato
+        const formatoSelect = document.getElementById("formato");
+        if (formatoSelect && formatoSelect.value) {
+          const tipoFormato = formatoSelect.value;
+
+          // Cargar registros y mostrar en grilla
+          ApiService.call("searchRecords", tipoFormato, "")
+            .then(function (records) {
+              if (GridManager) {
+                GridManager.renderGrid(tipoFormato, records || []);
+              }
+            })
+            .catch(function (err) {
+              console.error("Error cargando registros iniciales:", err);
+              if (GridManager) {
+                GridManager.renderGrid(tipoFormato, []);
+              }
+            });
+        }
+      });
     }
 
     // 2. Load reference data
@@ -1639,21 +2587,35 @@
   }
 
   function setupEventHandlers() {
-    // Format selector
+    // Format selector - Cargar grilla en lugar de formulario
     const formatoSelect = document.getElementById("formato");
     if (formatoSelect) {
       formatoSelect.addEventListener("change", function () {
-        if (FormManager) {
-          FormManager.renderForm(this.value);
-        }
+        const tipoFormato = this.value;
+        if (!tipoFormato) return;
+
+        // Cargar registros y mostrar en grilla
+        ApiService.call("searchRecords", tipoFormato, "")
+          .then(function (records) {
+            if (GridManager) {
+              GridManager.renderGrid(tipoFormato, records || []);
+            }
+          })
+          .catch(function (err) {
+            console.error("Error cargando registros:", err);
+            if (GridManager) {
+              GridManager.renderGrid(tipoFormato, []);
+            }
+          });
       });
     }
 
-    // Search input
+    // Search input - Filtrar grilla
     const searchInput = document.getElementById("search-query");
     if (searchInput) {
       searchInput.addEventListener("input", function () {
-        const tipoFormato = FormManager ? FormManager.getCurrentFormat() : null;
+        const formatoSelect = document.getElementById("formato");
+        const tipoFormato = formatoSelect ? formatoSelect.value : null;
 
         if (!tipoFormato) {
           if (this.value.length > 0 && Alerts) {
@@ -1662,13 +2624,146 @@
           return;
         }
 
-        if (SearchManager) {
-          SearchManager.handleSearch(tipoFormato, this.value);
+        // Buscar y actualizar grilla
+        ApiService.call("searchRecords", tipoFormato, this.value)
+          .then(function (records) {
+            if (GridManager) {
+              GridManager.renderGrid(tipoFormato, records || []);
+            }
+          })
+          .catch(function (err) {
+            console.error("Error en búsqueda:", err);
+          });
+      });
+    }
+
+    // Botón Nuevo - Abrir modal
+    const btnNuevo = document.getElementById("btn-nuevo");
+    if (btnNuevo) {
+      btnNuevo.addEventListener("click", function () {
+        const formatoSelect = document.getElementById("formato");
+        const tipoFormato = formatoSelect ? formatoSelect.value : null;
+
+        if (!tipoFormato) {
+          if (Alerts) {
+            Alerts.showAlert("Selecciona un formato primero", "warning");
+          }
+          return;
+        }
+
+        // Abrir modal y renderizar formulario en el callback
+        if (GridManager) {
+          GridManager.openModal("Nuevo Registro", function () {
+            if (FormManager) {
+              FormManager.renderForm(tipoFormato);
+              FormManager.clearForm();
+            }
+          });
+        }
+      });
+    }
+
+    // Botón Refresh
+    const btnRefresh = document.getElementById("btn-refresh");
+    if (btnRefresh) {
+      btnRefresh.addEventListener("click", function () {
+        if (GridManager) {
+          GridManager.refreshGrid();
+        }
+      });
+    }
+
+    // Modal - Botón Cerrar
+    const btnCloseModal = document.getElementById("btn-close-modal");
+    if (btnCloseModal) {
+      btnCloseModal.addEventListener("click", function () {
+        if (GridManager) {
+          GridManager.closeModal();
+        }
+      });
+    }
+
+    // Modal - Botón Cancelar
+    const btnCancelarModal = document.getElementById("btn-cancelar-modal");
+    if (btnCancelarModal) {
+      btnCancelarModal.addEventListener("click", function () {
+        if (GridManager) {
+          GridManager.closeModal();
+        }
+      });
+    }
+
+    // Modal - Botón Guardar
+    const btnGuardarModal = document.getElementById("btn-guardar-modal");
+    if (btnGuardarModal) {
+      btnGuardarModal.addEventListener("click", function () {
+        if (RecordManager) {
+          RecordManager.saveRecord();
+          // Cerrar modal después de guardar
+          setTimeout(() => {
+            if (GridManager) {
+              GridManager.closeModal();
+              GridManager.refreshGrid();
+            }
+          }, 500);
+        }
+      });
+    }
+
+    // Modal - Botón Eliminar
+    const btnEliminarModal = document.getElementById("btn-eliminar-modal");
+    if (btnEliminarModal) {
+      btnEliminarModal.addEventListener("click", function () {
+        if (RecordManager) {
+          RecordManager.deleteRecord();
+          // Cerrar modal después de eliminar
+          setTimeout(() => {
+            if (GridManager) {
+              GridManager.closeModal();
+              GridManager.refreshGrid();
+            }
+          }, 500);
+        }
+      });
+    }
+
+    // Cerrar modal al hacer clic fuera
+    const modalOverlay = document.getElementById("form-modal");
+    if (modalOverlay) {
+      modalOverlay.addEventListener("click", function (e) {
+        if (e.target === modalOverlay && GridManager) {
+          GridManager.closeModal();
         }
       });
     }
 
     // Footer buttons
+    if (Footer) {
+      Footer.render();
+    }
+
+    // Tab Handling
+    const tabInformes = document.getElementById('informes-tab');
+    const tabGestion = document.getElementById('gestion-tab');
+    const footerContainer = document.getElementById('footer-container');
+
+    if (tabInformes) {
+      tabInformes.addEventListener('shown.bs.tab', function (e) {
+        // Initialize Hours Panel when tab is shown
+        if (HoursDetailPanel) {
+          HoursDetailPanel.render();
+        }
+        // Hide footer in Reports tab (optional, or keep it if needed)
+        if (footerContainer) footerContainer.classList.add('d-none');
+      });
+    }
+
+    if (tabGestion) {
+      tabGestion.addEventListener('shown.bs.tab', function (e) {
+        // Show footer in Management tab
+        if (footerContainer) footerContainer.classList.remove('d-none');
+      });
+    }
     const btnSave = document.getElementById("btn-grabar");
     if (btnSave) {
       btnSave.addEventListener("click", function () {
@@ -1696,18 +2791,63 @@
       });
     }
 
-    // Refresh button
-    const btnRefresh = document.getElementById("btn-refresh");
-    if (btnRefresh) {
-      btnRefresh.addEventListener("click", function () {
-        ReferenceService.load().then(function () {
-          if (FormManager) {
-            FormManager.updateReferenceData(ReferenceService.get());
-          }
-          if (Alerts) {
-            Alerts.showAlert("✅ Datos actualizados", "success");
-          }
+    // Botones superiores (duplicados para acceso rápido)
+    const btnSaveTop = document.getElementById("btn-grabar-top");
+    if (btnSaveTop) {
+      btnSaveTop.addEventListener("click", function () {
+        if (RecordManager) {
+          RecordManager.saveRecord();
+        }
+      });
+    }
+
+    const btnCancelTop = document.getElementById("btn-limpiar-top");
+    if (btnCancelTop) {
+      btnCancelTop.addEventListener("click", function () {
+        if (RecordManager) {
+          RecordManager.cancelEdit();
+        }
+      });
+    }
+
+    const btnDeleteTop = document.getElementById("btn-eliminar-top");
+    if (btnDeleteTop) {
+      btnDeleteTop.addEventListener("click", function () {
+        if (RecordManager) {
+          RecordManager.deleteRecord();
+        }
+      });
+    }
+
+    // Sidebar Initialization
+    if (Sidebar) {
+      Sidebar.init();
+
+      // Handle view changes
+      document.addEventListener('view-change', (e) => {
+        const viewId = e.detail.view;
+        const pageTitle = document.getElementById('page-title');
+
+        // Update Title
+        if (pageTitle) {
+          pageTitle.textContent = viewId.charAt(0).toUpperCase() + viewId.slice(1);
+        }
+
+        // Hide all views
+        document.querySelectorAll('.view-section').forEach(el => {
+          el.classList.add('d-none');
         });
+
+        // Show target view
+        const targetView = document.getElementById(`view-${viewId}`);
+        if (targetView) {
+          targetView.classList.remove('d-none');
+        }
+
+        // Initialize view-specific content
+        if (viewId === 'reportes' && HoursDetailPanel) {
+          HoursDetailPanel.render();
+        }
       });
     }
   }

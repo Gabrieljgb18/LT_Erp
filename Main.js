@@ -46,6 +46,13 @@ function updateRecord(tipoFormato, id, newRecord) {
 }
 
 /**
+ * Elimina un registro
+ */
+function deleteRecord(tipoFormato, id) {
+  return RecordController.deleteRecord(tipoFormato, id);
+}
+
+/**
  * Obtiene datos de referencia (clientes y empleados activos)
  */
 function getReferenceData() {
@@ -113,4 +120,17 @@ function getWeeklyPlanForClient(cliente) {
  */
 function saveWeeklyPlanForClient(cliente, items) {
   return AttendanceWeeklyPlan.saveWeeklyPlanForClient(cliente, items);
+}
+/**
+ * Obtiene el detalle de horas filtrado
+ */
+function getHoursDetail(startDate, endDate, client) {
+  return HoursController.getHoursDetail(startDate, endDate, client);
+}
+
+/**
+ * Obtiene el detalle de horas filtrado por empleado
+ */
+function getHoursByEmployee(startDate, endDate, employee) {
+  return HoursController.getHoursByEmployee(startDate, endDate, employee);
 }
