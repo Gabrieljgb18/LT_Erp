@@ -37,7 +37,8 @@
         { id: "CONTACTO DE EMERGENCIA", label: "Contacto de emergencia", type: "phone", full: true },
         { id: "CBU - ALIAS", label: "CBU / Alias", type: "text", full: true },
         { id: "DNI", label: "DNI", type: "dni" },
-        { id: "VALOR DE HORA", label: "Valor de hora", type: "number", step: "0.01" }
+        { id: "VALOR DE HORA", label: "Valor de hora", type: "number", step: "0.01" },
+        { id: "VIATICOS", label: "Viáticos", type: "number", step: "0.01" }
       ]
     },
     FACTURACION: {
@@ -73,7 +74,8 @@
         { id: "DIA SEMANA", label: "Día de la semana", type: "select", options: ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"] },
         { id: "HORA ENTRADA", label: "Hora de entrada", type: "time" },
         { id: "HORAS PLAN", label: "Horas planificadas", type: "number", step: "0.5" },
-        { id: "ACTIVO", label: "Activo", type: "boolean", trueLabel: "Activo" },
+        { id: "VIGENTE DESDE", label: "Vigente desde", type: "date" },
+        { id: "VIGENTE HASTA", label: "Vigente hasta", type: "date" },
         { id: "OBSERVACIONES", label: "Observaciones", type: "textarea", full: true }
       ]
     },

@@ -64,9 +64,10 @@ var Formats = (function () {
         'CONTACTO DE EMERGENCIA',
         'CBU - ALIAS',
         'DNI',
-        'VALOR DE HORA'
+        'VALOR DE HORA',
+        'VIATICOS'
       ],
-      columnWidths: [60, 100, 180, 120, 220, 120, 200, 160, 100, 120],
+      columnWidths: [60, 100, 180, 120, 220, 120, 200, 160, 100, 120, 110],
       freezeRows: 1
     },
 
@@ -133,10 +134,11 @@ var Formats = (function () {
         'DIA SEMANA',
         'HORA ENTRADA',
         'HORAS PLAN',
-        'ACTIVO',
+        'VIGENTE DESDE',
+        'VIGENTE HASTA',
         'OBSERVACIONES'
       ],
-      columnWidths: [60, 180, 180, 120, 100, 90, 80, 220],
+      columnWidths: [60, 180, 180, 120, 100, 90, 110, 110, 220],
       freezeRows: 1
     },
 

@@ -29,24 +29,10 @@
     // 1. Load formats immediately
     if (FormManager) {
       FormManager.loadFormats().then(function () {
-        // Después de cargar los formatos, cargar la grilla del primer formato
+        // Después de cargar los formatos, disparar evento change para cargar la vista inicial correcta
         const formatoSelect = document.getElementById("formato");
         if (formatoSelect && formatoSelect.value) {
-          const tipoFormato = formatoSelect.value;
-
-          // Cargar registros y mostrar en grilla
-          ApiService.call("searchRecords", tipoFormato, "")
-            .then(function (records) {
-              if (GridManager) {
-                GridManager.renderGrid(tipoFormato, records || []);
-              }
-            })
-            .catch(function (err) {
-              console.error("Error cargando registros iniciales:", err);
-              if (GridManager) {
-                GridManager.renderGrid(tipoFormato, []);
-              }
-            });
+          formatoSelect.dispatchEvent(new Event('change'));
         }
       });
     }
@@ -82,6 +68,73 @@
       formatoSelect.addEventListener("change", function () {
         const tipoFormato = this.value;
         if (!tipoFormato) return;
+
+        // Actualizar título de la página
+        const pageTitle = document.getElementById('page-title');
+        const selectedOption = this.options[this.selectedIndex];
+        if (pageTitle && selectedOption) {
+          pageTitle.textContent = selectedOption.text;
+        }
+
+        // CASO ESPECIAL: Plan Semanal
+        if (tipoFormato === 'ASISTENCIA_PLAN' && typeof WeeklyPlanPanel !== 'undefined') {
+          // Ocultar grilla estándar
+          const gridContainer = document.getElementById('data-grid-container');
+          if (gridContainer) gridContainer.classList.add('d-none');
+
+          // Ocultar búsqueda y botón nuevo (ya que el panel tiene su propio botón nuevo)
+          const searchInput = document.getElementById('search-query');
+          if (searchInput) searchInput.parentElement.classList.add('d-none');
+
+          const btnNuevo = document.getElementById('btn-nuevo');
+          if (btnNuevo) btnNuevo.classList.add('d-none');
+
+          const btnRefresh = document.getElementById('btn-refresh');
+          if (btnRefresh) btnRefresh.classList.add('d-none');
+
+          // Crear o mostrar contenedor del panel personalizado
+          let customPanel = document.getElementById('custom-view-panel');
+          if (!customPanel) {
+            customPanel = document.createElement('div');
+            customPanel.id = 'custom-view-panel';
+            customPanel.className = 'mt-3';
+            // Insertar en view-registro
+            const viewRegistro = document.getElementById('view-registro');
+            if (viewRegistro) viewRegistro.appendChild(customPanel);
+          }
+          customPanel.classList.remove('d-none');
+
+          // Mostrar loading
+          customPanel.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary" role="status"></div><div class="mt-2">Cargando planes...</div></div>';
+
+          // Cargar registros para la lista
+          ApiService.call("searchRecords", tipoFormato, "")
+            .then(function (records) {
+              WeeklyPlanPanel.renderList(customPanel, records || []);
+            })
+            .catch(function (err) {
+              console.error("Error cargando lista de planes:", err);
+              customPanel.innerHTML = '<div class="alert alert-danger">Error al cargar los planes: ' + (err.message || err) + '</div>';
+            });
+
+          return;
+        }
+
+        // Restaurar vista estándar para otros formatos
+        const gridContainer = document.getElementById('data-grid-container');
+        if (gridContainer) gridContainer.classList.remove('d-none');
+
+        const searchInput = document.getElementById('search-query');
+        if (searchInput) searchInput.parentElement.classList.remove('d-none');
+
+        const btnNuevo = document.getElementById('btn-nuevo');
+        if (btnNuevo) btnNuevo.classList.remove('d-none');
+
+        const btnRefresh = document.getElementById('btn-refresh');
+        if (btnRefresh) btnRefresh.classList.remove('d-none');
+
+        const customPanel = document.getElementById('custom-view-panel');
+        if (customPanel) customPanel.classList.add('d-none');
 
         // Cargar registros y mostrar en grilla
         ApiService.call("searchRecords", tipoFormato, "")
@@ -316,10 +369,16 @@
       document.addEventListener('view-change', (e) => {
         const viewId = e.detail.view;
         const pageTitle = document.getElementById('page-title');
+        const titles = {
+          registro: 'Formularios',
+          reportes: 'Reporte Empleados',
+          'reportes-clientes': 'Reporte Clientes',
+          configuracion: 'Configuración'
+        };
 
         // Update Title
         if (pageTitle) {
-          pageTitle.textContent = viewId.charAt(0).toUpperCase() + viewId.slice(1);
+          pageTitle.textContent = titles[viewId] || viewId.charAt(0).toUpperCase() + viewId.slice(1);
         }
 
         // Hide all views
@@ -335,7 +394,21 @@
 
         // Initialize view-specific content
         if (viewId === 'reportes' && HoursDetailPanel) {
+          if (MonthlySummaryPanel) MonthlySummaryPanel.render();
           HoursDetailPanel.render();
+          if (AccountStatementPanel) AccountStatementPanel.render();
+        }
+        if (viewId === 'reportes-clientes' && typeof ClientReportPanel !== 'undefined') {
+          if (typeof ClientMonthlySummaryPanel !== 'undefined') {
+            ClientMonthlySummaryPanel.render();
+          }
+          if (typeof ClientAccountPanel !== 'undefined') {
+            ClientAccountPanel.render();
+          }
+          ClientReportPanel.render();
+        }
+        if (viewId === 'configuracion' && BulkValuesPanel) {
+          BulkValuesPanel.render();
         }
       });
     }

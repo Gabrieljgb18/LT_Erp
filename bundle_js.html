@@ -139,7 +139,8 @@
         { id: "CONTACTO DE EMERGENCIA", label: "Contacto de emergencia", type: "phone", full: true },
         { id: "CBU - ALIAS", label: "CBU / Alias", type: "text", full: true },
         { id: "DNI", label: "DNI", type: "dni" },
-        { id: "VALOR DE HORA", label: "Valor de hora", type: "number", step: "0.01" }
+        { id: "VALOR DE HORA", label: "Valor de hora", type: "number", step: "0.01" },
+        { id: "VIATICOS", label: "Viáticos", type: "number", step: "0.01" }
       ]
     },
     FACTURACION: {
@@ -175,7 +176,8 @@
         { id: "DIA SEMANA", label: "Día de la semana", type: "select", options: ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"] },
         { id: "HORA ENTRADA", label: "Hora de entrada", type: "time" },
         { id: "HORAS PLAN", label: "Horas planificadas", type: "number", step: "0.5" },
-        { id: "ACTIVO", label: "Activo", type: "boolean", trueLabel: "Activo" },
+        { id: "VIGENTE DESDE", label: "Vigente desde", type: "date" },
+        { id: "VIGENTE HASTA", label: "Vigente hasta", type: "date" },
         { id: "OBSERVACIONES", label: "Observaciones", type: "textarea", full: true }
       ]
     },
@@ -973,18 +975,22 @@ const Sidebar = (() => {
                 tdActions.style.whiteSpace = 'nowrap';
 
                 const btnEdit = document.createElement('button');
-                btnEdit.className = 'btn btn-sm btn-primary me-1';
-                btnEdit.style.padding = '0.25rem 0.5rem';
-                btnEdit.style.fontSize = '0.75rem';
-                btnEdit.innerHTML = '✏️';
+                btnEdit.className = 'btn btn-sm text-white me-1';
+                btnEdit.style.background = '#5b7bfa';
+                btnEdit.style.border = 'none';
+                btnEdit.style.borderRadius = '12px';
+                btnEdit.style.padding = '6px 10px';
+                btnEdit.innerHTML = '<i class=\"bi bi-pencil-fill\"></i>';
                 btnEdit.title = 'Editar';
                 btnEdit.onclick = () => editRecord(record);
 
                 const btnDelete = document.createElement('button');
-                btnDelete.className = 'btn btn-sm btn-danger';
-                btnDelete.style.padding = '0.25rem 0.5rem';
-                btnDelete.style.fontSize = '0.75rem';
-                btnDelete.innerHTML = '🗑️';
+                btnDelete.className = 'btn btn-sm text-white';
+                btnDelete.style.background = '#e53e3e';
+                btnDelete.style.border = 'none';
+                btnDelete.style.borderRadius = '12px';
+                btnDelete.style.padding = '6px 10px';
+                btnDelete.innerHTML = '<i class=\"bi bi-trash-fill\"></i>';
                 btnDelete.title = 'Eliminar';
                 btnDelete.onclick = () => deleteRecord(record);
 
@@ -1001,21 +1007,33 @@ const Sidebar = (() => {
          */
         function editRecord(record) {
             currentEditingRecord = record;
+            const recordId = record.ID || record.Id || record.id;
 
             // Abrir modal y renderizar formulario en el callback
-            openModal('Editar Registro', function () {
+            const formDef = FORM_DEFINITIONS[currentFormat];
+            const title =
+                currentFormat === 'EMPLEADOS'
+                    ? 'Editar empleado'
+                    : currentFormat === 'CLIENTES'
+                        ? 'Editar cliente'
+                        : formDef && formDef.title
+                            ? 'Editar ' + formDef.title.toLowerCase()
+                            : 'Editar registro';
+
+            openModal(title, function () {
                 if (FormManager) {
                     FormManager.renderForm(currentFormat);
 
                     // Esperar un momento adicional para que se rendericen los campos
                     setTimeout(() => {
-                        loadRecordIntoForm(record);
-
-                        // Mostrar botón eliminar
-                        const btnEliminar = document.getElementById('btn-eliminar-modal');
-                        if (btnEliminar) {
-                            btnEliminar.classList.remove('d-none');
+                        if (RecordManager && recordId) {
+                            RecordManager.loadRecordForEdit(recordId, record);
+                        } else {
+                            loadRecordIntoForm(record);
                         }
+
+                        const btnEliminar = document.getElementById('btn-eliminar-modal');
+                        if (btnEliminar) btnEliminar.classList.remove('d-none');
                     }, 100);
                 }
             });
@@ -1050,16 +1068,35 @@ const Sidebar = (() => {
          * Elimina un registro
          */
         function deleteRecord(record) {
-            if (!confirm('¿Estás seguro de que deseas eliminar este registro?')) {
+            if (!record) return;
+            if (!confirm('¿Estás seguro de que deseas eliminar este registro?')) return;
+
+            const id = record.ID || record.Id || record.id;
+            if (!id) {
+                Alerts && Alerts.showAlert('ID no encontrado para eliminar.', 'warning');
                 return;
             }
 
-            // Aquí iría la lógica de eliminación
-            if (RecordManager) {
-                // Simular clic en eliminar con el registro cargado
-                currentEditingRecord = record;
-                RecordManager.deleteRecord();
-            }
+            UiState && UiState.setGlobalLoading(true, 'Eliminando...');
+
+            ApiService.call('deleteRecord', currentFormat, id)
+                .then(function () {
+                    Alerts && Alerts.showAlert('✅ Registro eliminado correctamente.', 'success');
+                    if (ReferenceService) {
+                        ReferenceService.load().then(function () {
+                            if (FormManager) {
+                                FormManager.updateReferenceData(ReferenceService.get());
+                            }
+                        });
+                    }
+                    refreshGrid();
+                })
+                .catch(function (err) {
+                    Alerts && Alerts.showAlert('Error al eliminar: ' + err.message, 'danger');
+                })
+                .finally(function () {
+                    UiState && UiState.setGlobalLoading(false);
+                });
         }
 
         /**
@@ -1307,58 +1344,371 @@ const Sidebar = (() => {
 /**
  * Weekly Plan Panel
  * UI para gestión de planificación semanal de asistencia
+ * Version: 3.1 - New Row Appears at Top
  */
 
 (function (global) {
     const WeeklyPlanPanel = (() => {
         let referenceData = { clientes: [], empleados: [] };
 
+        // Estado interno para navegación
+        let currentContainer = null;
+        let allRecordsCache = [];
+        let currentOriginalVigencia = null; // Para saber qué plan estamos editando
+
         function init(refData) {
             referenceData = refData;
         }
 
-        function setup() {
-            const container = document.getElementById("form-fields");
-            if (!container) return;
+        function formatDateForInput(v) {
+            if (!v) return '';
+            if (v instanceof Date && !isNaN(v)) {
+                return v.toISOString().split('T')[0];
+            }
+            const d = new Date(v);
+            if (!isNaN(d)) {
+                return d.toISOString().split('T')[0];
+            }
+            return '';
+        }
 
-            let panel = document.getElementById("plan-semanal-panel");
-            if (!panel) {
-                panel = document.createElement("div");
-                panel.id = "plan-semanal-panel";
-                panel.className = "mt-2";
-                container.appendChild(panel);
+        function vigDesdeInputVal() {
+            const el = document.getElementById('plan-vig-desde');
+            return el ? el.value : '';
+        }
+
+        function vigHastaInputVal() {
+            const el = document.getElementById('plan-vig-hasta');
+            return el ? el.value : '';
+        }
+
+        let planGroupsCache = {};
+
+        function renderList(container, records) {
+            currentContainer = container;
+            allRecordsCache = records || [];
+            planGroupsCache = {}; // Limpiar caché
+
+            // DEBUG: Ver estructura de los datos
+            console.log('=== DEBUG WeeklyPlanPanel ===');
+            console.log('Total records:', allRecordsCache.length);
+            if (allRecordsCache.length > 0) {
+                console.log('Primer record completo:', allRecordsCache[0]);
+                console.log('Keys del primer record:', Object.keys(allRecordsCache[0]));
+                const firstRecord = allRecordsCache[0].record || allRecordsCache[0];
+                console.log('Contenido de record:', firstRecord);
+                console.log('Keys de record:', Object.keys(firstRecord));
             }
 
-            panel.innerHTML =
-                '<div class="mt-2 p-2 border rounded bg-light">' +
-                '<div class="small fw-bold mb-1">Plan semanal del cliente</div>' +
-                '<div class="small text-muted">Elegí un cliente para ver y editar todas las asignaciones semanales de una sola vez.</div>' +
-                '</div>';
+            if (!container) return;
 
-            const clienteSelect = document.getElementById("field-CLIENTE");
-            if (clienteSelect) {
-                clienteSelect.addEventListener("change", fetchWeeklyPlanForClient);
+            // Agrupar por cliente y vigencia
+            const grouped = {};
+            allRecordsCache.forEach(item => {
+                // Los registros vienen envueltos: {rowNumber, record, id}
+                const r = item.record || item;
+
+                // Intentar obtener cliente de varias formas (CLIENTE, Cliente, cliente)
+                let clienteName = r.cliente || r.CLIENTE || r.Cliente;
+
+                // Si es un objeto (referencia), intentar obtener nombre o razon social
+                if (typeof clienteName === 'object' && clienteName !== null) {
+                    clienteName = clienteName.razonSocial || clienteName.nombre || clienteName.toString();
+                }
+
+                const cliente = clienteName || "Sin asignar";
+
+                // Clave única: Cliente + Vigencia
+                const vigDesde = formatDateForInput(r["VIGENTE DESDE"] || r.vigDesde);
+                const vigHasta = formatDateForInput(r["VIGENTE HASTA"] || r.vigHasta);
+                const key = `${cliente}|${vigDesde}|${vigHasta}`;
+
+                if (!grouped[key]) {
+                    grouped[key] = {
+                        cliente: cliente,
+                        vigDesde: vigDesde,
+                        vigHasta: vigHasta,
+                        horasTotales: 0,
+                        diasActivos: 0,
+                        dias: new Set(),
+                        rows: [] // Guardamos las filas para pasarlas al editor
+                    };
+                }
+
+                // Normalizar horas (viene como string "3", "4", etc.)
+                const horasValue = r["HORAS PLAN"] || r.HORAS_PLAN || r.horasPlan || 0;
+                const horas = parseFloat(horasValue);
+
+                // Normalizar día (viene como "LUNES", "MARTES", etc.)
+                const dia = r["DIA SEMANA"] || r.DIA_SEMANA || r.diaSemana || r["DÍA DE LA SEMANA"];
+
+                // Normalizar registro completo para la UI (camelCase)
+                const normalizedRow = {
+                    id: r.ID || r.id,
+                    cliente: cliente,
+                    empleado: r.EMPLEADO || r.empleado || r.Empleado,
+                    diaSemana: dia,
+                    horaEntrada: r["HORA ENTRADA"] || r.HORA_ENTRADA || r.horaEntrada,
+                    horasPlan: horas,
+                    observaciones: r.OBSERVACIONES || r.observaciones,
+                    vigDesde: vigDesde,
+                    vigHasta: vigHasta,
+                    originalRecord: r
+                };
+
+                grouped[key].horasTotales += horas;
+                grouped[key].diasActivos++;
+                if (dia) grouped[key].dias.add(dia);
+                grouped[key].rows.push(normalizedRow);
+            });
+
+            const listaClientes = Object.values(grouped);
+
+            let html = '<div class="d-flex justify-content-between align-items-center mb-3">';
+            html += '<h5 class="mb-0">Planes de Asistencia Semanal</h5>';
+            html += '<div class="d-flex gap-2 align-items-center">';
+            html += '<div class="form-check form-switch mb-0">';
+            html += '<input class="form-check-input" type="checkbox" id="check-active-plans" checked>';
+            html += '<label class="form-check-label small" for="check-active-plans">Solo vigentes</label>';
+            html += '</div>';
+            html += '<button class="btn btn-primary btn-sm" id="btn-nuevo-plan">➕ Nuevo Plan</button>';
+            html += '</div>';
+            html += '</div>';
+
+            html += '<div class="card shadow-sm border-0"><div class="card-body p-0"><div class="table-responsive">';
+            html += '<table class="table table-hover align-middle mb-0">';
+            html += '<thead class="table-light"><tr>';
+            html += '<th>Cliente</th>';
+            html += '<th>Vigencia</th>';
+            html += '<th class="text-center">Horas Semanales</th>';
+            html += '<th>Días Programados</th>';
+            html += '<th class="text-end">Acciones</th>';
+            html += '</tr></thead><tbody>';
+
+            if (listaClientes.length === 0) {
+                html += '<tr><td colspan="4" class="text-center py-5 text-muted">No hay planes registrados.</td></tr>';
+            } else {
+                const today = new Date().toISOString().split('T')[0];
+
+                listaClientes.forEach(item => {
+                    // Filtro de vigencia
+                    const isActive = (!item.vigDesde || item.vigDesde <= today) && (!item.vigHasta || item.vigHasta >= today);
+                    const showActiveOnly = container.querySelector('#check-active-plans')?.checked ?? true; // Default true?
+
+                    // Nota: El checkbox aún no existe en el DOM cuando construimos el string HTML, 
+                    // así que necesitamos manejar esto post-render o re-renderizar.
+                    // Por ahora, agregamos data-active attribute y filtramos con CSS o JS.
+
+                    const diasStr = Array.from(item.dias).join(', ');
+                    const vigenciaStr = (item.vigDesde || 'Inicio') + ' ➡ ' + (item.vigHasta || 'Fin');
+
+                    // Estilo para filas vencidas (inactivas)
+                    const rowStyle = isActive ? '' : 'background-color: #f1f5f9; color: #94a3b8;';
+                    const badgeClass = isActive ? 'bg-success' : 'bg-secondary';
+                    const textClass = isActive ? 'fw-semibold' : '';
+
+                    html += `<tr class="plan-row" data-active="${isActive}" style="${rowStyle}">`;
+                    html += `<td class="${textClass}">` + HtmlHelpers.escapeHtml(item.cliente) + '</td>';
+                    html += '<td class="small">' + vigenciaStr + '</td>';
+                    html += `<td class="text-center"><span class="badge ${badgeClass} rounded-pill">` + item.horasTotales.toFixed(1) + ' hs</span></td>';
+                    html += '<td class="small">' + (diasStr || '-') + '</td>';
+                    html += '<td class="text-end">';
+                    // Guardamos key en data-key para recuperar
+                    const key = `${item.cliente}|${item.vigDesde}|${item.vigHasta}`;
+
+                    // Guardar filas en caché para recuperación segura
+                    planGroupsCache[key] = item.rows;
+
+                    html += `<button class="btn btn-sm btn-outline-primary me-1 btn-editar-plan" data-key="${HtmlHelpers.escapeHtml(key)}">✏️ Editar</button>`;
+                    html += '</td>';
+                    html += '</tr>';
+                });
+            }
+
+            html += '</tbody></table></div></div></div>';
+
+            container.innerHTML = html;
+
+            // Bind events
+            const checkActive = container.querySelector('#check-active-plans');
+            if (checkActive) {
+                checkActive.addEventListener('change', (e) => {
+                    const rows = container.querySelectorAll('.plan-row');
+                    rows.forEach(r => {
+                        if (e.target.checked && r.dataset.active === "false") {
+                            r.style.display = 'none';
+                        } else {
+                            r.style.display = '';
+                        }
+                    });
+                });
+                // Trigger initial state
+                checkActive.dispatchEvent(new Event('change'));
+            }
+
+            container.querySelectorAll('.btn-editar-plan').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const key = e.target.dataset.key;
+                    const [cliente, desde, hasta] = key.split('|');
+
+                    // Recuperar filas directamente del caché
+                    const rows = planGroupsCache[key] || [];
+
+                    if (rows.length === 0) {
+                        console.warn("No se encontraron filas en caché para:", key);
+                    }
+
+                    switchToDetail(cliente, rows, { desde, hasta });
+                });
+            });
+
+            const btnNuevo = container.querySelector('#btn-nuevo-plan');
+            if (btnNuevo) {
+                btnNuevo.addEventListener('click', () => {
+                    switchToDetail(null, [], null); // Nuevo (sin cliente preseleccionado)
+                });
             }
         }
 
-        function fetchWeeklyPlanForClient() {
-            const panel = document.getElementById("plan-semanal-panel");
+        function switchToDetail(cliente, preloadedRows, originalVigencia) {
+            if (!currentContainer) return;
+
+            currentOriginalVigencia = originalVigencia; // Guardar vigencia original
+
+            // Renderizar la vista de detalle (cards)
+            render(currentContainer);
+
+            // Si hay cliente, seleccionarlo automáticamente
+            if (cliente) {
+                const select = document.getElementById('field-CLIENTE');
+                if (select) {
+                    select.value = cliente;
+                    // Si tenemos filas precargadas, usarlas directamente en lugar de fetch
+                    if (preloadedRows && preloadedRows.length > 0) {
+                        // Simular carga de horas pedidas (opcional, o fetch solo horas)
+                        // Para simplificar, llamamos a buildWeeklyPlanPanel directamente
+                        // Pero necesitamos infoHoras. Podemos hacer un fetch rápido solo de horas.
+
+                        ApiService.callLatest('weekly-hours-' + cliente, 'getClientWeeklyRequestedHours', cliente)
+                            .then(function (infoHoras) {
+                                buildWeeklyPlanPanel(preloadedRows, cliente, infoHoras || null);
+                            })
+                            .catch(function () {
+                                buildWeeklyPlanPanel(preloadedRows, cliente, null);
+                            });
+                    } else {
+                        // Disparar evento change para cargar los datos (si no hay filas precargadas)
+                        select.dispatchEvent(new Event('change'));
+                    }
+                }
+            }
+
+            // Agregar botón "Volver" al panel
+            const panel = document.getElementById('plan-semanal-panel');
+            if (panel) {
+                const backBtnDiv = document.createElement('div');
+                backBtnDiv.className = 'mb-3';
+                backBtnDiv.innerHTML = '<button class="btn btn-outline-secondary btn-sm">⬅ Volver al listado</button>';
+                backBtnDiv.querySelector('button').addEventListener('click', () => {
+                    renderList(currentContainer, allRecordsCache);
+                });
+                panel.insertBefore(backBtnDiv, panel.firstChild);
+            }
+        }
+
+        function render(container) {
+            currentContainer = container; // Actualizar referencia
+            if (!container) return;
+
+            // Fallback para datos de referencia
+            if ((!referenceData.clientes || !referenceData.clientes.length) && typeof ReferenceService !== 'undefined') {
+                const globalRef = ReferenceService.get();
+                if (globalRef) referenceData = globalRef;
+            }
+
+            // Limpiar contenedor
+            container.innerHTML = '';
+
+            // Crear estructura base
+            const panel = document.createElement("div");
+            panel.id = "plan-semanal-panel";
+            panel.className = "d-flex flex-column gap-3";
+
+            // Agregar selector de cliente
+            const selectorDiv = document.createElement("div");
+            selectorDiv.className = "card shadow-sm p-3";
+            selectorDiv.innerHTML = `
+                <div class="row g-3 align-items-end">
+                    <div class="col-12 col-md-6">
+                        <label class="form-label fw-bold mb-1">Cliente</label>
+                        <select id="field-CLIENTE" class="form-select">
+                            <option value="">Seleccioná un cliente...</option>
+                            ${buildClienteOptions()}
+                        </select>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <label class="form-label small text-muted fw-semibold mb-1">Vigente desde</label>
+                        <input type="date" id="plan-vig-desde" class="form-control">
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <label class="form-label small text-muted fw-semibold mb-1">Vigente hasta</label>
+                        <input type="date" id="plan-vig-hasta" class="form-control">
+                    </div>
+                </div>
+            `;
+
+            panel.appendChild(selectorDiv);
+
+            // Contenedor para las cards
+            const cardsContainer = document.createElement("div");
+            cardsContainer.id = "plan-semanal-cards-container";
+            panel.appendChild(cardsContainer);
+
+            container.appendChild(panel);
+
+            // Bind eventos
             const clienteSelect = document.getElementById("field-CLIENTE");
-            if (!panel || !clienteSelect) return;
+            if (clienteSelect) {
+                clienteSelect.addEventListener("change", () => {
+                    // Si cambiamos de cliente manualmente, es un "Nuevo Plan" para ese cliente,
+                    // así que limpiamos originalVigencia.
+                    currentOriginalVigencia = null;
+                    fetchWeeklyPlanForClient();
+                });
+            }
+        }
+
+        function buildClienteOptions() {
+            return referenceData.clientes.map(c => {
+                const nombre = c.razonSocial || c.nombre || c;
+                return `<option value="${HtmlHelpers.escapeHtml(nombre)}">${HtmlHelpers.escapeHtml(nombre)}</option>`;
+            }).join('');
+        }
+
+        function setup() {
+            // Deprecated: usar render()
+            const container = document.getElementById("form-fields");
+            if (container) render(container);
+        }
+
+        function fetchWeeklyPlanForClient() {
+            const container = document.getElementById("plan-semanal-cards-container");
+            const clienteSelect = document.getElementById("field-CLIENTE");
+            const targetId = container ? "plan-semanal-cards-container" : "plan-semanal-panel";
+
+            if (!clienteSelect) return;
 
             const cliente = clienteSelect.value;
             if (!cliente) {
-                UiState.renderLoading(
-                    "plan-semanal-panel",
-                    "Plan semanal del cliente",
-                    "Elegí un cliente para ver su plan."
-                );
+                // Limpiar si no hay cliente
+                if (container) container.innerHTML = '';
                 return;
             }
 
+            // Fix: Pasar string vacío en lugar de null para evitar que se imprima "null"
             UiState.renderLoading(
-                "plan-semanal-panel",
-                "Plan semanal del cliente",
+                targetId,
+                "",
                 "Cargando plan de <strong>" + HtmlHelpers.escapeHtml(cliente) + "</strong>..."
             );
 
@@ -1368,6 +1718,8 @@ const Sidebar = (() => {
                     const planRows = Array.isArray(rows) ? rows : [];
                     const currentClienteEl = document.getElementById("field-CLIENTE");
                     const currentCliente = currentClienteEl ? currentClienteEl.value : '';
+
+                    // Si cambió el cliente mientras cargaba, ignorar
                     if (currentCliente !== cliente) return;
 
                     return ApiService.callLatest('weekly-hours-' + cliente, 'getClientWeeklyRequestedHours', cliente)
@@ -1382,16 +1734,23 @@ const Sidebar = (() => {
                 })
                 .catch(function (err) {
                     UiState.renderLoading(
-                        "plan-semanal-panel",
-                        "Plan semanal del cliente",
+                        targetId,
+                        "Error",
                         "Error al cargar plan: " + HtmlHelpers.escapeHtml(err.message)
                     );
                 });
         }
 
         function buildWeeklyPlanPanel(rows, cliente, infoHoras) {
-            const panel = document.getElementById("plan-semanal-panel");
+            // Intentar usar el contenedor de cards, fallback al panel principal
+            let panel = document.getElementById("plan-semanal-cards-container");
+            if (!panel) panel = document.getElementById("plan-semanal-panel");
+
             if (!panel) return;
+
+            // Ocultar footer del modal si estamos en un modal
+            const modalFooter = document.querySelector('.modal-footer-custom');
+            if (modalFooter) modalFooter.style.display = 'none';
 
             if (!rows.length) {
                 rows = [{
@@ -1399,25 +1758,49 @@ const Sidebar = (() => {
                     diaSemana: "",
                     horaEntrada: "",
                     horasPlan: "",
-                    activo: true,
+                    vigDesde: vigDesdeInputVal(),
+                    vigHasta: vigHastaInputVal(),
+                    id: "",
                     observaciones: ""
                 }];
             }
+            const vigDesdeVal = formatDateForInput(rows[0].vigDesde || vigDesdeInputVal());
+            const vigHastaVal = formatDateForInput(rows[0].vigHasta || vigHastaInputVal());
+
+            // Agrupar por empleado
+            const groupedByEmpleado = {};
+            rows.forEach((r, idx) => {
+                const emp = r.empleado || "Sin asignar";
+                if (!groupedByEmpleado[emp]) {
+                    groupedByEmpleado[emp] = [];
+                }
+                groupedByEmpleado[emp].push({ ...r, originalIdx: idx });
+            });
 
             let html = "";
-            html += '<div class="mt-2 p-2 border rounded bg-light">';
-            html += '<div class="small fw-bold mb-1">Plan semanal del cliente</div>';
-            html +=
-                '<div class="small mb-2">Cliente: <strong>' +
-                HtmlHelpers.escapeHtml(cliente) +
-                "</strong></div>";
 
+            // Header solo si estamos en fallback
+            if (panel.id === "plan-semanal-panel") {
+                html += '<div class="mt-2 p-3 border rounded shadow-sm" style="background: linear-gradient(to bottom, #f8f9fa, #ffffff);">';
+                html += '<div class="d-flex justify-content-between align-items-center mb-3">';
+                html += '<div>';
+                html += '<div class="fw-bold mb-1" style="font-size: 1.1rem; color: #2563eb;">📋 Plan semanal del cliente</div>';
+                html += '<div class="small mb-2">Cliente: <strong style="color: #1d4ed8;">' + HtmlHelpers.escapeHtml(cliente) + "</strong></div>";
+                html += '</div>';
+                html += '</div>';
+            }
+
+            // Sección superior: Horas contratadas y Botón Agregar
+            html += '<div class="d-flex flex-wrap justify-content-between align-items-start mb-3 gap-2">';
+
+            // Horas contratadas
+            let horasHtml = '';
             if (infoHoras) {
                 const partes = [];
                 const pushSiTieneHoras = (label, valor) => {
                     const num = Number(valor || 0);
                     if (num > 0) {
-                        partes.push(label + ': <strong>' + num + ' hs</strong>');
+                        partes.push('<span class="badge" style="background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 4px 8px; margin: 2px;">' + label + ': ' + num + ' hs</span>');
                     }
                 };
 
@@ -1430,100 +1813,174 @@ const Sidebar = (() => {
                 pushSiTieneHoras('Do', infoHoras.domingo);
 
                 if (partes.length) {
-                    html +=
-                        '<div class="small text-muted mb-2">' +
-                        'Horas contratadas · ' +
-                        partes.join(' · ') +
-                        '</div>';
+                    horasHtml += '<div class="p-2 rounded flex-grow-1" style="background-color: #f0fdf4; border-left: 3px solid #10b981;">';
+                    horasHtml += '<div class="small fw-semibold text-muted mb-1">Horas contratadas por día</div>';
+                    horasHtml += '<div class="d-flex flex-wrap gap-1">' + partes.join('') + '</div>';
+                    horasHtml += '</div>';
                 }
             }
+            if (!horasHtml) horasHtml = '<div></div>'; // Spacer
+            html += horasHtml;
 
-            html += '<div class="table-responsive">';
-            html +=
-                '<table class="table table-sm table-bordered align-middle mb-2">' +
-                "<thead>" +
-                "<tr>" +
-                '<th class="small">Empleado</th>' +
-                '<th class="small text-center">Día</th>' +
-                '<th class="small text-center">Hora entrada</th>' +
-                '<th class="small text-center">Horas plan</th>' +
-                '<th class="small text-center">Activo</th>' +
-                '<th class="small">Observaciones</th>' +
-                '<th class="small text-center" style="width:60px;">Acciones</th>' +
-                "</tr>" +
-                "</thead><tbody></tbody></table></div>";
+            // Botón Agregar día (Movido arriba)
+            html += '<button type="button" class="btn btn-sm fw-semibold text-white shadow-sm" ';
+            html += 'style="background: linear-gradient(135deg, #6b7280, #4b5563); border: none; padding: 8px 16px; border-radius: 8px; height: fit-content;" ';
+            html += 'data-action="add-plan-row">+ Agregar día</button>';
 
-            html +=
-                '<div class="d-flex justify-content-between align-items-center mt-2">' +
-                '<button type="button" class="btn btn-outline-secondary btn-sm btn-app" ' +
-                'data-action="add-plan-row">+ Agregar fila</button>' +
-                '<button type="button" class="btn btn-success btn-sm btn-app" ' +
-                'data-action="save-weekly-plan">Guardar plan del cliente</button>' +
-                "</div>";
+            html += '</div>'; // End top section
 
+            // Cards por empleado
+            html += '<div id="weekly-plan-cards" class="d-flex flex-column gap-3">';
+
+            Object.keys(groupedByEmpleado).forEach((empleado, empIdx) => {
+                const empleadoRows = groupedByEmpleado[empleado];
+                const collapseId = "plan-emp-" + empIdx;
+                const totalHoras = empleadoRows.reduce((sum, r) => sum + (parseFloat(r.horasPlan) || 0), 0);
+                const activeDays = empleadoRows.length;
+
+                // Lista de días
+                const diasList = [...new Set(empleadoRows.map(r => r.diaSemana).filter(Boolean))].join(", ");
+                const diasLabel = diasList || (empleadoRows.length + ' día' + (empleadoRows.length !== 1 ? 's' : ''));
+
+                // Determinar si debe estar abierto:
+                // 1. Si es "Sin asignar" (donde van los nuevos)
+                // 2. O si no hay ninguno abierto (opcional, aquí lo dejamos cerrado por defecto excepto Sin Asignar)
+                const isSinAsignar = empleado === "Sin asignar";
+                const isOpen = isSinAsignar;
+
+                html += '<div class="card shadow-sm border-0">';
+
+                // Card Header
+                html += '<div class="card-header py-2 px-3 bg-white d-flex flex-wrap justify-content-between align-items-center gap-2" ';
+                html += 'style="cursor: pointer; background: linear-gradient(135deg, #f8fafc, #f1f5f9);" ';
+                html += 'data-bs-toggle="collapse" data-bs-target="#' + collapseId + '" ';
+                html += 'aria-expanded="' + isOpen + '" aria-controls="' + collapseId + '" role="button">';
+
+                html += '<div class="d-flex flex-wrap gap-2 align-items-center">';
+                html += '<span class="fw-semibold" style="color: #1e293b;">👤 ' + HtmlHelpers.escapeHtml(empleado) + '</span>';
+                html += '<span class="badge bg-primary bg-opacity-75">' + diasLabel + '</span>';
+                html += '<span class="badge" style="background: linear-gradient(135deg, #10b981, #059669); color: white;">' + totalHoras.toFixed(1) + ' hs totales</span>';
+                html += '</div>';
+
+                html += '<div class="d-flex gap-2 align-items-center">';
+                html += '<span class="text-muted small">' + activeDays + ' día(s)</span>';
+                html += '<span class="text-muted fw-semibold" data-role="collapse-arrow">' + (isOpen ? '▲' : '▼') + '</span>';
+                html += '</div>';
+
+                html += '</div>';
+
+                // Card Body (collapsible)
+                // Fix: Quitar 'show' por defecto, solo ponerlo si isOpen es true
+                html += '<div id="' + collapseId + '" class="collapse ' + (isOpen ? 'show' : '') + '">';
+                html += '<div class="card-body pt-2 pb-3 px-3">';
+
+                // Días del empleado
+                empleadoRows.forEach((r) => {
+                    const rowId = "plan-row-" + r.originalIdx;
+                    const empleadoOptions = HtmlHelpers.getEmpleadoOptionsHtml(r.empleado || "", referenceData.empleados);
+                    const diaOptions = HtmlHelpers.getDiaOptionsHtml(r.diaSemana || "");
+                    const horaFormatted = HtmlHelpers.formatHoraEntradaForInput(r.horaEntrada);
+                    html += '<div class="border rounded p-3 mb-2" style="background-color:#f8f9fa;">';
+
+                    // Header de día
+                    html += '<div class="d-flex justify-content-between align-items-center mb-2">';
+                    html += '<div class="d-flex gap-2 align-items-center">';
+                    html += '<span class="badge bg-primary bg-opacity-75 text-white">Plan</span>';
+                    html += '<span class="fw-semibold">' + (r.diaSemana || 'Día no seleccionado') + '</span>';
+                    if (r.horasPlan) {
+                        html += '<span class="text-muted">• ' + r.horasPlan + ' hs</span>';
+                    }
+                    html += '</div>';
+                    html += '<button type="button" class="btn btn-sm btn-outline-danger" data-action="delete-plan-row" data-idx="' + r.originalIdx + '">🗑️</button>';
+                    html += '</div>';
+
+                    // Campos del día
+                    html += '<div class="row g-2">';
+
+                    html += '<div class="col-12 col-md-6">';
+                    html += '<label class="small text-muted fw-semibold d-block mb-1">Empleado</label>';
+                    html += '<select class="form-select form-select-sm bg-white border" id="' + rowId + '-empleado">' + empleadoOptions + '</select>';
+                    html += '</div>';
+
+                    html += '<div class="col-6 col-md-3">';
+                    html += '<label class="small text-muted fw-semibold d-block mb-1">Día</label>';
+                    html += '<select class="form-select form-select-sm text-center bg-white border" id="' + rowId + '-dia">' + diaOptions + '</select>';
+                    html += '</div>';
+
+                    html += '<div class="col-6 col-md-3">';
+                    html += '<label class="small text-muted fw-semibold d-block mb-1">Hora entrada</label>';
+                    html += '<input type="time" class="form-control form-control-sm text-center" id="' + rowId + '-horaEntrada" value="' + HtmlHelpers.escapeHtml(horaFormatted) + '" step="1800">';
+                    html += '</div>';
+
+                    html += '<div class="col-6 col-md-3">';
+                    html += '<label class="small text-muted fw-semibold d-block mb-1">Horas plan</label>';
+                    html += '<input type="number" step="0.5" min="0" class="form-control form-control-sm text-end" id="' + rowId + '-horasPlan" value="' + HtmlHelpers.escapeHtml(r.horasPlan != null ? String(r.horasPlan) : "") + '">';
+                    html += '</div>';
+
+                    html += '<div class="col-12 col-md-6">';
+                    html += '<label class="small text-muted fw-semibold d-block mb-1">Observaciones</label>';
+                    html += '<input type="text" class="form-control form-control-sm" id="' + rowId + '-obs" value="' + HtmlHelpers.escapeHtml(r.observaciones || "") + '">';
+                    html += '</div>';
+
+                    html += '<input type="hidden" id="' + rowId + '-id" value="' + HtmlHelpers.escapeHtml(r.id || "") + '">';
+
+                    html += '</div>'; // row
+                    html += '</div>'; // border rounded
+                });
+
+                html += '</div>'; // card-body
+                html += '</div>'; // collapse
+                html += '</div>'; // card
+            });
+
+            html += '</div>'; // weekly-plan-cards
+
+            // Botones de acción (Solo Guardar, Agregar se movió arriba)
+            html += '<div class="d-flex justify-content-end align-items-center mt-3 pt-3 border-top">';
+            html += '<button type="button" class="btn btn-sm fw-semibold text-white shadow-sm" ';
+            html += 'style="background: linear-gradient(135deg, #10b981, #059669); border: none; padding: 8px 24px; border-radius: 8px;" ';
+            html += 'data-action="save-weekly-plan" id="btn-save-weekly">💾 Guardar plan del cliente</button>';
             html += "</div>";
+
+            if (panel.id === "plan-semanal-panel") {
+                html += "</div>";
+            }
 
             panel.innerHTML = html;
 
-            const tbody = panel.querySelector("tbody");
-            if (tbody) {
-                const frag = document.createDocumentFragment();
-                rows.forEach(function (r, idx) {
-                    const rowId = "plan-row-" + idx;
-                    const empleadoOptions = HtmlHelpers.getEmpleadoOptionsHtml(r.empleado || "", referenceData.empleados);
-                    const diaOptions = HtmlHelpers.getDiaOptionsHtml(r.diaSemana || "");
-                    const checkedActivo = r.activo ? "checked" : "";
-                    const horaFormatted = HtmlHelpers.formatHoraEntradaForInput(r.horaEntrada);
+            // Set vigencias en inputs superiores
+            const vigDesdeInput = document.getElementById('plan-vig-desde');
+            const vigHastaInput = document.getElementById('plan-vig-hasta');
+            if (vigDesdeInput && rows[0]) vigDesdeInput.value = formatDateForInput(rows[0].vigDesde || vigDesdeInputVal());
+            if (vigHastaInput && rows[0]) vigHastaInput.value = formatDateForInput(rows[0].vigHasta || vigHastaInputVal());
 
-                    const tr = document.createElement("tr");
-                    tr.setAttribute("data-idx", idx);
-                    tr.innerHTML =
-                        "<td>" +
-                        '<select class="form-select form-select-sm" ' +
-                        'id="' + rowId + '-empleado">' +
-                        empleadoOptions +
-                        "</select>" +
-                        "</td>" +
-                        "<td>" +
-                        '<select class="form-select form-select-sm text-center" ' +
-                        'id="' + rowId + '-dia">' +
-                        diaOptions +
-                        "</select>" +
-                        "</td>" +
-                        "<td>" +
-                        '<input type="time" class="form-control form-control-sm text-center" ' +
-                        'id="' + rowId + '-hora" value="' +
-                        HtmlHelpers.escapeHtml(horaFormatted) +
-                        '" step="1800">' +
-                        "</td>" +
-                        "<td>" +
-                        '<input type="number" step="0.5" min="0" ' +
-                        'class="form-control form-control-sm text-end" ' +
-                        'id="' + rowId + '-horas" value="' +
-                        HtmlHelpers.escapeHtml(r.horasPlan != null ? String(r.horasPlan) : "") +
-                        '">' +
-                        "</td>" +
-                        "<td class='text-center'>" +
-                        '<input type="checkbox" class="form-check-input" ' +
-                        'id="' + rowId + '-activo" ' + checkedActivo + ">" +
-                        "</td>" +
-                        "<td>" +
-                        '<input type="text" class="form-control form-control-sm" ' +
-                        'id="' + rowId + '-obs" value="' +
-                        HtmlHelpers.escapeHtml(r.observaciones || "") +
-                        '">' +
-                        "</td>" +
-                        "<td class='text-center'>" +
-                        '<button type="button" class="btn btn-outline-danger btn-sm" ' +
-                        'data-action="delete-plan-row" data-idx="' + idx + '">🗑️</button>' +
-                        "</td>";
-
-                    frag.appendChild(tr);
-                });
-                tbody.appendChild(frag);
-            }
-
+            // Bind collapse arrows
+            bindWeeklyPlanCollapseArrows();
             attachWeeklyPlanHandlers(panel);
+        }
+
+        function bindWeeklyPlanCollapseArrows() {
+            const panel = document.getElementById("plan-semanal-panel");
+            if (!panel) return;
+
+            const collapses = panel.querySelectorAll(".collapse");
+            collapses.forEach(function (col) {
+                const targetId = col.id;
+                const header = panel.querySelector(`[data-bs-target="#${targetId}"]`);
+                if (!header) return;
+                const arrowEl = header.querySelector('[data-role="collapse-arrow"]');
+                if (!arrowEl) return;
+
+                const updateArrow = function () {
+                    const isShown = col.classList.contains("show");
+                    arrowEl.textContent = isShown ? "▲" : "▼";
+                    header.setAttribute("aria-expanded", isShown ? "true" : "false");
+                };
+
+                col.addEventListener("shown.bs.collapse", updateArrow);
+                col.addEventListener("hidden.bs.collapse", updateArrow);
+                updateArrow();
+            });
         }
 
         function attachWeeklyPlanHandlers(panel) {
@@ -1543,65 +2000,124 @@ const Sidebar = (() => {
         }
 
         function addEmptyPlanRow() {
+            // Simplemente recargamos el plan con una fila nueva agregada
+            const clienteSelect = document.getElementById("field-CLIENTE");
+            if (!clienteSelect) return;
+
+            const cliente = clienteSelect.value;
+            if (!cliente) {
+                if (Alerts) Alerts.showAlert("Seleccioná un cliente primero.", "warning");
+                return;
+            }
+
+            // Obtener las filas actuales del DOM
             const panel = document.getElementById("plan-semanal-panel");
             if (!panel) return;
 
-            const tbody = panel.querySelector("tbody");
-            if (!tbody) return;
+            const currentRows = [];
+            const allInputs = panel.querySelectorAll('[id^="plan-row-"]');
+            const processedIndices = new Set();
 
-            const idx = tbody.querySelectorAll("tr").length;
-            const rowId = "plan-row-" + idx;
+            allInputs.forEach(input => {
+                const match = input.id.match(/plan-row-(\d+)-/);
+                if (match && !processedIndices.has(match[1])) {
+                    const idx = match[1];
+                    processedIndices.add(idx);
 
-            const tr = document.createElement("tr");
-            tr.setAttribute("data-idx", idx);
+                    const empleadoSelect = document.getElementById(`plan-row-${idx}-empleado`);
+                    const diaSelect = document.getElementById(`plan-row-${idx}-dia`);
+                    const horaInput = document.getElementById(`plan-row-${idx}-horaEntrada`);
+                    const horasInput = document.getElementById(`plan-row-${idx}-horasPlan`);
+                    const obsInput = document.getElementById(`plan-row-${idx}-obs`);
 
-            tr.innerHTML =
-                "<td>" +
-                '<select class="form-select form-select-sm" id="' + rowId + '-empleado">' +
-                HtmlHelpers.getEmpleadoOptionsHtml("", referenceData.empleados) +
-                "</select>" +
-                "</td>" +
-                "<td>" +
-                '<select class="form-select form-select-sm text-center" id="' + rowId + '-dia">' +
-                HtmlHelpers.getDiaOptionsHtml("") +
-                "</select>" +
-                "</td>" +
-                "<td>" +
-                '<input type="time" class="form-control form-control-sm text-center" ' +
-                'id="' + rowId + '-hora" step="1800">' +
-                "</td>" +
-                "<td>" +
-                '<input type="number" step="0.5" min="0" ' +
-                'class="form-control form-control-sm text-end" ' +
-                'id="' + rowId + '-horas">' +
-                "</td>" +
-                "<td class='text-center'>" +
-                '<input type="checkbox" class="form-check-input" ' +
-                'id="' + rowId + '-activo" checked>' +
-                "</td>" +
-                "<td>" +
-                '<input type="text" class="form-control form-control-sm" ' +
-                'id="' + rowId + '-obs">' +
-                "</td>" +
-                "<td class='text-center'>" +
-                '<button type="button" class="btn btn-outline-danger btn-sm" ' +
-                'data-action="delete-plan-row" data-idx="' + idx + '">🗑️</button>' +
-                "</td>";
+                    const row = {
+                        empleado: empleadoSelect ? empleadoSelect.value : "",
+                        diaSemana: diaSelect ? diaSelect.value : "",
+                        horaEntrada: horaInput ? horaInput.value : "",
+                        horasPlan: horasInput ? horasInput.value : "",
+                        vigDesde: vigDesdeInputVal(),
+                        vigHasta: vigHastaInputVal(),
+                        observaciones: obsInput ? obsInput.value : ""
+                    };
 
-            tbody.appendChild(tr);
+                    // Solo agregar si no es una fila completamente vacía
+                    if (row.empleado || row.diaSemana || row.horaEntrada || row.horasPlan || row.observaciones) {
+                        currentRows.push(row);
+                    }
+                }
+            });
+
+            // Agregar nueva fila vacía AL INICIO (para que aparezca arriba)
+            currentRows.unshift({
+                empleado: "",
+                diaSemana: "",
+                horaEntrada: "",
+                horasPlan: "",
+                vigDesde: vigDesdeInputVal(),
+                vigHasta: vigHastaInputVal(),
+                observaciones: ""
+            });
+
+            // Reconstruir el panel
+            buildWeeklyPlanPanel(currentRows, cliente, null);
+
+            // Expandir automáticamente el grupo "Sin asignar"
+            setTimeout(() => {
+                const sinAsignarCollapse = document.querySelector('[id*="collapse-Sin asignar"]');
+                if (sinAsignarCollapse && !sinAsignarCollapse.classList.contains('show')) {
+                    const bsCollapse = new bootstrap.Collapse(sinAsignarCollapse, { show: true });
+                }
+            }, 100);
         }
 
         function deletePlanRow(idx) {
+            const clienteSelect = document.getElementById("field-CLIENTE");
+            if (!clienteSelect) return;
+
+            const cliente = clienteSelect.value;
+            if (!cliente) return;
+
             const panel = document.getElementById("plan-semanal-panel");
             if (!panel) return;
 
-            const tbody = panel.querySelector("tbody");
-            if (!tbody) return;
+            // Obtener todas las filas actuales excepto la que queremos eliminar
+            const currentRows = [];
+            const allInputs = panel.querySelectorAll('[id^="plan-row-"]');
+            const processedIndices = new Set();
 
-            const tr = tbody.querySelector('tr[data-idx="' + idx + '"]');
-            if (tr) {
-                tr.remove();
-            }
+            allInputs.forEach(input => {
+                const match = input.id.match(/plan-row-(\d+)-/);
+                if (match && !processedIndices.has(match[1])) {
+                    const currentIdx = match[1];
+
+                    // Saltar la fila que queremos eliminar
+                    if (currentIdx === String(idx)) {
+                        processedIndices.add(currentIdx);
+                        return;
+                    }
+
+                    processedIndices.add(currentIdx);
+
+                    const empleadoSelect = document.getElementById(`plan-row-${currentIdx}-empleado`);
+                    const diaSelect = document.getElementById(`plan-row-${currentIdx}-dia`);
+                    const horaInput = document.getElementById(`plan-row-${currentIdx}-horaEntrada`);
+                    const horasInput = document.getElementById(`plan-row-${currentIdx}-horasPlan`);
+                    const obsInput = document.getElementById(`plan-row-${currentIdx}-obs`);
+
+                    currentRows.push({
+                        empleado: empleadoSelect ? empleadoSelect.value : "",
+                        diaSemana: diaSelect ? diaSelect.value : "",
+                        horaEntrada: horaInput ? horaInput.value : "",
+                        horasPlan: horasInput ? horasInput.value : "",
+                        vigDesde: vigDesdeInputVal(),
+                        vigHasta: vigHastaInputVal(),
+                        observaciones: obsInput ? obsInput.value : ""
+                    });
+                }
+            });
+
+            // Reconstruir el panel sin la fila eliminada
+            buildWeeklyPlanPanel(currentRows, cliente, null);
         }
 
         function saveWeeklyPlan() {
@@ -1617,47 +2133,104 @@ const Sidebar = (() => {
             const panel = document.getElementById("plan-semanal-panel");
             if (!panel) return;
 
-            const tbody = panel.querySelector("tbody");
-            if (!tbody) return;
+            // Recolectar filas por índice de los inputs
+            const itemsMap = new Map();
+            const inputs = panel.querySelectorAll('[id^="plan-row-"]');
+            inputs.forEach((el) => {
+                // Fix: Use unambiguous IDs
+                const match = el.id.match(/plan-row-(\d+)-(empleado|dia|horaEntrada|horasPlan|obs|id)/);
+                if (!match) return;
+                const idx = match[1];
+                const field = match[2];
 
-            const rows = Array.from(tbody.querySelectorAll("tr"));
-            const items = rows.map(function (tr) {
-                const idx = tr.getAttribute("data-idx");
-                const empleadoSelect = document.getElementById(`plan-row-${idx}-empleado`);
-                const diaSelect = document.getElementById(`plan-row-${idx}-dia`);
-                const horaInput = document.getElementById(`plan-row-${idx}-hora`);
-                const horasInput = document.getElementById(`plan-row-${idx}-horas`);
-                const activoCheck = document.getElementById(`plan-row-${idx}-activo`);
-                const obsInput = document.getElementById(`plan-row-${idx}-obs`);
+                if (!itemsMap.has(idx)) {
+                    itemsMap.set(idx, {
+                        id: "",
+                        empleado: "",
+                        diaSemana: "",
+                        horaEntrada: "",
+                        horasPlan: "",
+                        vigDesde: vigDesdeInputVal(),
+                        vigHasta: vigHastaInputVal(),
+                        observaciones: ""
+                    });
+                }
+                const obj = itemsMap.get(idx);
+                const val = el.value;
 
-                return {
-                    empleado: empleadoSelect ? empleadoSelect.value : "",
-                    diaSemana: diaSelect ? diaSelect.value : "",
-                    horaEntrada: horaInput ? horaInput.value : "",
-                    horasPlan: horasInput ? horasInput.value : "",
-                    activo: activoCheck ? activoCheck.checked : true,
-                    observaciones: obsInput ? obsInput.value : ""
-                };
-            }).filter(item => item.empleado || item.diaSemana || item.horasPlan);
+                if (field === "id") obj.id = val;
+                if (field === "empleado") obj.empleado = val;
+                if (field === "dia") obj.diaSemana = val;
+                if (field === "horaEntrada") obj.horaEntrada = val;
+                if (field === "horasPlan") obj.horasPlan = val;
+                if (field === "obs") obj.observaciones = val;
+            });
 
+            const items = Array.from(itemsMap.values()).filter(item =>
+                item.id || item.empleado || item.diaSemana || item.horasPlan || item.observaciones
+            );
+
+            if (!items.length) {
+                UiState && UiState.setGlobalLoading(false);
+                setSavingState(false);
+                Alerts && Alerts.showAlert("No hay filas para guardar. Agregá al menos un día.", "warning");
+                return;
+            }
+
+            setSavingState(true);
             UiState.setGlobalLoading(true, "Guardando plan semanal...");
-            ApiService.call('saveWeeklyPlanForClient', cliente, items)
+
+            // Pasamos currentOriginalVigencia para que el backend sepa qué reemplazar
+            ApiService.call('saveWeeklyPlanForClient', cliente, items, currentOriginalVigencia)
                 .then(function () {
                     if (Alerts) Alerts.showAlert("✅ Plan semanal guardado correctamente.", "success");
-                    fetchWeeklyPlanForClient();
+                    // Recargar la lista completa desde el servidor
+                    reloadList();
                 })
                 .catch(function (err) {
                     if (Alerts) Alerts.showAlert("Error al guardar plan: " + err.message, "danger");
                 })
                 .finally(function () {
                     UiState.setGlobalLoading(false);
+                    setSavingState(false);
+                });
+        }
+
+        function setSavingState(isSaving) {
+            const btn = document.getElementById('btn-save-weekly');
+            if (!btn) return;
+            if (isSaving) {
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Guardando...';
+            } else {
+                btn.disabled = false;
+                btn.innerHTML = '💾 Guardar plan del cliente';
+            }
+        }
+
+        function reloadList() {
+            if (!currentContainer) return;
+
+            // Mostrar loading en el contenedor actual
+            currentContainer.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary" role="status"></div><div class="mt-2">Actualizando lista...</div></div>';
+
+            ApiService.call("searchRecords", "ASISTENCIA_PLAN", "")
+                .then(function (records) {
+                    renderList(currentContainer, records || []);
+                })
+                .catch(function (err) {
+                    console.error("Error recargando lista:", err);
+                    currentContainer.innerHTML = '<div class="alert alert-danger">Error al actualizar la lista.</div>';
                 });
         }
 
         return {
             init,
             setup,
-            fetchWeeklyPlanForClient
+            render,
+            renderList,
+            fetchWeeklyPlanForClient,
+            reloadList
         };
     })();
 
@@ -1679,11 +2252,23 @@ const Sidebar = (() => {
         };
         let reference = { clientes: [], empleados: [] };
         let rootEl = null;
+        let pendingFecha = null;
+        let pendingFocus = null;
+
+        function resetState(fecha) {
+            state = {
+                fecha: fecha || getTodayIso(),
+                rows: [],
+                loading: false
+            };
+        }
 
         function render(container) {
             rootEl = container;
             reference = ReferenceService && ReferenceService.get ? ReferenceService.get() : { clientes: [], empleados: [] };
-            state.fecha = getTodayIso();
+            const initialDate = pendingFecha || getTodayIso();
+            resetState(initialDate);
+            pendingFecha = null;
 
             container.innerHTML = buildBaseLayout();
             bindBaseEvents();
@@ -1739,6 +2324,9 @@ const Sidebar = (() => {
             if (dateInput) {
                 dateInput.addEventListener("change", function () {
                     state.fecha = this.value;
+                    state.rows = [];
+                    renderRows("Cargando...");
+                    updateSummary();
                     loadPlan(state.fecha);
                 });
             }
@@ -1777,12 +2365,18 @@ const Sidebar = (() => {
                 return;
             }
 
+            state.rows = [];
+            renderRows("Cargando...");
+            updateSummary();
             setLoading(true);
-            ApiService.call("getDailyAttendancePlan", fecha)
+            // callLatest para evitar respuestas viejas que pisan la vista
+            ApiService.callLatest("attendance-plan-" + fecha, "getDailyAttendancePlan", fecha)
                 .then(function (rows) {
                     if (rows && rows.ignored) return;
                     const data = Array.isArray(rows) ? rows : [];
                     state.rows = data.map((r, idx) => normalizeRow(r, false, idx));
+
+                    applyPendingFocus();
 
                     if (!state.rows.length) {
                         // Si no hay plan para el día, ofrecer fila vacía para cargar fuera de plan
@@ -2113,7 +2707,7 @@ const Sidebar = (() => {
                 <th>Fecha</th>
                 <th class="text-center">Clientes atendidos</th>
                 <th class="text-center">Horas totales</th>
-                <th class="text-center">Registros</th>
+                <th class="text-center">Asistencia (real / planificada)</th>
                 <th class="text-center">Acciones</th>
             `;
 
@@ -2134,7 +2728,7 @@ const Sidebar = (() => {
                     <td><strong>${HtmlHelpers.escapeHtml(item.fechaLabel)}</strong></td>
                     <td class="text-center">${item.clientes}</td>
                     <td class="text-center">${item.horas.toFixed(2)}</td>
-                    <td class="text-center">${item.registros}</td>
+                    <td class="text-center">${item.presentes} / ${item.registros}</td>
                     <td class="text-center">
                         <button class="btn btn-sm btn-primary" data-action="open-day" data-fecha="${HtmlHelpers.escapeHtml(item.fecha)}">Editar día</button>
                     </td>
@@ -2159,7 +2753,7 @@ const Sidebar = (() => {
                 if (!fecha) return;
                 const key = String(fecha).trim();
                 if (!map.has(key)) {
-                    map.set(key, { registros: 0, clientes: new Set(), horas: 0 });
+                    map.set(key, { registros: 0, clientes: new Set(), horas: 0, presentes: 0 });
                 }
                 const agg = map.get(key);
                 agg.registros += 1;
@@ -2173,6 +2767,7 @@ const Sidebar = (() => {
                     if (!isNaN(horasNum)) {
                         agg.horas += horasNum;
                     }
+                    agg.presentes += 1;
                 }
             });
 
@@ -2183,7 +2778,8 @@ const Sidebar = (() => {
                     fechaLabel: formatDateLabel(fecha),
                     registros: val.registros,
                     clientes: val.clientes.size,
-                    horas: val.horas
+                    horas: val.horas,
+                    presentes: val.presentes
                 });
             });
 
@@ -2219,6 +2815,7 @@ const Sidebar = (() => {
 
         function openModalForDate(fecha) {
             if (!GridManager || !FormManager) return;
+            pendingFecha = fecha;
 
             const formatoSelect = document.getElementById("formato");
             if (formatoSelect) {
@@ -2227,20 +2824,19 @@ const Sidebar = (() => {
 
             GridManager.openModal("Asistencia del día", function () {
                 FormManager.renderForm("ASISTENCIA");
-                setTimeout(() => {
-                    openForDate(fecha);
-                }, 100);
             });
         }
 
         function openForDate(fecha) {
             if (!rootEl || !fecha) return;
+            resetState(fecha);
             const dateInput = rootEl.querySelector("#attendance-date");
             if (dateInput) {
                 dateInput.value = fecha;
-                state.fecha = fecha;
-                loadPlan(fecha);
             }
+            renderRows("Cargando...");
+            updateSummary();
+            loadPlan(fecha);
         }
 
         function save() {
@@ -2288,10 +2884,55 @@ const Sidebar = (() => {
                 });
         }
 
+        function applyPendingFocus() {
+            if (!pendingFocus) return;
+
+            const targetEmp = (pendingFocus.empleado || '').toString().toLowerCase().trim();
+            const targetCli = (pendingFocus.cliente || '').toString().toLowerCase().trim();
+
+            let matched = null;
+            if (targetEmp || targetCli) {
+                matched = state.rows.find(function (r) {
+                    const emp = (r.empleado || '').toString().toLowerCase().trim();
+                    const cli = (r.cliente || '').toString().toLowerCase().trim();
+                    return emp === targetEmp && cli === targetCli;
+                });
+            }
+
+            if (matched) {
+                matched._autoOpen = true;
+                if (pendingFocus.horas != null) matched.horasReales = pendingFocus.horas;
+                if (pendingFocus.observaciones != null) matched.observaciones = pendingFocus.observaciones;
+            } else if (targetEmp || targetCli) {
+                const extra = normalizeRow({
+                    cliente: pendingFocus.cliente || '',
+                    empleado: pendingFocus.empleado || '',
+                    asistencia: true,
+                    horasReales: pendingFocus.horas != null ? pendingFocus.horas : '',
+                    observaciones: pendingFocus.observaciones || ''
+                }, true);
+                extra._autoOpen = true;
+                state.rows.unshift(extra);
+            }
+
+            pendingFocus = null;
+        }
+
+        function openForDateWithFocus(fecha, empleado, cliente, extras) {
+            pendingFocus = {
+                empleado: empleado,
+                cliente: cliente,
+                horas: extras && extras.horas != null ? extras.horas : null,
+                observaciones: extras && extras.observaciones ? extras.observaciones : ''
+            };
+            openForDate(fecha);
+        }
+
         return {
             render,
             renderSummary,
             openForDate,
+            openForDateWithFocus,
             save
         };
     })();
@@ -2391,80 +3032,121 @@ var HoursDetailPanel = (function () {
         if (!container) return;
 
         container.innerHTML = `
-            <div class="card shadow-sm mb-4">
-                <div class="card-header bg-white py-3">
-                    <h5 class="mb-0 text-primary">
+            <div class="card shadow-sm mb-3">
+                <div class="card-header bg-white py-2">
+                    <h6 class="mb-0 text-primary fw-bold">
                         <i class="bi bi-clock-history me-2"></i>Seguimiento de Horas por Empleado
-                    </h5>
+                    </h6>
                 </div>
-                <div class="card-body">
+                <div class="card-body p-3">
                     <!-- Filtros -->
-                    <div class="row g-3 mb-4 align-items-end">
+                    <div class="row g-2 mb-3 align-items-end">
                         <div class="col-md-4">
-                            <label class="form-label small text-muted fw-semibold">Empleado</label>
-                            <select id="hours-filter-employee" class="form-select">
-                                <option value="">Seleccionar Empleado...</option>
-                            </select>
+                            <label class="form-label small text-muted fw-bold mb-1">Empleado</label>
+                            <input list="hours-employee-list" id="hours-filter-employee" class="form-control form-control-sm" placeholder="Buscar empleado...">
+                            <datalist id="hours-employee-list"></datalist>
                         </div>
-                        <div class="col-md-3">
-                            <label class="form-label small text-muted fw-semibold">Fecha Desde</label>
-                            <input type="date" id="hours-filter-start" class="form-control">
+                        <div class="col-6 col-md-2">
+                            <label class="form-label small text-muted fw-bold mb-1">Desde</label>
+                            <input type="date" id="hours-filter-start" class="form-control form-control-sm">
                         </div>
-                        <div class="col-md-3">
-                            <label class="form-label small text-muted fw-semibold">Fecha Hasta</label>
-                            <input type="date" id="hours-filter-end" class="form-control">
+                        <div class="col-6 col-md-2">
+                            <label class="form-label small text-muted fw-bold mb-1">Hasta</label>
+                            <input type="date" id="hours-filter-end" class="form-control form-control-sm">
                         </div>
-                        <div class="col-md-2">
-                            <button id="btn-search-hours" class="btn btn-primary w-100">
-                                <i class="bi bi-search me-1"></i> Buscar
+                        <div class="col-md-4 d-flex gap-2">
+                            <button id="btn-search-hours" class="btn btn-primary btn-sm flex-fill d-flex align-items-center justify-content-center gap-1">
+                                <i class="bi bi-search"></i> Buscar
+                            </button>
+                            <button id="btn-export-pdf" class="btn btn-danger btn-sm flex-fill d-flex align-items-center justify-content-center gap-1">
+                                <i class="bi bi-file-earmark-pdf-fill"></i> PDF
                             </button>
                         </div>
                     </div>
 
                     <!-- Loading State -->
-                    <div id="hours-loading" class="text-center py-5 d-none">
-                        <div class="spinner-border text-primary" role="status"></div>
-                        <p class="text-muted mt-2">Cargando registros...</p>
+                    <div id="hours-loading" class="text-center py-3 d-none">
+                        <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                        <p class="text-muted small mt-1 mb-0">Cargando registros...</p>
+                    </div>
+
+                    <!-- Resumen -->
+                    <div id="hours-summary" class="row g-2 mb-3 d-none">
+                        <div class="col-6 col-md-2">
+                            <div class="card h-100 shadow-none border bg-light">
+                                <div class="card-body py-2 px-2 text-center">
+                                    <div class="small text-muted text-uppercase" style="font-size: 0.7rem;">Horas</div>
+                                    <div class="fs-6 fw-bold text-dark" id="hours-summary-total">0</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <div class="card h-100 shadow-none border bg-light">
+                                <div class="card-body py-2 px-2 text-center">
+                                    <div class="small text-muted text-uppercase" style="font-size: 0.7rem;">Valor hora</div>
+                                    <div class="fs-6 fw-bold text-dark" id="hours-summary-rate">$0</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <div class="card h-100 shadow-none border bg-light">
+                                <div class="card-body py-2 px-2 text-center">
+                                    <div class="small text-muted text-uppercase" style="font-size: 0.7rem;">Adelantos</div>
+                                    <div class="fs-6 fw-bold text-danger" id="hours-summary-advances">$0</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <div class="card h-100 shadow-none border bg-light">
+                                <div class="card-body py-2 px-2 text-center">
+                                    <div class="small text-muted text-uppercase" style="font-size: 0.7rem;">Viáticos</div>
+                                    <div class="fs-6 fw-bold text-dark" id="hours-summary-viaticos">$0</div>
+                                </div>
+                            </div>
+                        </div>
+                         <div class="col-6 col-md-2">
+                            <div class="card h-100 shadow-none border bg-light">
+                                <div class="card-body py-2 px-2 text-center">
+                                    <div class="small text-muted text-uppercase" style="font-size: 0.7rem;">Presentismo</div>
+                                    <div class="fs-6 fw-bold text-dark" id="hours-summary-presentismo">$0</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <div class="card h-100 shadow-sm border-0 text-center" style="background: linear-gradient(135deg, #0f172a, #334155); color: #fff;">
+                                <div class="card-body py-2 px-2">
+                                    <div class="small text-white-50 text-uppercase" style="font-size: 0.7rem;">Total a pagar</div>
+                                    <div class="fs-6 fw-bold" id="hours-summary-total-net">$0</div>
+                                    <div class="small text-white-50" style="font-size: 0.65rem;" id="hours-summary-total-gross"></div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Tabla de Resultados -->
                     <div id="hours-results-container" class="d-none">
-                        <div class="table-responsive">
-                            <table class="table table-hover align-middle">
-                                <thead class="table-light">
+                        <div class="table-responsive border rounded">
+                            <table class="table table-hover table-sm align-middle mb-0" style="font-size: 0.85rem;">
+                                <thead class="bg-light">
                                     <tr>
-                                        <th style="width: 120px;">Acciones</th>
-                                        <th>Cliente</th>
-                                        <th>Fecha</th>
-                                        <th class="text-center">Horas</th>
-                                        <th>Observaciones</th>
+                                        <th class="ps-3 py-2 text-muted font-weight-normal">Cliente</th>
+                                        <th class="py-2 text-muted font-weight-normal">Fecha</th>
+                                        <th class="text-center py-2 text-muted font-weight-normal">Horas</th>
+                                        <th class="py-2 text-muted font-weight-normal">Observaciones</th>
+                                        <th class="text-end py-2 pe-3 text-muted font-weight-normal" style="width: 100px;">Acciones</th>
                                     </tr>
                                 </thead>
                                 <tbody id="hours-table-body">
                                     <!-- Rows will be injected here -->
                                 </tbody>
-                                <tfoot class="table-light fw-bold">
-                                    <tr>
-                                        <td colspan="3" class="text-end">Total Horas:</td>
-                                        <td class="text-center" id="hours-total-sum">0</td>
-                                        <td></td>
-                                    </tr>
-                                </tfoot>
                             </table>
-                        </div>
-
-                        <!-- Acciones Globales -->
-                        <div class="d-flex justify-content-end mt-3 pt-3 border-top">
-                            <button id="btn-bill-hours" class="btn btn-success" disabled>
-                                <i class="bi bi-receipt me-1"></i> Generar Factura
-                            </button>
                         </div>
                     </div>
                     
                     <!-- Empty State -->
-                    <div id="hours-empty-state" class="text-center py-5 d-none">
-                        <i class="bi bi-inbox text-muted" style="font-size: 2rem;"></i>
-                        <p class="text-muted mt-2">No se encontraron registros con los filtros seleccionados.</p>
+                    <div id="hours-empty-state" class="text-center py-4 d-none">
+                        <i class="bi bi-search" style="font-size: 1.5rem; opacity: 0.5;"></i>
+                        <p class="small mt-2 mb-0">Utilizá los filtros para buscar registros.</p>
                     </div>
                 </div>
             </div>
@@ -2478,9 +3160,10 @@ var HoursDetailPanel = (function () {
 
         // Attach Events
         document.getElementById('btn-search-hours').addEventListener('click', handleSearch);
-        document.getElementById('btn-bill-hours').addEventListener('click', () => {
-            Alerts.showAlert("Funcionalidad de facturación próximamente", "info");
-        });
+        const pdfBtn = document.getElementById('btn-export-pdf');
+        if (pdfBtn) {
+            pdfBtn.addEventListener('click', handleExportPdf);
+        }
     }
 
     function setDefaultDates() {
@@ -2493,21 +3176,41 @@ var HoursDetailPanel = (function () {
     }
 
     function loadEmployees() {
-        // Reuse ReferenceService if available, or fetch fresh
-        if (typeof ReferenceService !== 'undefined') {
-            ReferenceService.getReferences().then(refs => {
-                const select = document.getElementById('hours-filter-employee');
-                if (!select) return;
+        const input = document.getElementById('hours-filter-employee');
+        const datalist = document.getElementById('hours-employee-list');
+        if (!input || !datalist) return;
 
-                const employees = refs.empleados || [];
-                employees.sort().forEach(employee => {
-                    const option = document.createElement('option');
-                    option.value = employee;
-                    option.textContent = employee;
-                    select.appendChild(option);
-                });
-            });
+        datalist.innerHTML = '';
+        input.value = '';
+
+        if (typeof ReferenceService === 'undefined') {
+            console.warn('ReferenceService no disponible');
+            return;
         }
+
+        ReferenceService.load()
+            .then(() => {
+                const refs = ReferenceService.get();
+                populateEmployeeSelect(refs && refs.empleados ? refs.empleados : []);
+            })
+            .catch(err => {
+                console.error('Error loading employees:', err);
+                Alerts.showAlert('No se pudieron cargar empleados. Reintentá.', 'warning');
+            });
+    }
+
+    function populateEmployeeSelect(employees) {
+        const datalist = document.getElementById('hours-employee-list');
+        if (!datalist) return;
+
+        const list = Array.isArray(employees) ? employees.slice().sort() : [];
+        datalist.innerHTML = '';
+
+        list.forEach(employee => {
+            const option = document.createElement('option');
+            option.value = employee;
+            datalist.appendChild(option);
+        });
     }
 
     function handleSearch() {
@@ -2525,9 +3228,20 @@ var HoursDetailPanel = (function () {
         document.getElementById('hours-empty-state').classList.add('d-none');
         document.getElementById('hours-loading').classList.remove('d-none');
 
-        ApiService.call('getHoursByEmployee', [start, end, employee])
+        const summaryBox = document.getElementById('hours-summary');
+        if (summaryBox) summaryBox.classList.add('d-none');
+
+        ApiService.call('getHoursByEmployee', start, end, employee)
             .then(results => {
-                renderTable(results);
+                const parsed = (typeof results === 'string')
+                    ? (function () { try { return JSON.parse(results); } catch (e) { console.warn('No se pudo parsear resultados', e); return {}; } })()
+                    : results || {};
+
+                const rows = parsed && parsed.rows ? parsed.rows : (Array.isArray(parsed) ? parsed : []);
+                const summary = parsed && parsed.summary ? parsed.summary : null;
+
+                console.log('[HoursDetail] Resultados recibidos:', rows, 'Resumen:', summary);
+                renderTable(rows || [], summary);
             })
             .catch(err => {
                 console.error(err);
@@ -2538,18 +3252,58 @@ var HoursDetailPanel = (function () {
             });
     }
 
-    function renderTable(data) {
+    function handleExportPdf() {
+        const start = document.getElementById('hours-filter-start').value;
+        const end = document.getElementById('hours-filter-end').value;
+        const employee = document.getElementById('hours-filter-employee').value;
+        if (!employee) {
+            Alerts.showAlert("Selecciona un empleado para exportar", "warning");
+            return;
+        }
+
+        const btn = document.getElementById('btn-export-pdf');
+        const originalContent = btn ? btn.innerHTML : '';
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Descargando...';
+        }
+
+        UiState && UiState.setGlobalLoading(true, 'Generando PDF...');
+        ApiService.call('generateHoursPdf', start, end, employee)
+            .then(res => {
+                if (!res || !res.base64) throw new Error('No se pudo generar PDF');
+                const link = document.createElement('a');
+                link.href = 'data:application/pdf;base64,' + res.base64;
+                link.download = res.filename || 'reporte.pdf';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            })
+            .catch(err => {
+                Alerts && Alerts.showAlert('Error generando PDF: ' + err.message, 'danger');
+            })
+            .finally(() => {
+                UiState && UiState.setGlobalLoading(false);
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = originalContent;
+                }
+            });
+    }
+
+    function renderTable(data, summary) {
         const tbody = document.getElementById('hours-table-body');
         const container = document.getElementById('hours-results-container');
         const emptyState = document.getElementById('hours-empty-state');
-        const totalSum = document.getElementById('hours-total-sum');
-        const btnBill = document.getElementById('btn-bill-hours');
 
         tbody.innerHTML = '';
+
+        console.log('[HoursDetail] Renderizando tabla. Items:', Array.isArray(data) ? data.length : 'no-array', data && data[0]);
 
         if (!data || data.length === 0) {
             container.classList.add('d-none');
             emptyState.classList.remove('d-none');
+            updateSummary(summary);
             return;
         }
 
@@ -2559,41 +3313,33 @@ var HoursDetailPanel = (function () {
             const tr = document.createElement('tr');
             const hours = parseFloat(row.horas) || 0;
             total += hours;
+            const isAbsent = row.asistencia === false;
 
             tr.innerHTML = `
-                <td>
-                    <button class="btn btn-sm btn-outline-primary me-1 btn-edit-hour" data-id="${row.id}">
-                        <i class="bi bi-pencil"></i>
-                    </button>
-                    <button class="btn btn-sm btn-outline-danger btn-delete-hour" data-id="${row.id}">
-                        <i class="bi bi-trash"></i>
-                    </button>
-                </td>
                 <td>${row.cliente || '-'}</td>
                 <td>${row.fecha}</td>
                 <td class="text-center fw-bold">${hours}</td>
                 <td class="text-muted small">${row.observaciones || '-'}</td>
+                <td class="text-end">
+                    <div class="d-flex gap-2 justify-content-end">
+                        <button class="btn btn-sm text-white btn-edit-hour" data-id="${row.id}" title="Editar"
+                            style="background:#5b7bfa;border:none;border-radius:12px; padding:6px 12px;">
+                            <i class="bi bi-pencil-fill"></i>
+                        </button>
+                        <button class="btn btn-sm text-white btn-delete-hour" data-id="${row.id}" title="Eliminar"
+                            style="background:#e53e3e;border:none;border-radius:12px; padding:6px 12px;">
+                            <i class="bi bi-trash-fill"></i>
+                        </button>
+                    </div>
+                </td>
             `;
+            if (isAbsent) {
+                tr.classList.add('absence-row');
+            }
             tbody.appendChild(tr);
         });
 
-        // Update Total
-        totalSum.textContent = total.toFixed(2);
-
-        // Enable Export Button
-        const btnExport = document.getElementById('btn-bill-hours');
-        if (btnExport) {
-            btnExport.innerHTML = '<i class="bi bi-file-earmark-spreadsheet me-1"></i> Exportar CSV';
-            btnExport.classList.remove('btn-success');
-            btnExport.classList.add('btn-success'); // Keep green or change to other color
-            btnExport.disabled = false;
-
-            // Remove old listeners (cloning node is a simple way to clear listeners)
-            const newBtn = btnExport.cloneNode(true);
-            btnExport.parentNode.replaceChild(newBtn, btnExport);
-
-            newBtn.addEventListener('click', () => exportToCsv(data));
-        }
+        updateSummary(summary || { totalHoras: total });
 
         // Show Table
         container.classList.remove('d-none');
@@ -2601,6 +3347,50 @@ var HoursDetailPanel = (function () {
 
         // Attach Action Events
         attachActionEvents(data);
+    }
+
+    function updateSummary(summary) {
+        const box = document.getElementById('hours-summary');
+        if (!box) return;
+
+        const totals = {
+            totalHoras: 0,
+            valorHora: 0,
+            totalBruto: 0,
+            adelantos: 0,
+            totalNeto: 0,
+            viaticos: 0,
+            ...(summary || {})
+        };
+
+        const totalHorasEl = document.getElementById('hours-summary-total');
+        const rateEl = document.getElementById('hours-summary-rate');
+        const advEl = document.getElementById('hours-summary-advances');
+        const netEl = document.getElementById('hours-summary-total-net');
+        const grossEl = document.getElementById('hours-summary-total-gross');
+        const viaticosEl = document.getElementById('hours-summary-viaticos');
+        const presentismoEl = document.getElementById('hours-summary-presentismo');
+
+        if (totalHorasEl) totalHorasEl.textContent = formatNumber(totals.totalHoras);
+        if (rateEl) rateEl.textContent = formatCurrency(totals.valorHora);
+        if (advEl) advEl.textContent = formatCurrency(totals.adelantos);
+        if (netEl) netEl.textContent = formatCurrency(totals.totalNeto);
+        if (grossEl) grossEl.textContent = 'Total: ' + formatCurrency(totals.totalBruto);
+        if (viaticosEl) viaticosEl.textContent = formatCurrency(totals.viaticos);
+        if (presentismoEl) presentismoEl.textContent = formatCurrency(totals.presentismo);
+
+        box.classList.remove('d-none');
+    }
+
+    function formatNumber(value) {
+        const num = Number(value);
+        if (isNaN(num)) return '0';
+        return num.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function formatCurrency(value) {
+        const num = Number(value);
+        return num.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2 });
     }
 
     function exportToCsv(data) {
@@ -2662,41 +3452,7 @@ var HoursDetailPanel = (function () {
     }
 
     function editRecord(id, record) {
-        // We need to switch to the Registro view and open the modal
-        // First, trigger view change to 'registro'
-        const event = new CustomEvent('view-change', { detail: { view: 'registro' } });
-        document.dispatchEvent(event);
-
-        // Wait for view to load
-        setTimeout(() => {
-            // Set format to ASISTENCIA
-            const formatSelect = document.getElementById('formato');
-            if (formatSelect) {
-                formatSelect.value = 'ASISTENCIA';
-                formatSelect.dispatchEvent(new Event('change'));
-            }
-
-            // Wait for format to load
-            setTimeout(() => {
-                if (GridManager && FormManager && RecordManager) {
-                    const fullRecord = {
-                        ID: record.id,
-                        FECHA: record.fecha,
-                        EMPLEADO: record.empleado,
-                        HORAS: record.horas,
-                        OBSERVACIONES: record.observaciones,
-                        CLIENTE: record.cliente,
-                        ASISTENCIA: 'Presente' // Default assumption
-                    };
-
-                    // Open modal and load record
-                    GridManager.openModal("Editar Registro de Horas", function () {
-                        FormManager.renderForm('ASISTENCIA');
-                        RecordManager.loadRecordForEdit(id, fullRecord);
-                    });
-                }
-            }, 300);
-        }, 300);
+        openInlineEditModal(record);
     }
 
     function deleteRecord(id) {
@@ -2719,8 +3475,1586 @@ var HoursDetailPanel = (function () {
             });
     }
 
+    function openInlineEditModal(record) {
+        const existing = document.getElementById('hours-edit-modal');
+        if (existing) existing.remove();
+
+        const modalHtml = `
+            <div class="modal fade" id="hours-edit-modal" tabindex="-1">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Editar asistencia</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="mb-3">
+                                <label class="form-label small text-muted">Empleado</label>
+                                <input type="text" class="form-control" value="${HtmlHelpers.escapeHtml(record.empleado || '')}" disabled>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label small text-muted">Cliente</label>
+                                <input type="text" class="form-control" value="${HtmlHelpers.escapeHtml(record.cliente || '')}" disabled>
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label small text-muted">Fecha</label>
+                                    <input type="date" id="hours-edit-fecha" class="form-control" value="${record.fecha || ''}">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small text-muted">Horas</label>
+                                    <input type="number" step="0.25" id="hours-edit-horas" class="form-control" value="${record.horas || ''}">
+                                </div>
+                            </div>
+                            <div class="form-check form-switch mt-3">
+                                <input class="form-check-input" type="checkbox" id="hours-edit-asistencia" ${record.asistencia === false ? '' : 'checked'}>
+                                <label class="form-check-label" for="hours-edit-asistencia">Asistencia</label>
+                            </div>
+                            <div class="mt-3">
+                                <label class="form-label small text-muted">Observaciones</label>
+                                <textarea id="hours-edit-observaciones" class="form-control" rows="2">${record.observaciones || ''}</textarea>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                            <button type="button" class="btn btn-primary" id="hours-edit-save">Guardar</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = modalHtml.trim();
+        document.body.appendChild(wrapper.firstChild);
+
+        const modalEl = document.getElementById('hours-edit-modal');
+        const modal = new bootstrap.Modal(modalEl);
+        modal.show();
+
+        const fechaInput = document.getElementById('hours-edit-fecha');
+        const horasInput = document.getElementById('hours-edit-horas');
+        const obsInput = document.getElementById('hours-edit-observaciones');
+        const asistenciaInput = document.getElementById('hours-edit-asistencia');
+
+        if (asistenciaInput) {
+            asistenciaInput.checked = record.asistencia !== false;
+        }
+        if (horasInput && record.asistencia === false && record.horasPlan) {
+            horasInput.value = record.horasPlan;
+        }
+
+        const saveBtn = document.getElementById('hours-edit-save');
+        if (saveBtn) {
+            saveBtn.addEventListener('click', function () {
+                const fecha = fechaInput ? fechaInput.value : '';
+                const horas = horasInput ? horasInput.value : '';
+                const observaciones = obsInput ? obsInput.value : '';
+                const asistencia = asistenciaInput ? asistenciaInput.checked : true;
+                const horasToSave = asistencia ? horas : (horas || record.horasPlan || '');
+
+                if (!fecha) {
+                    Alerts.showAlert("Seleccione fecha.", "warning");
+                    return;
+                }
+
+                UiState.setGlobalLoading(true, "Guardando...");
+
+                const payload = {
+                    'EMPLEADO': record.empleado,
+                    'CLIENTE': record.cliente,
+                    'FECHA': fecha,
+                    'ASISTENCIA': asistencia,
+                    'HORAS': horasToSave,
+                    'OBSERVACIONES': observaciones
+                };
+
+                ApiService.call('updateRecord', 'ASISTENCIA', record.id, payload)
+                    .then(() => {
+                        Alerts.showAlert("Registro actualizado.", "success");
+                        modal.hide();
+                        modalEl.remove();
+                        handleSearch();
+                    })
+                    .catch(err => {
+                        Alerts.showAlert("Error al guardar: " + err.message, "danger");
+                    })
+                    .finally(() => {
+                        UiState.setGlobalLoading(false);
+                    });
+            });
+        }
+
+        modalEl.addEventListener('hidden.bs.modal', () => {
+            modalEl.remove();
+        });
+    }
+
     return {
         render: render
+    };
+})();
+
+
+/**
+ * Resumen mensual por cliente
+ */
+var ClientMonthlySummaryPanel = (function () {
+    const containerId = 'client-monthly-summary-panel';
+
+    function render() {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+
+        container.innerHTML = `
+            <div class="card shadow-sm mb-3">
+                <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="mb-0 text-primary fw-bold"><i class="bi bi-calendar3 me-2"></i>Resumen Mensual</h6>
+                    </div>
+                </div>
+                <div class="card-body p-3">
+                    <div class="row g-2 mb-3 align-items-end">
+                        <div class="col-md-3">
+                            <label class="form-label small text-muted fw-bold mb-1">Mes</label>
+                            <input type="month" id="cms-month" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-2">
+                            <button class="btn btn-primary btn-sm w-100 d-flex align-items-center justify-content-center gap-1" id="cms-search">
+                                <i class="bi bi-search"></i> Consultar
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="cms-loading" class="text-center py-3 d-none">
+                        <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                        <p class="text-muted small mt-1 mb-0">Calculando...</p>
+                    </div>
+                    <div id="cms-empty" class="text-center text-muted py-4 d-none">
+                        <i class="bi bi-calendar-x" style="font-size: 1.5rem; opacity: 0.5;"></i>
+                        <p class="small mt-2 mb-0">Sin datos para el mes seleccionado.</p>
+                    </div>
+                    <div class="table-responsive border rounded d-none" id="cms-table-wrapper">
+                        <table class="table table-hover table-sm align-middle mb-0" style="font-size: 0.85rem;">
+                            <thead class="bg-light">
+                                <tr>
+                                    <th class="ps-3 py-2 text-muted font-weight-normal">Cliente</th>
+                                    <th class="text-center py-2 text-muted font-weight-normal">Horas</th>
+                                    <th class="text-center py-2 text-muted font-weight-normal">Días</th>
+                                    <th class="text-center py-2 text-muted font-weight-normal">Valor hora</th>
+                                    <th class="text-center py-2 text-muted font-weight-normal">Total</th>
+                                    <th class="text-end py-2 pe-3 text-muted font-weight-normal">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="cms-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const monthInput = document.getElementById('cms-month');
+        if (monthInput) {
+            const now = new Date();
+            const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+            monthInput.value = ym;
+        }
+
+        const btn = document.getElementById('cms-search');
+        if (btn) btn.addEventListener('click', handleSearch);
+    }
+
+    function handleSearch() {
+        const monthInput = document.getElementById('cms-month');
+        const val = monthInput ? monthInput.value : '';
+        if (!val) {
+            Alerts && Alerts.showAlert('Selecciona un mes', 'warning');
+            return;
+        }
+        const [y, m] = val.split('-');
+        toggleLoading(true);
+        ApiService.call('getMonthlySummaryByClient', Number(y), Number(m))
+            .then(renderTable)
+            .catch(err => {
+                console.error(err);
+                Alerts && Alerts.showAlert('Error al calcular resumen: ' + err.message, 'danger');
+            })
+            .finally(() => toggleLoading(false));
+    }
+
+    function renderTable(rows) {
+        const tbody = document.getElementById('cms-tbody');
+        const wrapper = document.getElementById('cms-table-wrapper');
+        const empty = document.getElementById('cms-empty');
+        if (!tbody || !wrapper || !empty) return;
+
+        tbody.innerHTML = '';
+
+        if (!rows || !rows.length) {
+            wrapper.classList.add('d-none');
+            empty.classList.remove('d-none');
+            return;
+        }
+
+        rows.forEach(row => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${row.cliente}</td>
+                <td class="text-center fw-bold">${formatNumber(row.horas)}</td>
+                <td class="text-center">${row.dias || 0}</td>
+                <td class="text-center">${formatCurrency(row.valorHora)}</td>
+                <td class="text-center fw-bold text-success">${formatCurrency(row.totalFacturacion)}</td>
+                <td class="text-end">
+                    <button class="btn btn-sm btn-outline-primary cms-view-detail" data-cliente="${HtmlHelpers.escapeHtml(row.cliente)}">
+                        <i class="bi bi-eye"></i> Detalle
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        // detalle -> cambia a Reporte Clientes con filtros del mes
+        document.querySelectorAll('.cms-view-detail').forEach(btn => {
+            btn.addEventListener('click', function () {
+                const cliente = this.getAttribute('data-cliente');
+                if (!cliente) return;
+                const monthInput = document.getElementById('cms-month');
+                const val = monthInput ? monthInput.value : '';
+                const [y, m] = val.split('-');
+                const start = `${y}-${m}-01`;
+                const endDate = new Date(Number(y), Number(m), 0);
+                const endStr = `${y}-${m}-${String(endDate.getDate()).padStart(2, '0')}`;
+
+                const evt = new CustomEvent('view-change', { detail: { view: 'reportes-clientes' } });
+                document.dispatchEvent(evt);
+
+                setTimeout(() => {
+                    const cliInput = document.getElementById('client-report-client');
+                    const startInput = document.getElementById('client-report-start');
+                    const endInput = document.getElementById('client-report-end');
+                    if (cliInput) cliInput.value = cliente;
+                    if (startInput) startInput.value = start;
+                    if (endInput) endInput.value = endStr;
+                    const btnSearch = document.getElementById('client-report-search');
+                    if (btnSearch) btnSearch.click();
+                }, 200);
+            });
+        });
+
+        wrapper.classList.remove('d-none');
+        empty.classList.add('d-none');
+    }
+
+    function toggleLoading(show) {
+        const loading = document.getElementById('cms-loading');
+        const empty = document.getElementById('cms-empty');
+        const wrapper = document.getElementById('cms-table-wrapper');
+        if (loading) loading.classList.toggle('d-none', !show);
+        if (wrapper && show) wrapper.classList.add('d-none');
+        if (empty && show) empty.classList.add('d-none');
+    }
+
+    function formatNumber(v) {
+        const n = Number(v);
+        return isNaN(n) ? '0.00' : n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function formatCurrency(v) {
+        const n = Number(v);
+        return n.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2 });
+    }
+
+    return { render };
+})();
+
+
+/**
+ * Panel de Cuenta Corriente de Clientes
+ */
+var ClientAccountPanel = (function () {
+    const containerId = 'client-account-panel';
+
+    function render() {
+        // Find or create container
+        let container = document.getElementById(containerId);
+        if (!container) {
+            // If not found, try to append to client report panel if it exists, or main view
+            const parent = document.getElementById('view-reportes-clientes'); // Assuming this is the view ID
+            if (parent) {
+                container = document.createElement('div');
+                container.id = containerId;
+                container.className = 'mt-4';
+                parent.appendChild(container);
+            } else {
+                return; // Can't render
+            }
+        }
+
+        container.innerHTML = `
+            <div class="card shadow-sm mb-3">
+                <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="mb-0 text-primary fw-bold"><i class="bi bi-wallet2 me-2"></i>Cuenta Corriente Clientes</h6>
+                    </div>
+                </div>
+                <div class="card-body p-3">
+                    <div class="row g-2 mb-3 align-items-end">
+                        <div class="col-md-3">
+                            <label class="form-label small text-muted fw-bold mb-1">Cliente</label>
+                            <input list="client-acc-list" id="client-acc-input" class="form-control form-control-sm" placeholder="Buscar cliente...">
+                            <datalist id="client-acc-list"></datalist>
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <label class="form-label small text-muted fw-bold mb-1">Desde</label>
+                            <input type="date" id="client-acc-start" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <label class="form-label small text-muted fw-bold mb-1">Hasta</label>
+                            <input type="date" id="client-acc-end" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-5 d-flex gap-2">
+                            <button class="btn btn-primary btn-sm flex-fill d-flex align-items-center justify-content-center gap-1" id="client-acc-search">
+                                <i class="bi bi-search"></i> Consultar
+                            </button>
+                            <button class="btn btn-success btn-sm flex-fill d-flex align-items-center justify-content-center gap-1" id="client-acc-pay">
+                                <i class="bi bi-cash-coin"></i> Registrar Pago
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="client-acc-loading" class="text-center py-3 d-none">
+                        <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                        <p class="text-muted small mt-1 mb-0">Cargando movimientos...</p>
+                    </div>
+
+                    <div id="client-acc-empty" class="text-center text-muted py-4 d-none">
+                        <i class="bi bi-receipt" style="font-size: 1.5rem; opacity: 0.5;"></i>
+                        <p class="small mt-2 mb-0">Seleccioná un cliente para ver su cuenta corriente.</p>
+                    </div>
+
+                    <div class="table-responsive border rounded d-none" id="client-acc-table-wrapper">
+                        <table class="table table-hover table-sm align-middle mb-0" style="font-size: 0.85rem;">
+                            <thead class="bg-light">
+                                <tr>
+                                    <th class="ps-3 py-2 text-muted font-weight-normal">Fecha</th>
+                                    <th class="py-2 text-muted font-weight-normal">Concepto</th>
+                                    <th class="text-end py-2 text-muted font-weight-normal">Debe (Factura)</th>
+                                    <th class="text-end py-2 text-muted font-weight-normal">Haber (Pago)</th>
+                                    <th class="text-end py-2 pe-3 text-muted font-weight-normal">Saldo</th>
+                                </tr>
+                            </thead>
+                            <tbody id="client-acc-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        loadClients();
+        setDefaultDates();
+        attachEvents();
+    }
+
+    function loadClients() {
+        const datalist = document.getElementById('client-acc-list');
+        if (!datalist || !ReferenceService) return;
+
+        ReferenceService.load().then(() => {
+            const refs = ReferenceService.get();
+            const clients = refs && refs.clientes ? refs.clientes : [];
+            datalist.innerHTML = '';
+            clients.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = typeof c === 'string' ? c : (c.razonSocial || c.nombre);
+                datalist.appendChild(opt);
+            });
+        });
+    }
+
+    function attachEvents() {
+        const searchBtn = document.getElementById('client-acc-search');
+        if (searchBtn) searchBtn.addEventListener('click', handleSearch);
+
+        const payBtn = document.getElementById('client-acc-pay');
+        if (payBtn) payBtn.addEventListener('click', openPaymentModal);
+    }
+
+    function setDefaultDates() {
+        const now = new Date();
+        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+        const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+        const startInput = document.getElementById('client-acc-start');
+        const endInput = document.getElementById('client-acc-end');
+        if (startInput) startInput.valueAsDate = firstDay;
+        if (endInput) endInput.valueAsDate = lastDay;
+    }
+
+    function handleSearch() {
+        const client = document.getElementById('client-acc-input').value;
+        const startDate = document.getElementById('client-acc-start').value;
+        const endDate = document.getElementById('client-acc-end').value;
+
+        if (!client) {
+            Alerts && Alerts.showAlert('Seleccioná un cliente', 'warning');
+            return;
+        }
+
+        if (!startDate || !endDate) {
+            Alerts && Alerts.showAlert('Seleccioná un rango de fechas', 'warning');
+            return;
+        }
+
+        toggleLoading(true);
+        ApiService.call('getClientAccountStatement', client, startDate, endDate)
+            .then(renderTable)
+            .catch(err => {
+                console.error(err);
+                Alerts && Alerts.showAlert('Error al cargar cuenta corriente: ' + err.message, 'danger');
+            })
+            .finally(() => toggleLoading(false));
+    }
+
+    function renderTable(data) {
+        const tbody = document.getElementById('client-acc-tbody');
+        const wrapper = document.getElementById('client-acc-table-wrapper');
+        const empty = document.getElementById('client-acc-empty');
+
+        if (!tbody || !wrapper || !empty) return;
+
+        tbody.innerHTML = '';
+
+        const rows = data && data.movimientos ? data.movimientos : [];
+        const saldoInicial = data && typeof data.saldoInicial === 'number' ? data.saldoInicial : 0;
+
+        if (rows.length === 0 && saldoInicial === 0) {
+            wrapper.classList.add('d-none');
+            empty.classList.remove('d-none');
+            empty.innerHTML = '<i class="bi bi-info-circle" style="font-size: 1.5rem; opacity: 0.5;"></i><p class="small mt-2 mb-0">No hay movimientos registrados en este período.</p>';
+            return;
+        }
+
+        // Fila de saldo inicial
+        const initialRow = document.createElement('tr');
+        initialRow.className = 'table-secondary fw-bold';
+        initialRow.innerHTML = `
+            <td class="ps-3" colspan="2">Saldo Anterior</td>
+            <td class="text-end">-</td>
+            <td class="text-end">-</td>
+            <td class="text-end pe-3 ${saldoInicial > 0 ? 'text-danger' : (saldoInicial < 0 ? 'text-success' : 'text-muted')}">${formatCurrency(saldoInicial)}</td>
+        `;
+        tbody.appendChild(initialRow);
+
+        // Movimientos del período
+        rows.forEach(r => {
+            const tr = document.createElement('tr');
+            const saldoClass = r.saldo > 0 ? 'text-danger' : (r.saldo < 0 ? 'text-success' : 'text-muted');
+            const d = new Date(r.fecha);
+            const dateStr = d.toLocaleDateString('es-AR');
+
+            tr.innerHTML = `
+                <td class="ps-3">${dateStr}</td>
+                <td>${r.concepto}</td>
+                <td class="text-end text-danger">${r.debe > 0 ? formatCurrency(r.debe) : '-'}</td>
+                <td class="text-end text-success">${r.haber > 0 ? formatCurrency(r.haber) : '-'}</td>
+                <td class="text-end fw-bold pe-3 ${saldoClass}">${formatCurrency(r.saldo)}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        wrapper.classList.remove('d-none');
+        empty.classList.add('d-none');
+    }
+
+    function openPaymentModal() {
+        const client = document.getElementById('client-acc-input').value;
+        if (!client) {
+            Alerts && Alerts.showAlert('Seleccioná un cliente primero', 'warning');
+            return;
+        }
+
+        const existing = document.getElementById('client-pay-modal');
+        if (existing) existing.remove();
+
+        const modalHtml = `
+            <div class="modal fade" id="client-pay-modal" tabindex="-1">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h6 class="modal-title fw-bold">Registrar Pago de Cliente</h6>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="mb-3">
+                                <label class="form-label small text-muted fw-bold">Cliente</label>
+                                <input type="text" class="form-control" value="${client}" disabled>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label small text-muted fw-bold">Fecha</label>
+                                <input type="date" id="cp-fecha" class="form-control" value="${new Date().toISOString().slice(0, 10)}">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label small text-muted fw-bold">Monto</label>
+                                <input type="number" id="cp-monto" class="form-control" step="0.01">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label small text-muted fw-bold">Observaciones</label>
+                                <textarea id="cp-obs" class="form-control" rows="2"></textarea>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                            <button type="button" class="btn btn-primary btn-sm" id="cp-save">Guardar</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = modalHtml.trim();
+        document.body.appendChild(wrapper.firstChild);
+
+        const modalEl = document.getElementById('client-pay-modal');
+        const modal = new bootstrap.Modal(modalEl);
+        modal.show();
+
+        const saveBtn = document.getElementById('cp-save');
+        if (saveBtn) {
+            saveBtn.addEventListener('click', function () {
+                const fecha = document.getElementById('cp-fecha').value;
+                const monto = document.getElementById('cp-monto').value;
+                const obs = document.getElementById('cp-obs').value;
+
+                if (!monto) {
+                    Alerts.showAlert('Ingresá un monto', 'warning');
+                    return;
+                }
+
+                UiState.setGlobalLoading(true, 'Guardando pago...');
+                ApiService.call('recordClientPayment', fecha, client, monto, obs)
+                    .then(() => {
+                        Alerts.showAlert('Pago registrado', 'success');
+                        modal.hide();
+                        modalEl.remove();
+                        handleSearch(); // Refresh
+                    })
+                    .catch(err => {
+                        Alerts.showAlert('Error: ' + err.message, 'danger');
+                    })
+                    .finally(() => UiState.setGlobalLoading(false));
+            });
+        }
+
+        modalEl.addEventListener('hidden.bs.modal', () => modalEl.remove());
+    }
+
+    function toggleLoading(show) {
+        const loading = document.getElementById('client-acc-loading');
+        const empty = document.getElementById('client-acc-empty');
+        const wrapper = document.getElementById('client-acc-table-wrapper');
+
+        if (loading) loading.classList.toggle('d-none', !show);
+        if (show) {
+            if (empty) empty.classList.add('d-none');
+            if (wrapper) wrapper.classList.add('d-none');
+        }
+    }
+
+    function formatCurrency(v) {
+        return Number(v).toLocaleString('es-AR', { style: 'currency', currency: 'ARS' });
+    }
+
+    return { render };
+})();
+
+
+/**
+ * Panel de reporte de horas por cliente
+ */
+var ClientReportPanel = (function () {
+    const containerId = 'client-report-panel';
+    let lastRows = [];
+
+    function render() {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+
+        container.innerHTML = `
+            <div class="card shadow-sm mb-3">
+                <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="mb-0 text-primary fw-bold"><i class="bi bi-graph-up me-2"></i>Reporte de Clientes</h6>
+                    </div>
+                    <span class="badge text-bg-light border">Vista dedicada</span>
+                </div>
+                <div class="card-body p-3">
+                    <div class="row g-2 mb-3 align-items-end">
+                        <div class="col-md-4">
+                            <label class="form-label small text-muted fw-bold mb-1">Cliente</label>
+                            <input list="client-report-client-list" id="client-report-client" class="form-control form-control-sm" placeholder="Buscar cliente...">
+                            <datalist id="client-report-client-list"></datalist>
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <label class="form-label small text-muted fw-bold mb-1">Desde</label>
+                            <input type="date" id="client-report-start" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <label class="form-label small text-muted fw-bold mb-1">Hasta</label>
+                            <input type="date" id="client-report-end" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-4 d-flex gap-2">
+                            <button class="btn btn-primary btn-sm flex-fill d-flex align-items-center justify-content-center gap-1" id="client-report-search">
+                                <i class="bi bi-search"></i> Buscar
+                            </button>
+                            <button class="btn btn-danger btn-sm flex-fill d-flex align-items-center justify-content-center gap-1" id="client-report-pdf" title="Descargar PDF">
+                                <i class="bi bi-file-earmark-pdf-fill"></i> PDF
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="client-report-loading" class="text-center py-3 d-none">
+                        <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                        <p class="text-muted small mt-1 mb-0">Procesando...</p>
+                    </div>
+
+                    <div id="client-report-summary" class="row g-2 mb-3 d-none">
+                        <div class="col-6 col-md-2">
+                            <div class="card h-100 shadow-none border bg-light text-center">
+                                <div class="card-body py-2 px-1">
+                                    <div class="small text-muted text-uppercase" style="font-size: 0.7rem;">Horas</div>
+                                    <div class="fs-6 fw-bold mb-0 text-dark" id="client-summary-hours">0</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <div class="card h-100 shadow-none border bg-light text-center">
+                                <div class="card-body py-2 px-1">
+                                    <div class="small text-muted text-uppercase" style="font-size: 0.7rem;">Empleados</div>
+                                    <div class="fs-6 fw-bold mb-0 text-dark" id="client-summary-emps">0</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <div class="card h-100 shadow-none border bg-light text-center">
+                                <div class="card-body py-2 px-1">
+                                    <div class="small text-muted text-uppercase" style="font-size: 0.7rem;">Días</div>
+                                    <div class="fs-6 fw-bold mb-0 text-dark" id="client-summary-days">0</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="card h-100 shadow-none border bg-light text-center">
+                                <div class="card-body py-2 px-1">
+                                    <div class="small text-muted text-uppercase" style="font-size: 0.7rem;">Valor Hora</div>
+                                    <div class="fs-6 fw-bold mb-0 text-dark" id="client-summary-rate">$0</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-12 col-md-3">
+                            <div class="card h-100 shadow-sm border-0 text-center" style="background: linear-gradient(135deg, #0f172a, #334155); color:#fff;">
+                                <div class="card-body py-2 px-1">
+                                    <div class="small text-white-50 text-uppercase" style="font-size: 0.7rem;">Total a Facturar</div>
+                                    <div class="fs-5 fw-bold mb-0" id="client-summary-total">$0</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="client-report-aggregate" class="card shadow-none border mb-3 d-none">
+                        <div class="card-header bg-light py-1 px-3">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="text-muted small fw-bold text-uppercase" style="font-size: 0.75rem;">Resumen por Empleado</span>
+                                <span class="badge bg-white text-dark border" id="client-agg-count"></span>
+                            </div>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-sm mb-0 align-middle table-striped" style="font-size: 0.85rem;">
+                                    <thead class="bg-light text-muted">
+                                        <tr>
+                                            <th class="ps-3 border-0 font-weight-normal">Empleado</th>
+                                            <th class="text-center border-0 font-weight-normal">Horas</th>
+                                            <th class="text-center border-0 font-weight-normal">Días</th>
+                                            <th class="text-center border-0 font-weight-normal">Registros</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="client-report-agg-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="client-report-results" class="d-none">
+                        <div class="table-responsive border rounded">
+                            <table class="table table-hover table-sm align-middle mb-0" style="font-size: 0.85rem;">
+                                <thead class="bg-light">
+                                    <tr>
+                                        <th class="ps-3 py-2 text-muted font-weight-normal">Fecha</th>
+                                        <th class="py-2 text-muted font-weight-normal">Empleado</th>
+                                        <th class="text-center py-2 text-muted font-weight-normal">Horas</th>
+                                        <th class="text-center py-2 text-muted font-weight-normal">Asist.</th>
+                                        <th class="py-2 text-muted font-weight-normal">Observaciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="client-report-tbody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div id="client-report-empty" class="text-center text-muted py-4 d-none">
+                        <i class="bi bi-search" style="font-size: 1.5rem; opacity: 0.5;"></i>
+                        <p class="small mt-2 mb-0">Utilizá los filtros para buscar registros.</p>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        lastRows = [];
+        setDefaultDates();
+        loadClients();
+        attachEvents();
+    }
+
+    function attachEvents() {
+        const searchBtn = document.getElementById('client-report-search');
+        if (searchBtn) searchBtn.addEventListener('click', handleSearch);
+
+        const pdfBtn = document.getElementById('client-report-pdf');
+        if (pdfBtn) pdfBtn.addEventListener('click', handleExportPdf);
+
+        const csvBtn = document.getElementById('client-report-csv');
+        if (csvBtn) csvBtn.addEventListener('click', handleExportCsv);
+    }
+
+    function setDefaultDates() {
+        const now = new Date();
+        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+        const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+        const startInput = document.getElementById('client-report-start');
+        const endInput = document.getElementById('client-report-end');
+        if (startInput) startInput.valueAsDate = firstDay;
+        if (endInput) endInput.valueAsDate = lastDay;
+    }
+
+    function loadClients() {
+        const datalist = document.getElementById('client-report-client-list');
+        const input = document.getElementById('client-report-client');
+        if (!datalist || !input) return;
+
+        datalist.innerHTML = '';
+        input.value = '';
+
+        if (typeof ReferenceService === 'undefined' || !ReferenceService.load) {
+            console.warn('ReferenceService no disponible');
+            return;
+        }
+
+        ReferenceService.load()
+            .then(() => {
+                const refs = ReferenceService.get();
+                populateClientList(refs && refs.clientes ? refs.clientes : []);
+            })
+            .catch(err => {
+                console.error('Error cargando clientes:', err);
+                Alerts && Alerts.showAlert('No se pudieron cargar clientes. Reintentá.', 'warning');
+            });
+    }
+
+    function formatClientLabel(cli) {
+        if (!cli) return '';
+        if (typeof cli === 'string') return cli;
+        // Preferir razón social, luego nombre; agregar CUIT si está disponible
+        const base = cli.razonSocial || cli.nombre || '';
+        const cuit = cli.cuit ? ` (${cli.cuit})` : '';
+        return (base + cuit).trim();
+    }
+
+    function populateClientList(clients) {
+        const datalist = document.getElementById('client-report-client-list');
+        if (!datalist) return;
+
+        datalist.innerHTML = '';
+        const list = Array.isArray(clients) ? clients.slice() : [];
+
+        list
+            .map(cli => ({ raw: cli, label: formatClientLabel(cli) }))
+            .filter(item => item.label)
+            .sort((a, b) => a.label.localeCompare(b.label, 'es'))
+            .forEach(item => {
+                const opt = document.createElement('option');
+                opt.value = item.label;
+                datalist.appendChild(opt);
+            });
+    }
+
+    function getFilters() {
+        const start = document.getElementById('client-report-start');
+        const end = document.getElementById('client-report-end');
+        const client = document.getElementById('client-report-client');
+
+        return {
+            start: start ? start.value : '',
+            end: end ? end.value : '',
+            client: client ? client.value : ''
+        };
+    }
+
+    function handleSearch() {
+        const filters = getFilters();
+        if (!filters.client) {
+            Alerts && Alerts.showAlert('Seleccioná un cliente para consultar', 'warning');
+            return;
+        }
+
+        toggleLoading(true);
+        ApiService.call('getHoursByClient', filters.start, filters.end, filters.client)
+            .then(res => {
+                const rows = res && res.rows ? res.rows : [];
+                const summary = res && res.summary ? res.summary : {};
+                lastRows = rows;
+                renderSummary(rows, summary);
+                renderTable(rows);
+                renderAggregate(rows);
+            })
+            .catch(err => {
+                console.error('Error en reporte de clientes:', err);
+                Alerts && Alerts.showAlert('No se pudo cargar el reporte: ' + (err.message || err), 'danger');
+            })
+            .finally(() => toggleLoading(false));
+    }
+
+    function handleExportPdf() {
+        const filters = getFilters();
+        if (!filters.client) {
+            Alerts && Alerts.showAlert('Seleccioná un cliente para exportar', 'warning');
+            return;
+        }
+        if (!lastRows || lastRows.length === 0) {
+            Alerts && Alerts.showAlert('Generá primero el reporte para descargarlo.', 'info');
+            return;
+        }
+
+        const btn = document.getElementById('client-report-pdf');
+        const originalContent = btn ? btn.innerHTML : '';
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Descargando...';
+        }
+
+        UiState && UiState.setGlobalLoading(true, 'Generando PDF...');
+        ApiService.call('generateClientHoursPdf', filters.start, filters.end, filters.client)
+            .then(res => {
+                if (!res || !res.base64) throw new Error('No se pudo generar PDF');
+                const link = document.createElement('a');
+                link.href = 'data:application/pdf;base64,' + res.base64;
+                link.download = res.filename || 'reporte_cliente.pdf';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            })
+            .catch(err => {
+                Alerts && Alerts.showAlert('Error generando PDF: ' + err.message, 'danger');
+            })
+            .finally(() => {
+                UiState && UiState.setGlobalLoading(false);
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = originalContent;
+                }
+            });
+    }
+
+    function handleExportCsv() {
+        if (!lastRows || lastRows.length === 0) {
+            Alerts && Alerts.showAlert('Nada para exportar. Buscá primero.', 'info');
+            return;
+        }
+
+        const headers = ['Fecha', 'Cliente', 'Empleado', 'Horas', 'Asistencia', 'Observaciones'];
+        const rows = lastRows.map(r => [
+            r.fecha || '',
+            '"' + (String(r.cliente || '')).replace(/"/g, '""') + '"',
+            '"' + (String(r.empleado || '')).replace(/"/g, '""') + '"',
+            Number(r.horas || 0),
+            r.asistencia === false ? 'No' : 'Si',
+            '"' + (String(r.observaciones || '')).replace(/"/g, '""') + '"'
+        ]);
+
+        const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'reporte_cliente_' + new Date().toISOString().slice(0, 10) + '.csv';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }
+
+    function renderSummary(rows, summary) {
+        const box = document.getElementById('client-report-summary');
+        if (!box) return;
+
+        if (!rows || rows.length === 0) {
+            box.classList.add('d-none');
+            return;
+        }
+
+        const totals = {
+            totalHoras: 0,
+            empleados: 0,
+            dias: 0,
+            valorHora: 0,
+            totalFacturacion: 0,
+            ...(summary || {})
+        };
+
+        const setText = (id, value) => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = value;
+        };
+
+        setText('client-summary-hours', formatNumber(totals.totalHoras));
+        setText('client-summary-emps', formatNumber(totals.empleados, 0));
+        setText('client-summary-days', formatNumber(totals.dias, 0));
+        const rateEl = document.getElementById('client-summary-rate');
+        const totalEl = document.getElementById('client-summary-total');
+        if (rateEl) rateEl.textContent = formatCurrency(totals.valorHora);
+        if (totalEl) totalEl.textContent = formatCurrency(totals.totalFacturacion);
+
+        box.classList.remove('d-none');
+    }
+
+    function renderAggregate(rows) {
+        const wrapper = document.getElementById('client-report-aggregate');
+        const tbody = document.getElementById('client-report-agg-body');
+        const countBadge = document.getElementById('client-agg-count');
+        if (!wrapper || !tbody) return;
+
+        tbody.innerHTML = '';
+
+        if (!rows || rows.length === 0) {
+            wrapper.classList.add('d-none');
+            if (countBadge) countBadge.textContent = '';
+            return;
+        }
+
+        const aggMap = new Map();
+        rows.forEach(r => {
+            const key = r.empleado || 'Sin empleado';
+            const entry = aggMap.get(key) || { horas: 0, dias: new Set(), registros: 0 };
+            const h = Number(r.horas);
+            entry.horas += isNaN(h) ? 0 : h;
+            if (r.fecha) entry.dias.add(r.fecha);
+            entry.registros += 1;
+            aggMap.set(key, entry);
+        });
+
+        const list = Array.from(aggMap.entries()).map(([empleado, info]) => ({
+            empleado: empleado,
+            horas: info.horas,
+            dias: info.dias.size,
+            registros: info.registros
+        })).sort((a, b) => b.horas - a.horas);
+
+        list.forEach(item => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${item.empleado}</td>
+                <td class="text-center fw-bold">${formatNumber(item.horas)}</td>
+                <td class="text-center">${formatNumber(item.dias, 0)}</td>
+                <td class="text-center">${formatNumber(item.registros, 0)}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        if (countBadge) countBadge.textContent = list.length + ' empleados';
+        wrapper.classList.remove('d-none');
+    }
+
+    function renderTable(rows) {
+        const tbody = document.getElementById('client-report-tbody');
+        const results = document.getElementById('client-report-results');
+        const empty = document.getElementById('client-report-empty');
+        if (!tbody || !results || !empty) return;
+
+        tbody.innerHTML = '';
+
+        if (!rows || rows.length === 0) {
+            results.classList.add('d-none');
+            empty.classList.remove('d-none');
+            return;
+        }
+
+        rows.forEach(r => {
+            const tr = document.createElement('tr');
+            const asistenciaBadge = r.asistencia === false
+                ? '<span class="badge bg-danger-subtle text-danger">No</span>'
+                : '<span class="badge bg-success-subtle text-success">Sí</span>';
+            tr.innerHTML = `
+                <td>${r.fecha || ''}</td>
+                <td>${r.empleado || ''}</td>
+                <td class="text-center fw-bold">${formatNumber(r.horas)}</td>
+                <td class="text-center">${asistenciaBadge}</td>
+                <td class="text-muted small">${r.observaciones || '-'}</td>
+            `;
+            if (r.asistencia === false) {
+                tr.classList.add('table-warning');
+            }
+            tbody.appendChild(tr);
+        });
+
+        results.classList.remove('d-none');
+        empty.classList.add('d-none');
+    }
+
+    function toggleLoading(show) {
+        const loading = document.getElementById('client-report-loading');
+        const results = document.getElementById('client-report-results');
+        const empty = document.getElementById('client-report-empty');
+
+        if (loading) loading.classList.toggle('d-none', !show);
+        if (show) {
+            if (results) results.classList.add('d-none');
+            if (empty) empty.classList.add('d-none');
+        }
+    }
+
+    function formatNumber(val, decimals) {
+        const num = Number(val);
+        if (isNaN(num)) return '0';
+        const fractionDigits = typeof decimals === 'number' ? decimals : 2;
+        return num.toLocaleString('es-AR', { minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits });
+    }
+
+    function formatCurrency(val) {
+        const num = Number(val);
+        return num.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2 });
+    }
+
+    return {
+        render: render
+    };
+})();
+
+
+/**
+ * Panel de resumen mensual por empleado
+ */
+var MonthlySummaryPanel = (function () {
+    const containerId = 'monthly-summary-panel';
+
+    function render() {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+
+        container.innerHTML = `
+            <div class="card shadow-sm mb-3">
+                <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="mb-0 text-primary fw-bold"><i class="bi bi-calendar3 me-2"></i>Resumen Mensual</h6>
+                    </div>
+                </div>
+                <div class="card-body p-3">
+                    <div class="row g-2 mb-3 align-items-end">
+                        <div class="col-md-3">
+                            <label class="form-label small text-muted fw-bold mb-1">Mes</label>
+                            <input type="month" id="ms-month" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-2">
+                            <button class="btn btn-primary btn-sm w-100 d-flex align-items-center justify-content-center gap-1" id="ms-search">
+                                <i class="bi bi-search"></i> Consultar
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="ms-loading" class="text-center py-3 d-none">
+                        <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                        <p class="text-muted small mt-1 mb-0">Calculando...</p>
+                    </div>
+                    <div id="ms-empty" class="text-center text-muted py-4 d-none">
+                        <i class="bi bi-calendar-x" style="font-size: 1.5rem; opacity: 0.5;"></i>
+                        <p class="small mt-2 mb-0">Sin datos para el mes seleccionado.</p>
+                    </div>
+                    <div class="table-responsive border rounded d-none" id="ms-table-wrapper">
+                        <table class="table table-hover table-sm align-middle mb-0" style="font-size: 0.85rem;">
+                            <thead class="bg-light">
+                                <tr>
+                                    <th class="ps-3 py-2 text-muted font-weight-normal">Empleado</th>
+                                    <th class="text-center py-2 text-muted font-weight-normal">Horas</th>
+                                    <th class="text-center py-2 text-muted font-weight-normal">Valor Hora</th>
+                                    <th class="text-center py-2 text-muted font-weight-normal">Viáticos</th>
+                                    <th class="text-center py-2 text-muted font-weight-normal">Presentismo</th>
+                                    <th class="text-center py-2 text-muted font-weight-normal">Adelantos</th>
+                                    <th class="text-center py-2 text-muted font-weight-normal">Total</th>
+                                    <th class="text-end py-2 pe-3 text-muted font-weight-normal">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ms-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const monthInput = document.getElementById('ms-month');
+        if (monthInput) {
+            const now = new Date();
+            const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+            monthInput.value = ym;
+        }
+
+        const btn = document.getElementById('ms-search');
+        if (btn) btn.addEventListener('click', handleSearch);
+    }
+
+    function handleSearch() {
+        const monthInput = document.getElementById('ms-month');
+        const val = monthInput ? monthInput.value : '';
+        if (!val) {
+            Alerts && Alerts.showAlert('Selecciona un mes', 'warning');
+            return;
+        }
+        const [y, m] = val.split('-');
+
+        toggleLoading(true);
+        ApiService.call('getMonthlySummary', Number(y), Number(m))
+            .then(renderTable)
+            .catch(err => {
+                console.error(err);
+                Alerts && Alerts.showAlert('Error al calcular resumen: ' + err.message, 'danger');
+            })
+            .finally(() => toggleLoading(false));
+    }
+
+    function renderTable(rows) {
+        const tbody = document.getElementById('ms-tbody');
+        const wrapper = document.getElementById('ms-table-wrapper');
+        const empty = document.getElementById('ms-empty');
+
+        if (!tbody || !wrapper || !empty) return;
+
+        tbody.innerHTML = '';
+
+        if (!rows || !rows.length) {
+            wrapper.classList.add('d-none');
+            empty.classList.remove('d-none');
+            return;
+        }
+
+        rows.forEach(row => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${row.empleado}</td>
+                <td class="text-center fw-bold">${formatNumber(row.horas)}</td>
+                <td class="text-center">${formatCurrency(row.valorHora)}</td>
+                <td class="text-center">${formatCurrency(row.viaticos)}</td>
+                <td class="text-center">${formatCurrency(row.presentismo)}</td>
+                <td class="text-center text-danger">${formatCurrency(row.adelantos)}</td>
+                <td class="text-center fw-bold text-success">${formatCurrency(row.totalNeto)}</td>
+                <td class="text-end">
+                    <button class="btn btn-sm btn-outline-primary ms-view-detail" data-emp="${row.empleado}">
+                        <i class="bi bi-eye"></i> Detalle
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        // Acción Ver detalle: cambia a Reportes y prefiltra
+        document.querySelectorAll('.ms-view-detail').forEach(btn => {
+            btn.addEventListener('click', function () {
+                const emp = this.getAttribute('data-emp');
+                if (!emp) return;
+                const monthInput = document.getElementById('ms-month');
+                const val = monthInput ? monthInput.value : '';
+                const [y, m] = val.split('-');
+                const start = `${y}-${m}-01`;
+                const end = new Date(Number(y), Number(m), 0);
+                const endStr = `${y}-${m}-${String(end.getDate()).padStart(2, '0')}`;
+
+                const event = new CustomEvent('view-change', { detail: { view: 'reportes' } });
+                document.dispatchEvent(event);
+
+                setTimeout(() => {
+                    const empInput = document.getElementById('hours-filter-employee');
+                    const startInput = document.getElementById('hours-filter-start');
+                    const endInput = document.getElementById('hours-filter-end');
+                    if (empInput) empInput.value = emp;
+                    if (startInput) startInput.value = start;
+                    if (endInput) endInput.value = endStr;
+                    const btnSearch = document.getElementById('btn-search-hours');
+                    if (btnSearch) btnSearch.click();
+                }, 200);
+            });
+        });
+
+        wrapper.classList.remove('d-none');
+        empty.classList.add('d-none');
+    }
+
+    function toggleLoading(show) {
+        const loading = document.getElementById('ms-loading');
+        const empty = document.getElementById('ms-empty');
+        const wrapper = document.getElementById('ms-table-wrapper');
+        if (loading) loading.classList.toggle('d-none', !show);
+        if (wrapper && show) wrapper.classList.add('d-none');
+        if (empty && show) empty.classList.add('d-none');
+    }
+
+    function formatNumber(v) {
+        const n = Number(v);
+        return isNaN(n) ? '0.00' : n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function formatCurrency(v) {
+        const n = Number(v);
+        return n.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2 });
+    }
+
+    return { render };
+})();
+
+
+/**
+ * Cuenta corriente de empleados (debe/haber mensual)
+ */
+var AccountStatementPanel = (function () {
+    const containerId = 'account-statement-panel';
+
+    function render() {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+
+        container.innerHTML = `
+            <div class="card shadow-sm mb-3">
+                <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="mb-0 text-primary fw-bold"><i class="bi bi-journal-text me-2"></i>Cuenta Corriente Empleados</h6>
+                    </div>
+                </div>
+                <div class="card-body p-3">
+                    <div class="row g-2 mb-3 align-items-end">
+                        <div class="col-md-3">
+                            <label class="form-label small text-muted fw-bold mb-1">Mes</label>
+                            <input type="month" id="acc-month" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-4 d-flex gap-2">
+                            <button class="btn btn-outline-primary btn-sm d-flex align-items-center justify-content-center gap-1" id="acc-refresh" title="Actualizar">
+                                <i class="bi bi-arrow-repeat"></i>
+                            </button>
+                            <button class="btn btn-success btn-sm flex-fill d-flex align-items-center justify-content-center gap-1" id="acc-new-payment">
+                                <i class="bi bi-cash-coin"></i> Registrar pago
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="acc-loading" class="text-center py-3 d-none">
+                        <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                        <p class="text-muted small mt-1 mb-0">Cargando...</p>
+                    </div>
+                    <div id="acc-empty" class="text-center text-muted py-4 d-none">
+                        <i class="bi bi-wallet2" style="font-size: 1.5rem; opacity: 0.5;"></i>
+                        <p class="small mt-2 mb-0">Sin movimientos para el mes seleccionado.</p>
+                    </div>
+                    <div class="table-responsive border rounded d-none" id="acc-table-wrapper">
+                        <table class="table table-hover table-sm align-middle mb-0" style="font-size: 0.85rem;">
+                            <thead class="bg-light">
+                                <tr>
+                                    <th class="ps-3 py-2 text-muted font-weight-normal">Empleado</th>
+                                    <th class="text-center py-2 text-muted font-weight-normal">Debe (neto)</th>
+                                    <th class="text-center py-2 text-muted font-weight-normal">Haber (pagos+adelantos)</th>
+                                    <th class="text-center py-2 text-muted font-weight-normal">Saldo</th>
+                                </tr>
+                            </thead>
+                            <tbody id="acc-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const monthInput = document.getElementById('acc-month');
+        if (monthInput) {
+            const now = new Date();
+            const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+            monthInput.value = ym;
+        }
+
+        const refreshBtn = document.getElementById('acc-refresh');
+        if (refreshBtn) refreshBtn.addEventListener('click', loadData);
+        const newPayBtn = document.getElementById('acc-new-payment');
+        if (newPayBtn) newPayBtn.addEventListener('click', openPaymentModal);
+        loadData();
+    }
+
+    function loadData() {
+        const monthInput = document.getElementById('acc-month');
+        const val = monthInput ? monthInput.value : '';
+        if (!val) return;
+        const [y, m] = val.split('-');
+
+        toggleLoading(true);
+        ApiService.call('getEmployeeAccountStatement', Number(y), Number(m))
+            .then(renderTable)
+            .catch(err => {
+                console.error(err);
+                Alerts && Alerts.showAlert('Error cuenta corriente: ' + err.message, 'danger');
+            })
+            .finally(() => toggleLoading(false));
+    }
+
+    function renderTable(rows) {
+        const tbody = document.getElementById('acc-tbody');
+        const wrapper = document.getElementById('acc-table-wrapper');
+        const empty = document.getElementById('acc-empty');
+        if (!tbody || !wrapper || !empty) return;
+
+        tbody.innerHTML = '';
+        if (!rows || !rows.length) {
+            wrapper.classList.add('d-none');
+            empty.classList.remove('d-none');
+            return;
+        }
+
+        rows.forEach(r => {
+            const tr = document.createElement('tr');
+            const saldoClass = Number(r.saldo) >= 0 ? 'text-success' : 'text-danger';
+            tr.innerHTML = `
+                <td>${r.empleado}</td>
+                <td class="text-center">${formatCurrency(r.debe)}</td>
+                <td class="text-center">${formatCurrency(r.haber)}</td>
+                <td class="text-center fw-bold ${saldoClass}">${formatCurrency(r.saldo)}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        wrapper.classList.remove('d-none');
+        empty.classList.add('d-none');
+    }
+
+    function openPaymentModal() {
+        const existing = document.getElementById('acc-payment-modal');
+        if (existing) existing.remove();
+
+        const modalHtml = `
+            <div class="modal fade" id="acc-payment-modal" tabindex="-1">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Registrar pago a empleado</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="mb-3">
+                                <label class="form-label small text-muted">Empleado</label>
+                                <input list="acc-emp-list" id="acc-pay-emp" class="form-control" placeholder="Empleado">
+                                <datalist id="acc-emp-list"></datalist>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label small text-muted">Fecha</label>
+                                <input type="date" id="acc-pay-fecha" class="form-control" value="${getToday()}">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label small text-muted">Concepto</label>
+                                <input type="text" id="acc-pay-concepto" class="form-control" value="Pago mensual">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label small text-muted">Monto</label>
+                                <input type="number" step="0.01" id="acc-pay-monto" class="form-control">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label small text-muted">Observaciones</label>
+                                <textarea id="acc-pay-obs" class="form-control" rows="2"></textarea>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                            <button type="button" class="btn btn-primary" id="acc-pay-save">Guardar</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = modalHtml.trim();
+        document.body.appendChild(wrapper.firstChild);
+
+        const datalist = document.getElementById('acc-emp-list');
+        if (datalist && ReferenceService && ReferenceService.get) {
+            const emps = ReferenceService.get().empleados || [];
+            datalist.innerHTML = '';
+            emps.forEach(e => {
+                const opt = document.createElement('option');
+                opt.value = e;
+                datalist.appendChild(opt);
+            });
+        }
+
+        const modalEl = document.getElementById('acc-payment-modal');
+        const modal = new bootstrap.Modal(modalEl);
+        modal.show();
+
+        const saveBtn = document.getElementById('acc-pay-save');
+        if (saveBtn) {
+            saveBtn.addEventListener('click', function () {
+                const emp = document.getElementById('acc-pay-emp').value;
+                const fecha = document.getElementById('acc-pay-fecha').value;
+                const concepto = document.getElementById('acc-pay-concepto').value;
+                const monto = document.getElementById('acc-pay-monto').value;
+                const obs = document.getElementById('acc-pay-obs').value;
+
+                if (!emp || !monto) {
+                    Alerts && Alerts.showAlert('Empleado y monto son requeridos', 'warning');
+                    return;
+                }
+
+                UiState && UiState.setGlobalLoading(true, 'Guardando pago...');
+                ApiService.call('recordEmployeePayment', fecha, emp, concepto, monto, obs)
+                    .then(() => {
+                        Alerts && Alerts.showAlert('Pago registrado', 'success');
+                        modal.hide();
+                        modalEl.remove();
+                        loadData();
+                    })
+                    .catch(err => {
+                        Alerts && Alerts.showAlert('Error al guardar pago: ' + err.message, 'danger');
+                    })
+                    .finally(() => {
+                        UiState && UiState.setGlobalLoading(false);
+                    });
+            });
+        }
+
+        modalEl.addEventListener('hidden.bs.modal', () => modalEl.remove());
+    }
+
+    function toggleLoading(show) {
+        const loading = document.getElementById('acc-loading');
+        const empty = document.getElementById('acc-empty');
+        const wrapper = document.getElementById('acc-table-wrapper');
+        if (loading) loading.classList.toggle('d-none', !show);
+        if (wrapper && show) wrapper.classList.add('d-none');
+        if (empty && show) empty.classList.add('d-none');
+    }
+
+    function formatCurrency(v) {
+        const n = Number(v);
+        return n.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2 });
+    }
+
+    function getToday() {
+        const now = new Date();
+        const y = now.getFullYear();
+        const m = String(now.getMonth() + 1).padStart(2, '0');
+        const d = String(now.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    }
+
+    return { render };
+})();
+
+
+/**
+ * Panel de Valores Masivos (empleados/clientes/viáticos/presentismo)
+ */
+var BulkValuesPanel = (function () {
+    const containerId = 'bulk-values-panel';
+
+    function render() {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+
+        container.innerHTML = `
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-white py-3">
+                    <h5 class="mb-0 text-primary">
+                        <i class="bi bi-sliders me-2"></i>Valores masivos
+                    </h5>
+                    <small class="text-muted">Actualiza en bloque valores de empleados y clientes.</small>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-3">
+                            <label class="form-label small text-muted fw-semibold">Valor hora (empleados)</label>
+                            <input type="number" step="0.01" class="form-control" id="bulk-valor-hora-emp" placeholder="Ej: 2500">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small text-muted fw-semibold">Valor hora (clientes)</label>
+                            <input type="number" step="0.01" class="form-control" id="bulk-valor-hora-cli" placeholder="Ej: 3000">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small text-muted fw-semibold">Viáticos (empleados)</label>
+                            <input type="number" step="0.01" class="form-control" id="bulk-viaticos" placeholder="Ej: 500">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small text-muted fw-semibold">Presentismo media jornada</label>
+                            <input type="number" step="0.01" class="form-control" id="bulk-pres-media" placeholder="Ej: 1000">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small text-muted fw-semibold">Presentismo jornada completa</label>
+                            <input type="number" step="0.01" class="form-control" id="bulk-pres-full" placeholder="Ej: 1500">
+                        </div>
+                    </div>
+
+                    <div class="d-flex justify-content-end mt-4">
+                        <button class="btn btn-primary" id="bulk-apply-btn">
+                            <i class="bi bi-arrow-repeat me-2"></i>Aplicar masivo
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const btn = document.getElementById('bulk-apply-btn');
+        if (btn) {
+            btn.addEventListener('click', applyValues);
+        }
+    }
+
+    function applyValues() {
+        const payload = {
+            valorHoraEmpleado: getInputValue('bulk-valor-hora-emp'),
+            valorHoraCliente: getInputValue('bulk-valor-hora-cli'),
+            viaticos: getInputValue('bulk-viaticos'),
+            presentismoMedia: getInputValue('bulk-pres-media'),
+            presentismoCompleta: getInputValue('bulk-pres-full')
+        };
+
+        UiState && UiState.setGlobalLoading(true, 'Aplicando valores...');
+
+        ApiService.call('applyMassValues', payload)
+            .then(() => {
+                Alerts && Alerts.showAlert('Valores actualizados masivamente.', 'success');
+                if (ReferenceService) {
+                    ReferenceService.load().then(() => {
+                        if (FormManager) {
+                            FormManager.updateReferenceData(ReferenceService.get());
+                        }
+                    });
+                }
+            })
+            .catch(err => {
+                Alerts && Alerts.showAlert('Error al aplicar valores: ' + err.message, 'danger');
+            })
+            .finally(() => {
+                UiState && UiState.setGlobalLoading(false);
+            });
+    }
+
+    function getInputValue(id) {
+        const el = document.getElementById(id);
+        if (!el) return '';
+        const v = el.value;
+        return v === '' ? '' : v;
+    }
+
+    return {
+        render
     };
 })();
 
@@ -2809,6 +5143,10 @@ var HoursDetailPanel = (function () {
             const titleEl = document.getElementById("form-title");
             const sugg = document.getElementById("search-suggestions");
 
+            // Restaurar footer del modal por si fue ocultado
+            const modalFooter = document.querySelector('.modal-footer-custom');
+            if (modalFooter) modalFooter.style.display = '';
+
             if (!container) {
                 console.error("Container not found:", containerId || "form-fields");
                 return;
@@ -2822,6 +5160,22 @@ var HoursDetailPanel = (function () {
                 // Actualizar visibilidad del footer si aplica
                 if (global.FooterManager) {
                     global.FooterManager.updateVisibility();
+                }
+                return;
+            }
+
+            // Renderizado custom para Plan Semanal
+            if (tipoFormato === "ASISTENCIA_PLAN" && global.WeeklyPlanPanel) {
+                container.innerHTML = "";
+                if (titleEl) titleEl.textContent = formDef ? formDef.title : "Plan Semanal";
+                global.WeeklyPlanPanel.render(container);
+                if (global.FooterManager) {
+                    global.FooterManager.updateVisibility();
+                }
+                // Evitar que se cargue la grilla por defecto
+                if (global.GridManager) {
+                    const gridContainer = document.getElementById("grid-container");
+                    if (gridContainer) gridContainer.innerHTML = "";
                 }
                 return;
             }
@@ -2853,13 +5207,6 @@ var HoursDetailPanel = (function () {
             // Autocompletar CUIT para FACTURACION y PAGOS
             if (tipoFormato === "FACTURACION" || tipoFormato === "PAGOS") {
                 setupCuitAutocomplete();
-            }
-
-            // Setup panels específicos por tipo - con timeout para asegurar que el DOM esté listo
-            if (tipoFormato === "ASISTENCIA_PLAN" && global.AttendancePanels) {
-                setTimeout(() => {
-                    global.AttendancePanels.setupWeeklyPlanPanel();
-                }, 100);
             }
 
             // Actualizar visibilidad del footer
@@ -3173,24 +5520,10 @@ var HoursDetailPanel = (function () {
     // 1. Load formats immediately
     if (FormManager) {
       FormManager.loadFormats().then(function () {
-        // Después de cargar los formatos, cargar la grilla del primer formato
+        // Después de cargar los formatos, disparar evento change para cargar la vista inicial correcta
         const formatoSelect = document.getElementById("formato");
         if (formatoSelect && formatoSelect.value) {
-          const tipoFormato = formatoSelect.value;
-
-          // Cargar registros y mostrar en grilla
-          ApiService.call("searchRecords", tipoFormato, "")
-            .then(function (records) {
-              if (GridManager) {
-                GridManager.renderGrid(tipoFormato, records || []);
-              }
-            })
-            .catch(function (err) {
-              console.error("Error cargando registros iniciales:", err);
-              if (GridManager) {
-                GridManager.renderGrid(tipoFormato, []);
-              }
-            });
+          formatoSelect.dispatchEvent(new Event('change'));
         }
       });
     }
@@ -3226,6 +5559,73 @@ var HoursDetailPanel = (function () {
       formatoSelect.addEventListener("change", function () {
         const tipoFormato = this.value;
         if (!tipoFormato) return;
+
+        // Actualizar título de la página
+        const pageTitle = document.getElementById('page-title');
+        const selectedOption = this.options[this.selectedIndex];
+        if (pageTitle && selectedOption) {
+          pageTitle.textContent = selectedOption.text;
+        }
+
+        // CASO ESPECIAL: Plan Semanal
+        if (tipoFormato === 'ASISTENCIA_PLAN' && typeof WeeklyPlanPanel !== 'undefined') {
+          // Ocultar grilla estándar
+          const gridContainer = document.getElementById('data-grid-container');
+          if (gridContainer) gridContainer.classList.add('d-none');
+
+          // Ocultar búsqueda y botón nuevo (ya que el panel tiene su propio botón nuevo)
+          const searchInput = document.getElementById('search-query');
+          if (searchInput) searchInput.parentElement.classList.add('d-none');
+
+          const btnNuevo = document.getElementById('btn-nuevo');
+          if (btnNuevo) btnNuevo.classList.add('d-none');
+
+          const btnRefresh = document.getElementById('btn-refresh');
+          if (btnRefresh) btnRefresh.classList.add('d-none');
+
+          // Crear o mostrar contenedor del panel personalizado
+          let customPanel = document.getElementById('custom-view-panel');
+          if (!customPanel) {
+            customPanel = document.createElement('div');
+            customPanel.id = 'custom-view-panel';
+            customPanel.className = 'mt-3';
+            // Insertar en view-registro
+            const viewRegistro = document.getElementById('view-registro');
+            if (viewRegistro) viewRegistro.appendChild(customPanel);
+          }
+          customPanel.classList.remove('d-none');
+
+          // Mostrar loading
+          customPanel.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary" role="status"></div><div class="mt-2">Cargando planes...</div></div>';
+
+          // Cargar registros para la lista
+          ApiService.call("searchRecords", tipoFormato, "")
+            .then(function (records) {
+              WeeklyPlanPanel.renderList(customPanel, records || []);
+            })
+            .catch(function (err) {
+              console.error("Error cargando lista de planes:", err);
+              customPanel.innerHTML = '<div class="alert alert-danger">Error al cargar los planes: ' + (err.message || err) + '</div>';
+            });
+
+          return;
+        }
+
+        // Restaurar vista estándar para otros formatos
+        const gridContainer = document.getElementById('data-grid-container');
+        if (gridContainer) gridContainer.classList.remove('d-none');
+
+        const searchInput = document.getElementById('search-query');
+        if (searchInput) searchInput.parentElement.classList.remove('d-none');
+
+        const btnNuevo = document.getElementById('btn-nuevo');
+        if (btnNuevo) btnNuevo.classList.remove('d-none');
+
+        const btnRefresh = document.getElementById('btn-refresh');
+        if (btnRefresh) btnRefresh.classList.remove('d-none');
+
+        const customPanel = document.getElementById('custom-view-panel');
+        if (customPanel) customPanel.classList.add('d-none');
 
         // Cargar registros y mostrar en grilla
         ApiService.call("searchRecords", tipoFormato, "")
@@ -3460,10 +5860,16 @@ var HoursDetailPanel = (function () {
       document.addEventListener('view-change', (e) => {
         const viewId = e.detail.view;
         const pageTitle = document.getElementById('page-title');
+        const titles = {
+          registro: 'Formularios',
+          reportes: 'Reporte Empleados',
+          'reportes-clientes': 'Reporte Clientes',
+          configuracion: 'Configuración'
+        };
 
         // Update Title
         if (pageTitle) {
-          pageTitle.textContent = viewId.charAt(0).toUpperCase() + viewId.slice(1);
+          pageTitle.textContent = titles[viewId] || viewId.charAt(0).toUpperCase() + viewId.slice(1);
         }
 
         // Hide all views
@@ -3479,7 +5885,21 @@ var HoursDetailPanel = (function () {
 
         // Initialize view-specific content
         if (viewId === 'reportes' && HoursDetailPanel) {
+          if (MonthlySummaryPanel) MonthlySummaryPanel.render();
           HoursDetailPanel.render();
+          if (AccountStatementPanel) AccountStatementPanel.render();
+        }
+        if (viewId === 'reportes-clientes' && typeof ClientReportPanel !== 'undefined') {
+          if (typeof ClientMonthlySummaryPanel !== 'undefined') {
+            ClientMonthlySummaryPanel.render();
+          }
+          if (typeof ClientAccountPanel !== 'undefined') {
+            ClientAccountPanel.render();
+          }
+          ClientReportPanel.render();
+        }
+        if (viewId === 'configuracion' && BulkValuesPanel) {
+          BulkValuesPanel.render();
         }
       });
     }

@@ -124,18 +124,22 @@
                 tdActions.style.whiteSpace = 'nowrap';
 
                 const btnEdit = document.createElement('button');
-                btnEdit.className = 'btn btn-sm btn-primary me-1';
-                btnEdit.style.padding = '0.25rem 0.5rem';
-                btnEdit.style.fontSize = '0.75rem';
-                btnEdit.innerHTML = '✏️';
+                btnEdit.className = 'btn btn-sm text-white me-1';
+                btnEdit.style.background = '#5b7bfa';
+                btnEdit.style.border = 'none';
+                btnEdit.style.borderRadius = '12px';
+                btnEdit.style.padding = '6px 10px';
+                btnEdit.innerHTML = '<i class=\"bi bi-pencil-fill\"></i>';
                 btnEdit.title = 'Editar';
                 btnEdit.onclick = () => editRecord(record);
 
                 const btnDelete = document.createElement('button');
-                btnDelete.className = 'btn btn-sm btn-danger';
-                btnDelete.style.padding = '0.25rem 0.5rem';
-                btnDelete.style.fontSize = '0.75rem';
-                btnDelete.innerHTML = '🗑️';
+                btnDelete.className = 'btn btn-sm text-white';
+                btnDelete.style.background = '#e53e3e';
+                btnDelete.style.border = 'none';
+                btnDelete.style.borderRadius = '12px';
+                btnDelete.style.padding = '6px 10px';
+                btnDelete.innerHTML = '<i class=\"bi bi-trash-fill\"></i>';
                 btnDelete.title = 'Eliminar';
                 btnDelete.onclick = () => deleteRecord(record);
 
@@ -152,21 +156,33 @@
          */
         function editRecord(record) {
             currentEditingRecord = record;
+            const recordId = record.ID || record.Id || record.id;
 
             // Abrir modal y renderizar formulario en el callback
-            openModal('Editar Registro', function () {
+            const formDef = FORM_DEFINITIONS[currentFormat];
+            const title =
+                currentFormat === 'EMPLEADOS'
+                    ? 'Editar empleado'
+                    : currentFormat === 'CLIENTES'
+                        ? 'Editar cliente'
+                        : formDef && formDef.title
+                            ? 'Editar ' + formDef.title.toLowerCase()
+                            : 'Editar registro';
+
+            openModal(title, function () {
                 if (FormManager) {
                     FormManager.renderForm(currentFormat);
 
                     // Esperar un momento adicional para que se rendericen los campos
                     setTimeout(() => {
-                        loadRecordIntoForm(record);
-
-                        // Mostrar botón eliminar
-                        const btnEliminar = document.getElementById('btn-eliminar-modal');
-                        if (btnEliminar) {
-                            btnEliminar.classList.remove('d-none');
+                        if (RecordManager && recordId) {
+                            RecordManager.loadRecordForEdit(recordId, record);
+                        } else {
+                            loadRecordIntoForm(record);
                         }
+
+                        const btnEliminar = document.getElementById('btn-eliminar-modal');
+                        if (btnEliminar) btnEliminar.classList.remove('d-none');
                     }, 100);
                 }
             });
@@ -201,16 +217,35 @@
          * Elimina un registro
          */
         function deleteRecord(record) {
-            if (!confirm('¿Estás seguro de que deseas eliminar este registro?')) {
+            if (!record) return;
+            if (!confirm('¿Estás seguro de que deseas eliminar este registro?')) return;
+
+            const id = record.ID || record.Id || record.id;
+            if (!id) {
+                Alerts && Alerts.showAlert('ID no encontrado para eliminar.', 'warning');
                 return;
             }
 
-            // Aquí iría la lógica de eliminación
-            if (RecordManager) {
-                // Simular clic en eliminar con el registro cargado
-                currentEditingRecord = record;
-                RecordManager.deleteRecord();
-            }
+            UiState && UiState.setGlobalLoading(true, 'Eliminando...');
+
+            ApiService.call('deleteRecord', currentFormat, id)
+                .then(function () {
+                    Alerts && Alerts.showAlert('✅ Registro eliminado correctamente.', 'success');
+                    if (ReferenceService) {
+                        ReferenceService.load().then(function () {
+                            if (FormManager) {
+                                FormManager.updateReferenceData(ReferenceService.get());
+                            }
+                        });
+                    }
+                    refreshGrid();
+                })
+                .catch(function (err) {
+                    Alerts && Alerts.showAlert('Error al eliminar: ' + err.message, 'danger');
+                })
+                .finally(function () {
+                    UiState && UiState.setGlobalLoading(false);
+                });
         }
 
         /**

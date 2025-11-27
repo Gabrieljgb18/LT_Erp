@@ -82,6 +82,10 @@
             const titleEl = document.getElementById("form-title");
             const sugg = document.getElementById("search-suggestions");
 
+            // Restaurar footer del modal por si fue ocultado
+            const modalFooter = document.querySelector('.modal-footer-custom');
+            if (modalFooter) modalFooter.style.display = '';
+
             if (!container) {
                 console.error("Container not found:", containerId || "form-fields");
                 return;
@@ -95,6 +99,22 @@
                 // Actualizar visibilidad del footer si aplica
                 if (global.FooterManager) {
                     global.FooterManager.updateVisibility();
+                }
+                return;
+            }
+
+            // Renderizado custom para Plan Semanal
+            if (tipoFormato === "ASISTENCIA_PLAN" && global.WeeklyPlanPanel) {
+                container.innerHTML = "";
+                if (titleEl) titleEl.textContent = formDef ? formDef.title : "Plan Semanal";
+                global.WeeklyPlanPanel.render(container);
+                if (global.FooterManager) {
+                    global.FooterManager.updateVisibility();
+                }
+                // Evitar que se cargue la grilla por defecto
+                if (global.GridManager) {
+                    const gridContainer = document.getElementById("grid-container");
+                    if (gridContainer) gridContainer.innerHTML = "";
                 }
                 return;
             }
@@ -126,13 +146,6 @@
             // Autocompletar CUIT para FACTURACION y PAGOS
             if (tipoFormato === "FACTURACION" || tipoFormato === "PAGOS") {
                 setupCuitAutocomplete();
-            }
-
-            // Setup panels específicos por tipo - con timeout para asegurar que el DOM esté listo
-            if (tipoFormato === "ASISTENCIA_PLAN" && global.AttendancePanels) {
-                setTimeout(() => {
-                    global.AttendancePanels.setupWeeklyPlanPanel();
-                }, 100);
             }
 
             // Actualizar visibilidad del footer

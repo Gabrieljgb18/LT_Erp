@@ -118,8 +118,15 @@ function getWeeklyPlanForClient(cliente) {
 /**
  * Guarda el plan semanal completo para un cliente
  */
-function saveWeeklyPlanForClient(cliente, items) {
-  return AttendanceWeeklyPlan.saveWeeklyPlanForClient(cliente, items);
+function saveWeeklyPlanForClient(cliente, items, originalVigencia) {
+  return AttendanceWeeklyPlan.saveWeeklyPlanForClient(cliente, items, originalVigencia);
+}
+
+/**
+ * Aplica valores masivos (empleados/clientes/presentismo)
+ */
+function applyMassValues(payload) {
+  return BulkValuesController.applyMassValues(payload);
 }
 /**
  * Obtiene el detalle de horas filtrado
@@ -129,8 +136,85 @@ function getHoursDetail(startDate, endDate, client) {
 }
 
 /**
+ * Obtiene horas por cliente (con resumen)
+ */
+function getHoursByClient(startDate, endDate, client) {
+  return HoursController.getHoursByClient(startDate, endDate, client);
+}
+
+/**
  * Obtiene el detalle de horas filtrado por empleado
  */
 function getHoursByEmployee(startDate, endDate, employee) {
   return HoursController.getHoursByEmployee(startDate, endDate, employee);
+}
+
+/**
+ * Resumen mensual por empleado
+ */
+function getMonthlySummary(year, month) {
+  return HoursController.getMonthlySummary(year, month);
+}
+
+/**
+ * Obtiene la cuenta corriente de un cliente
+ */
+function getClientAccountStatement(clientName, startDate, endDate) {
+  return AccountController.getClientAccountStatement(clientName, startDate, endDate);
+}
+
+/**
+ * Registra un cobro de cliente
+ */
+function recordClientPayment(fecha, cliente, monto, obs) {
+  return AccountController.recordClientPayment(fecha, cliente, monto, obs);
+}
+
+/**
+ * Genera PDF de horas por empleado
+ */
+function generateHoursPdf(startDateStr, endDateStr, employeeName) {
+  return PdfController.generateHoursPdf(startDateStr, endDateStr, employeeName);
+}
+
+/**
+ * Genera PDF de horas por cliente
+ */
+function generateClientHoursPdf(startDateStr, endDateStr, clientName) {
+  return PdfController.generateClientHoursPdf(startDateStr, endDateStr, clientName);
+}
+
+/**
+ * Resumen mensual por cliente
+ */
+function getMonthlySummaryByClient(year, month) {
+  return HoursController.getMonthlySummaryByClient(year, month);
+}
+
+/**
+ * Guarda pago de empleado
+ */
+function recordEmployeePayment(fecha, empleado, concepto, monto, obs) {
+  return RecordController.recordEmployeePayment(fecha, empleado, concepto, monto, obs);
+}
+
+/**
+ * Cuenta corriente mensual por empleado
+ */
+function getEmployeeAccountStatement(year, month) {
+  return AccountController.getEmployeeAccountStatement(year, month);
+}
+
+/**
+ * Cuenta corriente mensual por cliente
+ */
+function getClientAccountStatement(year, month) {
+  return ClientAccountController.getClientAccountStatement(year, month);
+}
+
+/**
+ * Registrar cobro de cliente
+ */
+function recordClientPayment(fecha, cliente, concepto, monto, obs) {
+  return ClientAccountController.recordClientPayment(fecha, cliente, concepto, monto, obs);
 }

@@ -32,7 +32,8 @@ const AttendanceDailyAttendance = (function () {
         const idxDiaSemanaPlan = headersPlan.indexOf('DIA SEMANA');
         const idxHoraEntrada = headersPlan.indexOf('HORA ENTRADA');
         const idxHorasPlan = headersPlan.indexOf('HORAS PLAN');
-        const idxActivo = headersPlan.indexOf('ACTIVO');
+        const idxVigDesde = headersPlan.indexOf('VIGENTE DESDE');
+        const idxVigHasta = headersPlan.indexOf('VIGENTE HASTA');
         const idxObsPlan = headersPlan.indexOf('OBSERVACIONES');
 
         if (idxClientePlan === -1 || idxEmpleadoPlan === -1 || idxDiaSemanaPlan === -1) {
@@ -54,21 +55,34 @@ const AttendanceDailyAttendance = (function () {
             if (!diaRow) return;
             if (diaRow !== dayName) return;
 
-            let activo = true;
-            if (idxActivo > -1) {
-                activo = DataUtils.isTruthy(row[idxActivo]);
+            // Vigencia
+            let vigDesdeDate = null;
+            let vigHastaDate = null;
+            if (idxVigDesde > -1 && row[idxVigDesde]) {
+                const d = row[idxVigDesde] instanceof Date ? row[idxVigDesde] : new Date(row[idxVigDesde]);
+                vigDesdeDate = isNaN(d) ? null : d;
             }
-            if (!activo) return;
+            if (idxVigHasta > -1 && row[idxVigHasta]) {
+                const d = row[idxVigHasta] instanceof Date ? row[idxVigHasta] : new Date(row[idxVigHasta]);
+                vigHastaDate = isNaN(d) ? null : d;
+            }
+
+            if (vigDesdeDate && vigDesdeDate > fecha) return;
+            if (vigHastaDate && vigHastaDate < fecha) return;
 
             const cliente = row[idxClientePlan];
             const empleado = row[idxEmpleadoPlan];
             if (!cliente || !empleado) return;
 
+            const horasPlanVal = idxHorasPlan > -1 ? row[idxHorasPlan] : '';
+            const numHoras = Number(horasPlanVal);
+            if (!isNaN(numHoras) && numHoras <= 0) return; // skip planes de 0 horas
+
             planRows.push({
                 cliente: cliente,
                 empleado: empleado,
                 horaPlan: idxHoraEntrada > -1 ? row[idxHoraEntrada] : '',
-                horasPlan: idxHorasPlan > -1 ? row[idxHorasPlan] : '',
+                horasPlan: horasPlanVal,
                 observacionesPlan: idxObsPlan > -1 ? row[idxObsPlan] : ''
             });
         });
@@ -80,7 +94,13 @@ const AttendanceDailyAttendance = (function () {
         const lastRowAsis = asisSheet.getLastRow();
         const lastColAsis = asisSheet.getLastColumn();
 
-        let realMap = {};
+        const planMap = new Map();
+        planRows.forEach(function (p) {
+            const key = p.cliente + '||' + p.empleado;
+            planMap.set(key, p);
+        });
+
+        const attendanceRows = [];
 
         if (lastRowAsis >= 2 && lastColAsis > 0) {
             const headersAsis = asisSheet.getRange(1, 1, 1, lastColAsis).getValues()[0];
@@ -109,76 +129,57 @@ const AttendanceDailyAttendance = (function () {
                     const empleadoRow = row[idxEmpleadoAsis];
                     if (!clienteRow || !empleadoRow) return;
 
-                    const key = clienteRow + '||' + empleadoRow;
                     const asistio = idxAsist > -1 ? DataUtils.isTruthy(row[idxAsist]) : false;
+                    const key = clienteRow + '||' + empleadoRow;
+                    const planData = planMap.get(key);
 
-                    realMap[key] = {
-                        rowNumber: i + 2,
+                    attendanceRows.push({
+                        cliente: clienteRow,
+                        empleado: empleadoRow,
+                        horaPlan: planData ? planData.horaPlan : '',
+                        horasPlan: planData ? planData.horasPlan : '',
+                        asistenciaRowNumber: i + 2,
                         asistencia: asistio,
                         horasReales: idxHorasReal > -1 ? row[idxHorasReal] : '',
-                        observaciones: idxObsReal > -1 ? row[idxObsReal] : ''
-                    };
+                        observaciones: idxObsReal > -1 ? row[idxObsReal] : '',
+                        fueraDePlan: !planData
+                    });
+
+                    // Si hay asistencia para un registro de plan, no lo repetimos luego como faltante
+                    if (planMap.has(key)) {
+                        planMap.delete(key);
+                    }
                 });
             }
         }
 
-        // Base: plan + cualquier registro real que no esté en el plan (para mantener fuera de plan)
-        const baseMap = new Map();
-
-        planRows.forEach(function (p) {
-            const key = p.cliente + '||' + p.empleado;
-            baseMap.set(key, {
-                cliente: p.cliente,
-                empleado: p.empleado,
-                horaPlan: p.horaPlan,
-                horasPlan: p.horasPlan,
-                observacionesPlan: p.observacionesPlan || '',
-                fueraDePlan: false
-            });
-        });
-
-        Object.keys(realMap).forEach(function (key) {
-            if (baseMap.has(key)) return;
-            const parts = key.split('||');
-            baseMap.set(key, {
-                cliente: parts[0] || '',
-                empleado: parts[1] || '',
-                horaPlan: '',
-                horasPlan: '',
-                observacionesPlan: '',
-                fueraDePlan: true
-            });
-        });
-
         // Si no hay plan ni registros reales para la fecha, devolvemos vacío
-        if (baseMap.size === 0 && noPlanForDay) {
+        if (planMap.size === 0 && attendanceRows.length === 0 && noPlanForDay) {
             return [];
         }
 
-        const baseRows = Array.from(baseMap.values());
-
-        if (!baseRows.length) {
-            return [];
-        }
-
-        const rawResult = baseRows.map(function (p) {
-            const key = p.cliente + '||' + p.empleado;
-            const r = realMap[key];
-
+        // Lo que queda en planMap son filas de plan sin asistencia registrada
+        const planPendiente = Array.from(planMap.values()).map(function (p) {
             return {
                 cliente: p.cliente,
                 empleado: p.empleado,
                 horaPlan: p.horaPlan,
                 horasPlan: p.horasPlan,
-                asistencia: r ? r.asistencia : false,
-                horasReales: r ? r.horasReales : '',
-                observaciones: r ? r.observaciones : (p.observacionesPlan || ''),
-                asistenciaRowNumber: r ? r.rowNumber : null,
-                fueraDePlan: p.fueraDePlan === true
+                observaciones: p.observacionesPlan || '',
+                asistencia: false,
+                horasReales: '',
+                asistenciaRowNumber: null,
+                fueraDePlan: false
             };
         });
 
-        const result = rawResult.map(function (row) {
+        const combined = attendanceRows.concat(planPendiente);
+
+        if (!combined.length) {
+            return [];
+        }
+
+        const result = combined.map(function (row) {
             return {
                 cliente: row.cliente != null ? String(row.cliente) : '',
                 empleado: row.empleado != null ? String(row.empleado) : '',

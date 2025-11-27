@@ -12,11 +12,23 @@
         };
         let reference = { clientes: [], empleados: [] };
         let rootEl = null;
+        let pendingFecha = null;
+        let pendingFocus = null;
+
+        function resetState(fecha) {
+            state = {
+                fecha: fecha || getTodayIso(),
+                rows: [],
+                loading: false
+            };
+        }
 
         function render(container) {
             rootEl = container;
             reference = ReferenceService && ReferenceService.get ? ReferenceService.get() : { clientes: [], empleados: [] };
-            state.fecha = getTodayIso();
+            const initialDate = pendingFecha || getTodayIso();
+            resetState(initialDate);
+            pendingFecha = null;
 
             container.innerHTML = buildBaseLayout();
             bindBaseEvents();
@@ -72,6 +84,9 @@
             if (dateInput) {
                 dateInput.addEventListener("change", function () {
                     state.fecha = this.value;
+                    state.rows = [];
+                    renderRows("Cargando...");
+                    updateSummary();
                     loadPlan(state.fecha);
                 });
             }
@@ -110,12 +125,18 @@
                 return;
             }
 
+            state.rows = [];
+            renderRows("Cargando...");
+            updateSummary();
             setLoading(true);
-            ApiService.call("getDailyAttendancePlan", fecha)
+            // callLatest para evitar respuestas viejas que pisan la vista
+            ApiService.callLatest("attendance-plan-" + fecha, "getDailyAttendancePlan", fecha)
                 .then(function (rows) {
                     if (rows && rows.ignored) return;
                     const data = Array.isArray(rows) ? rows : [];
                     state.rows = data.map((r, idx) => normalizeRow(r, false, idx));
+
+                    applyPendingFocus();
 
                     if (!state.rows.length) {
                         // Si no hay plan para el día, ofrecer fila vacía para cargar fuera de plan
@@ -446,7 +467,7 @@
                 <th>Fecha</th>
                 <th class="text-center">Clientes atendidos</th>
                 <th class="text-center">Horas totales</th>
-                <th class="text-center">Registros</th>
+                <th class="text-center">Asistencia (real / planificada)</th>
                 <th class="text-center">Acciones</th>
             `;
 
@@ -467,7 +488,7 @@
                     <td><strong>${HtmlHelpers.escapeHtml(item.fechaLabel)}</strong></td>
                     <td class="text-center">${item.clientes}</td>
                     <td class="text-center">${item.horas.toFixed(2)}</td>
-                    <td class="text-center">${item.registros}</td>
+                    <td class="text-center">${item.presentes} / ${item.registros}</td>
                     <td class="text-center">
                         <button class="btn btn-sm btn-primary" data-action="open-day" data-fecha="${HtmlHelpers.escapeHtml(item.fecha)}">Editar día</button>
                     </td>
@@ -492,7 +513,7 @@
                 if (!fecha) return;
                 const key = String(fecha).trim();
                 if (!map.has(key)) {
-                    map.set(key, { registros: 0, clientes: new Set(), horas: 0 });
+                    map.set(key, { registros: 0, clientes: new Set(), horas: 0, presentes: 0 });
                 }
                 const agg = map.get(key);
                 agg.registros += 1;
@@ -506,6 +527,7 @@
                     if (!isNaN(horasNum)) {
                         agg.horas += horasNum;
                     }
+                    agg.presentes += 1;
                 }
             });
 
@@ -516,7 +538,8 @@
                     fechaLabel: formatDateLabel(fecha),
                     registros: val.registros,
                     clientes: val.clientes.size,
-                    horas: val.horas
+                    horas: val.horas,
+                    presentes: val.presentes
                 });
             });
 
@@ -552,6 +575,7 @@
 
         function openModalForDate(fecha) {
             if (!GridManager || !FormManager) return;
+            pendingFecha = fecha;
 
             const formatoSelect = document.getElementById("formato");
             if (formatoSelect) {
@@ -560,20 +584,19 @@
 
             GridManager.openModal("Asistencia del día", function () {
                 FormManager.renderForm("ASISTENCIA");
-                setTimeout(() => {
-                    openForDate(fecha);
-                }, 100);
             });
         }
 
         function openForDate(fecha) {
             if (!rootEl || !fecha) return;
+            resetState(fecha);
             const dateInput = rootEl.querySelector("#attendance-date");
             if (dateInput) {
                 dateInput.value = fecha;
-                state.fecha = fecha;
-                loadPlan(fecha);
             }
+            renderRows("Cargando...");
+            updateSummary();
+            loadPlan(fecha);
         }
 
         function save() {
@@ -621,10 +644,55 @@
                 });
         }
 
+        function applyPendingFocus() {
+            if (!pendingFocus) return;
+
+            const targetEmp = (pendingFocus.empleado || '').toString().toLowerCase().trim();
+            const targetCli = (pendingFocus.cliente || '').toString().toLowerCase().trim();
+
+            let matched = null;
+            if (targetEmp || targetCli) {
+                matched = state.rows.find(function (r) {
+                    const emp = (r.empleado || '').toString().toLowerCase().trim();
+                    const cli = (r.cliente || '').toString().toLowerCase().trim();
+                    return emp === targetEmp && cli === targetCli;
+                });
+            }
+
+            if (matched) {
+                matched._autoOpen = true;
+                if (pendingFocus.horas != null) matched.horasReales = pendingFocus.horas;
+                if (pendingFocus.observaciones != null) matched.observaciones = pendingFocus.observaciones;
+            } else if (targetEmp || targetCli) {
+                const extra = normalizeRow({
+                    cliente: pendingFocus.cliente || '',
+                    empleado: pendingFocus.empleado || '',
+                    asistencia: true,
+                    horasReales: pendingFocus.horas != null ? pendingFocus.horas : '',
+                    observaciones: pendingFocus.observaciones || ''
+                }, true);
+                extra._autoOpen = true;
+                state.rows.unshift(extra);
+            }
+
+            pendingFocus = null;
+        }
+
+        function openForDateWithFocus(fecha, empleado, cliente, extras) {
+            pendingFocus = {
+                empleado: empleado,
+                cliente: cliente,
+                horas: extras && extras.horas != null ? extras.horas : null,
+                observaciones: extras && extras.observaciones ? extras.observaciones : ''
+            };
+            openForDate(fecha);
+        }
+
         return {
             render,
             renderSummary,
             openForDate,
+            openForDateWithFocus,
             save
         };
     })();

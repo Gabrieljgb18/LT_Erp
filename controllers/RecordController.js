@@ -209,6 +209,29 @@ var RecordController = (function () {
     }
 
     /**
+     * Guarda un pago de empleado en PAGOS_EMP_DB
+     */
+    function recordEmployeePayment(fechaStr, empleado, concepto, monto, obs) {
+        const sheet = DatabaseService.getDbSheetForFormat('PAGOS_EMP');
+        const templateHeaders = ['ID', 'FECHA', 'EMPLEADO', 'CONCEPTO', 'MONTO', 'OBSERVACIONES'];
+        if (sheet.getLastRow() === 0) {
+            sheet.appendRow(templateHeaders);
+        }
+        const id = DatabaseService.getNextId(sheet);
+        const fecha = fechaStr ? new Date(fechaStr) : new Date();
+        const row = [
+            id,
+            fecha,
+            empleado || '',
+            concepto || '',
+            Number(monto) || 0,
+            obs || ''
+        ];
+        sheet.appendRow(row);
+        return id;
+    }
+
+    /**
      * Obtiene datos de referencia (clientes y empleados activos)
      * @returns {Object} Objeto con arrays de clientes y empleados
      */
@@ -222,6 +245,7 @@ var RecordController = (function () {
         saveRecord: saveRecord,
         updateRecord: updateRecord,
         deleteRecord: deleteRecord,
-        getReferenceData: getReferenceData
+        getReferenceData: getReferenceData,
+        recordEmployeePayment: recordEmployeePayment
     };
 })();

@@ -1,58 +1,371 @@
 /**
  * Weekly Plan Panel
  * UI para gestión de planificación semanal de asistencia
+ * Version: 3.1 - New Row Appears at Top
  */
 
 (function (global) {
     const WeeklyPlanPanel = (() => {
         let referenceData = { clientes: [], empleados: [] };
 
+        // Estado interno para navegación
+        let currentContainer = null;
+        let allRecordsCache = [];
+        let currentOriginalVigencia = null; // Para saber qué plan estamos editando
+
         function init(refData) {
             referenceData = refData;
         }
 
-        function setup() {
-            const container = document.getElementById("form-fields");
-            if (!container) return;
+        function formatDateForInput(v) {
+            if (!v) return '';
+            if (v instanceof Date && !isNaN(v)) {
+                return v.toISOString().split('T')[0];
+            }
+            const d = new Date(v);
+            if (!isNaN(d)) {
+                return d.toISOString().split('T')[0];
+            }
+            return '';
+        }
 
-            let panel = document.getElementById("plan-semanal-panel");
-            if (!panel) {
-                panel = document.createElement("div");
-                panel.id = "plan-semanal-panel";
-                panel.className = "mt-2";
-                container.appendChild(panel);
+        function vigDesdeInputVal() {
+            const el = document.getElementById('plan-vig-desde');
+            return el ? el.value : '';
+        }
+
+        function vigHastaInputVal() {
+            const el = document.getElementById('plan-vig-hasta');
+            return el ? el.value : '';
+        }
+
+        let planGroupsCache = {};
+
+        function renderList(container, records) {
+            currentContainer = container;
+            allRecordsCache = records || [];
+            planGroupsCache = {}; // Limpiar caché
+
+            // DEBUG: Ver estructura de los datos
+            console.log('=== DEBUG WeeklyPlanPanel ===');
+            console.log('Total records:', allRecordsCache.length);
+            if (allRecordsCache.length > 0) {
+                console.log('Primer record completo:', allRecordsCache[0]);
+                console.log('Keys del primer record:', Object.keys(allRecordsCache[0]));
+                const firstRecord = allRecordsCache[0].record || allRecordsCache[0];
+                console.log('Contenido de record:', firstRecord);
+                console.log('Keys de record:', Object.keys(firstRecord));
             }
 
-            panel.innerHTML =
-                '<div class="mt-2 p-2 border rounded bg-light">' +
-                '<div class="small fw-bold mb-1">Plan semanal del cliente</div>' +
-                '<div class="small text-muted">Elegí un cliente para ver y editar todas las asignaciones semanales de una sola vez.</div>' +
-                '</div>';
+            if (!container) return;
 
-            const clienteSelect = document.getElementById("field-CLIENTE");
-            if (clienteSelect) {
-                clienteSelect.addEventListener("change", fetchWeeklyPlanForClient);
+            // Agrupar por cliente y vigencia
+            const grouped = {};
+            allRecordsCache.forEach(item => {
+                // Los registros vienen envueltos: {rowNumber, record, id}
+                const r = item.record || item;
+
+                // Intentar obtener cliente de varias formas (CLIENTE, Cliente, cliente)
+                let clienteName = r.cliente || r.CLIENTE || r.Cliente;
+
+                // Si es un objeto (referencia), intentar obtener nombre o razon social
+                if (typeof clienteName === 'object' && clienteName !== null) {
+                    clienteName = clienteName.razonSocial || clienteName.nombre || clienteName.toString();
+                }
+
+                const cliente = clienteName || "Sin asignar";
+
+                // Clave única: Cliente + Vigencia
+                const vigDesde = formatDateForInput(r["VIGENTE DESDE"] || r.vigDesde);
+                const vigHasta = formatDateForInput(r["VIGENTE HASTA"] || r.vigHasta);
+                const key = `${cliente}|${vigDesde}|${vigHasta}`;
+
+                if (!grouped[key]) {
+                    grouped[key] = {
+                        cliente: cliente,
+                        vigDesde: vigDesde,
+                        vigHasta: vigHasta,
+                        horasTotales: 0,
+                        diasActivos: 0,
+                        dias: new Set(),
+                        rows: [] // Guardamos las filas para pasarlas al editor
+                    };
+                }
+
+                // Normalizar horas (viene como string "3", "4", etc.)
+                const horasValue = r["HORAS PLAN"] || r.HORAS_PLAN || r.horasPlan || 0;
+                const horas = parseFloat(horasValue);
+
+                // Normalizar día (viene como "LUNES", "MARTES", etc.)
+                const dia = r["DIA SEMANA"] || r.DIA_SEMANA || r.diaSemana || r["DÍA DE LA SEMANA"];
+
+                // Normalizar registro completo para la UI (camelCase)
+                const normalizedRow = {
+                    id: r.ID || r.id,
+                    cliente: cliente,
+                    empleado: r.EMPLEADO || r.empleado || r.Empleado,
+                    diaSemana: dia,
+                    horaEntrada: r["HORA ENTRADA"] || r.HORA_ENTRADA || r.horaEntrada,
+                    horasPlan: horas,
+                    observaciones: r.OBSERVACIONES || r.observaciones,
+                    vigDesde: vigDesde,
+                    vigHasta: vigHasta,
+                    originalRecord: r
+                };
+
+                grouped[key].horasTotales += horas;
+                grouped[key].diasActivos++;
+                if (dia) grouped[key].dias.add(dia);
+                grouped[key].rows.push(normalizedRow);
+            });
+
+            const listaClientes = Object.values(grouped);
+
+            let html = '<div class="d-flex justify-content-between align-items-center mb-3">';
+            html += '<h5 class="mb-0">Planes de Asistencia Semanal</h5>';
+            html += '<div class="d-flex gap-2 align-items-center">';
+            html += '<div class="form-check form-switch mb-0">';
+            html += '<input class="form-check-input" type="checkbox" id="check-active-plans" checked>';
+            html += '<label class="form-check-label small" for="check-active-plans">Solo vigentes</label>';
+            html += '</div>';
+            html += '<button class="btn btn-primary btn-sm" id="btn-nuevo-plan">➕ Nuevo Plan</button>';
+            html += '</div>';
+            html += '</div>';
+
+            html += '<div class="card shadow-sm border-0"><div class="card-body p-0"><div class="table-responsive">';
+            html += '<table class="table table-hover align-middle mb-0">';
+            html += '<thead class="table-light"><tr>';
+            html += '<th>Cliente</th>';
+            html += '<th>Vigencia</th>';
+            html += '<th class="text-center">Horas Semanales</th>';
+            html += '<th>Días Programados</th>';
+            html += '<th class="text-end">Acciones</th>';
+            html += '</tr></thead><tbody>';
+
+            if (listaClientes.length === 0) {
+                html += '<tr><td colspan="4" class="text-center py-5 text-muted">No hay planes registrados.</td></tr>';
+            } else {
+                const today = new Date().toISOString().split('T')[0];
+
+                listaClientes.forEach(item => {
+                    // Filtro de vigencia
+                    const isActive = (!item.vigDesde || item.vigDesde <= today) && (!item.vigHasta || item.vigHasta >= today);
+                    const showActiveOnly = container.querySelector('#check-active-plans')?.checked ?? true; // Default true?
+
+                    // Nota: El checkbox aún no existe en el DOM cuando construimos el string HTML, 
+                    // así que necesitamos manejar esto post-render o re-renderizar.
+                    // Por ahora, agregamos data-active attribute y filtramos con CSS o JS.
+
+                    const diasStr = Array.from(item.dias).join(', ');
+                    const vigenciaStr = (item.vigDesde || 'Inicio') + ' ➡ ' + (item.vigHasta || 'Fin');
+
+                    // Estilo para filas vencidas (inactivas)
+                    const rowStyle = isActive ? '' : 'background-color: #f1f5f9; color: #94a3b8;';
+                    const badgeClass = isActive ? 'bg-success' : 'bg-secondary';
+                    const textClass = isActive ? 'fw-semibold' : '';
+
+                    html += `<tr class="plan-row" data-active="${isActive}" style="${rowStyle}">`;
+                    html += `<td class="${textClass}">` + HtmlHelpers.escapeHtml(item.cliente) + '</td>';
+                    html += '<td class="small">' + vigenciaStr + '</td>';
+                    html += `<td class="text-center"><span class="badge ${badgeClass} rounded-pill">` + item.horasTotales.toFixed(1) + ' hs</span></td>';
+                    html += '<td class="small">' + (diasStr || '-') + '</td>';
+                    html += '<td class="text-end">';
+                    // Guardamos key en data-key para recuperar
+                    const key = `${item.cliente}|${item.vigDesde}|${item.vigHasta}`;
+
+                    // Guardar filas en caché para recuperación segura
+                    planGroupsCache[key] = item.rows;
+
+                    html += `<button class="btn btn-sm btn-outline-primary me-1 btn-editar-plan" data-key="${HtmlHelpers.escapeHtml(key)}">✏️ Editar</button>`;
+                    html += '</td>';
+                    html += '</tr>';
+                });
+            }
+
+            html += '</tbody></table></div></div></div>';
+
+            container.innerHTML = html;
+
+            // Bind events
+            const checkActive = container.querySelector('#check-active-plans');
+            if (checkActive) {
+                checkActive.addEventListener('change', (e) => {
+                    const rows = container.querySelectorAll('.plan-row');
+                    rows.forEach(r => {
+                        if (e.target.checked && r.dataset.active === "false") {
+                            r.style.display = 'none';
+                        } else {
+                            r.style.display = '';
+                        }
+                    });
+                });
+                // Trigger initial state
+                checkActive.dispatchEvent(new Event('change'));
+            }
+
+            container.querySelectorAll('.btn-editar-plan').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const key = e.target.dataset.key;
+                    const [cliente, desde, hasta] = key.split('|');
+
+                    // Recuperar filas directamente del caché
+                    const rows = planGroupsCache[key] || [];
+
+                    if (rows.length === 0) {
+                        console.warn("No se encontraron filas en caché para:", key);
+                    }
+
+                    switchToDetail(cliente, rows, { desde, hasta });
+                });
+            });
+
+            const btnNuevo = container.querySelector('#btn-nuevo-plan');
+            if (btnNuevo) {
+                btnNuevo.addEventListener('click', () => {
+                    switchToDetail(null, [], null); // Nuevo (sin cliente preseleccionado)
+                });
             }
         }
 
-        function fetchWeeklyPlanForClient() {
-            const panel = document.getElementById("plan-semanal-panel");
+        function switchToDetail(cliente, preloadedRows, originalVigencia) {
+            if (!currentContainer) return;
+
+            currentOriginalVigencia = originalVigencia; // Guardar vigencia original
+
+            // Renderizar la vista de detalle (cards)
+            render(currentContainer);
+
+            // Si hay cliente, seleccionarlo automáticamente
+            if (cliente) {
+                const select = document.getElementById('field-CLIENTE');
+                if (select) {
+                    select.value = cliente;
+                    // Si tenemos filas precargadas, usarlas directamente en lugar de fetch
+                    if (preloadedRows && preloadedRows.length > 0) {
+                        // Simular carga de horas pedidas (opcional, o fetch solo horas)
+                        // Para simplificar, llamamos a buildWeeklyPlanPanel directamente
+                        // Pero necesitamos infoHoras. Podemos hacer un fetch rápido solo de horas.
+
+                        ApiService.callLatest('weekly-hours-' + cliente, 'getClientWeeklyRequestedHours', cliente)
+                            .then(function (infoHoras) {
+                                buildWeeklyPlanPanel(preloadedRows, cliente, infoHoras || null);
+                            })
+                            .catch(function () {
+                                buildWeeklyPlanPanel(preloadedRows, cliente, null);
+                            });
+                    } else {
+                        // Disparar evento change para cargar los datos (si no hay filas precargadas)
+                        select.dispatchEvent(new Event('change'));
+                    }
+                }
+            }
+
+            // Agregar botón "Volver" al panel
+            const panel = document.getElementById('plan-semanal-panel');
+            if (panel) {
+                const backBtnDiv = document.createElement('div');
+                backBtnDiv.className = 'mb-3';
+                backBtnDiv.innerHTML = '<button class="btn btn-outline-secondary btn-sm">⬅ Volver al listado</button>';
+                backBtnDiv.querySelector('button').addEventListener('click', () => {
+                    renderList(currentContainer, allRecordsCache);
+                });
+                panel.insertBefore(backBtnDiv, panel.firstChild);
+            }
+        }
+
+        function render(container) {
+            currentContainer = container; // Actualizar referencia
+            if (!container) return;
+
+            // Fallback para datos de referencia
+            if ((!referenceData.clientes || !referenceData.clientes.length) && typeof ReferenceService !== 'undefined') {
+                const globalRef = ReferenceService.get();
+                if (globalRef) referenceData = globalRef;
+            }
+
+            // Limpiar contenedor
+            container.innerHTML = '';
+
+            // Crear estructura base
+            const panel = document.createElement("div");
+            panel.id = "plan-semanal-panel";
+            panel.className = "d-flex flex-column gap-3";
+
+            // Agregar selector de cliente
+            const selectorDiv = document.createElement("div");
+            selectorDiv.className = "card shadow-sm p-3";
+            selectorDiv.innerHTML = `
+                <div class="row g-3 align-items-end">
+                    <div class="col-12 col-md-6">
+                        <label class="form-label fw-bold mb-1">Cliente</label>
+                        <select id="field-CLIENTE" class="form-select">
+                            <option value="">Seleccioná un cliente...</option>
+                            ${buildClienteOptions()}
+                        </select>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <label class="form-label small text-muted fw-semibold mb-1">Vigente desde</label>
+                        <input type="date" id="plan-vig-desde" class="form-control">
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <label class="form-label small text-muted fw-semibold mb-1">Vigente hasta</label>
+                        <input type="date" id="plan-vig-hasta" class="form-control">
+                    </div>
+                </div>
+            `;
+
+            panel.appendChild(selectorDiv);
+
+            // Contenedor para las cards
+            const cardsContainer = document.createElement("div");
+            cardsContainer.id = "plan-semanal-cards-container";
+            panel.appendChild(cardsContainer);
+
+            container.appendChild(panel);
+
+            // Bind eventos
             const clienteSelect = document.getElementById("field-CLIENTE");
-            if (!panel || !clienteSelect) return;
+            if (clienteSelect) {
+                clienteSelect.addEventListener("change", () => {
+                    // Si cambiamos de cliente manualmente, es un "Nuevo Plan" para ese cliente,
+                    // así que limpiamos originalVigencia.
+                    currentOriginalVigencia = null;
+                    fetchWeeklyPlanForClient();
+                });
+            }
+        }
+
+        function buildClienteOptions() {
+            return referenceData.clientes.map(c => {
+                const nombre = c.razonSocial || c.nombre || c;
+                return `<option value="${HtmlHelpers.escapeHtml(nombre)}">${HtmlHelpers.escapeHtml(nombre)}</option>`;
+            }).join('');
+        }
+
+        function setup() {
+            // Deprecated: usar render()
+            const container = document.getElementById("form-fields");
+            if (container) render(container);
+        }
+
+        function fetchWeeklyPlanForClient() {
+            const container = document.getElementById("plan-semanal-cards-container");
+            const clienteSelect = document.getElementById("field-CLIENTE");
+            const targetId = container ? "plan-semanal-cards-container" : "plan-semanal-panel";
+
+            if (!clienteSelect) return;
 
             const cliente = clienteSelect.value;
             if (!cliente) {
-                UiState.renderLoading(
-                    "plan-semanal-panel",
-                    "Plan semanal del cliente",
-                    "Elegí un cliente para ver su plan."
-                );
+                // Limpiar si no hay cliente
+                if (container) container.innerHTML = '';
                 return;
             }
 
+            // Fix: Pasar string vacío en lugar de null para evitar que se imprima "null"
             UiState.renderLoading(
-                "plan-semanal-panel",
-                "Plan semanal del cliente",
+                targetId,
+                "",
                 "Cargando plan de <strong>" + HtmlHelpers.escapeHtml(cliente) + "</strong>..."
             );
 
@@ -62,6 +375,8 @@
                     const planRows = Array.isArray(rows) ? rows : [];
                     const currentClienteEl = document.getElementById("field-CLIENTE");
                     const currentCliente = currentClienteEl ? currentClienteEl.value : '';
+
+                    // Si cambió el cliente mientras cargaba, ignorar
                     if (currentCliente !== cliente) return;
 
                     return ApiService.callLatest('weekly-hours-' + cliente, 'getClientWeeklyRequestedHours', cliente)
@@ -76,16 +391,23 @@
                 })
                 .catch(function (err) {
                     UiState.renderLoading(
-                        "plan-semanal-panel",
-                        "Plan semanal del cliente",
+                        targetId,
+                        "Error",
                         "Error al cargar plan: " + HtmlHelpers.escapeHtml(err.message)
                     );
                 });
         }
 
         function buildWeeklyPlanPanel(rows, cliente, infoHoras) {
-            const panel = document.getElementById("plan-semanal-panel");
+            // Intentar usar el contenedor de cards, fallback al panel principal
+            let panel = document.getElementById("plan-semanal-cards-container");
+            if (!panel) panel = document.getElementById("plan-semanal-panel");
+
             if (!panel) return;
+
+            // Ocultar footer del modal si estamos en un modal
+            const modalFooter = document.querySelector('.modal-footer-custom');
+            if (modalFooter) modalFooter.style.display = 'none';
 
             if (!rows.length) {
                 rows = [{
@@ -93,25 +415,49 @@
                     diaSemana: "",
                     horaEntrada: "",
                     horasPlan: "",
-                    activo: true,
+                    vigDesde: vigDesdeInputVal(),
+                    vigHasta: vigHastaInputVal(),
+                    id: "",
                     observaciones: ""
                 }];
             }
+            const vigDesdeVal = formatDateForInput(rows[0].vigDesde || vigDesdeInputVal());
+            const vigHastaVal = formatDateForInput(rows[0].vigHasta || vigHastaInputVal());
+
+            // Agrupar por empleado
+            const groupedByEmpleado = {};
+            rows.forEach((r, idx) => {
+                const emp = r.empleado || "Sin asignar";
+                if (!groupedByEmpleado[emp]) {
+                    groupedByEmpleado[emp] = [];
+                }
+                groupedByEmpleado[emp].push({ ...r, originalIdx: idx });
+            });
 
             let html = "";
-            html += '<div class="mt-2 p-2 border rounded bg-light">';
-            html += '<div class="small fw-bold mb-1">Plan semanal del cliente</div>';
-            html +=
-                '<div class="small mb-2">Cliente: <strong>' +
-                HtmlHelpers.escapeHtml(cliente) +
-                "</strong></div>";
 
+            // Header solo si estamos en fallback
+            if (panel.id === "plan-semanal-panel") {
+                html += '<div class="mt-2 p-3 border rounded shadow-sm" style="background: linear-gradient(to bottom, #f8f9fa, #ffffff);">';
+                html += '<div class="d-flex justify-content-between align-items-center mb-3">';
+                html += '<div>';
+                html += '<div class="fw-bold mb-1" style="font-size: 1.1rem; color: #2563eb;">📋 Plan semanal del cliente</div>';
+                html += '<div class="small mb-2">Cliente: <strong style="color: #1d4ed8;">' + HtmlHelpers.escapeHtml(cliente) + "</strong></div>";
+                html += '</div>';
+                html += '</div>';
+            }
+
+            // Sección superior: Horas contratadas y Botón Agregar
+            html += '<div class="d-flex flex-wrap justify-content-between align-items-start mb-3 gap-2">';
+
+            // Horas contratadas
+            let horasHtml = '';
             if (infoHoras) {
                 const partes = [];
                 const pushSiTieneHoras = (label, valor) => {
                     const num = Number(valor || 0);
                     if (num > 0) {
-                        partes.push(label + ': <strong>' + num + ' hs</strong>');
+                        partes.push('<span class="badge" style="background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 4px 8px; margin: 2px;">' + label + ': ' + num + ' hs</span>');
                     }
                 };
 
@@ -124,100 +470,174 @@
                 pushSiTieneHoras('Do', infoHoras.domingo);
 
                 if (partes.length) {
-                    html +=
-                        '<div class="small text-muted mb-2">' +
-                        'Horas contratadas · ' +
-                        partes.join(' · ') +
-                        '</div>';
+                    horasHtml += '<div class="p-2 rounded flex-grow-1" style="background-color: #f0fdf4; border-left: 3px solid #10b981;">';
+                    horasHtml += '<div class="small fw-semibold text-muted mb-1">Horas contratadas por día</div>';
+                    horasHtml += '<div class="d-flex flex-wrap gap-1">' + partes.join('') + '</div>';
+                    horasHtml += '</div>';
                 }
             }
+            if (!horasHtml) horasHtml = '<div></div>'; // Spacer
+            html += horasHtml;
 
-            html += '<div class="table-responsive">';
-            html +=
-                '<table class="table table-sm table-bordered align-middle mb-2">' +
-                "<thead>" +
-                "<tr>" +
-                '<th class="small">Empleado</th>' +
-                '<th class="small text-center">Día</th>' +
-                '<th class="small text-center">Hora entrada</th>' +
-                '<th class="small text-center">Horas plan</th>' +
-                '<th class="small text-center">Activo</th>' +
-                '<th class="small">Observaciones</th>' +
-                '<th class="small text-center" style="width:60px;">Acciones</th>' +
-                "</tr>" +
-                "</thead><tbody></tbody></table></div>";
+            // Botón Agregar día (Movido arriba)
+            html += '<button type="button" class="btn btn-sm fw-semibold text-white shadow-sm" ';
+            html += 'style="background: linear-gradient(135deg, #6b7280, #4b5563); border: none; padding: 8px 16px; border-radius: 8px; height: fit-content;" ';
+            html += 'data-action="add-plan-row">+ Agregar día</button>';
 
-            html +=
-                '<div class="d-flex justify-content-between align-items-center mt-2">' +
-                '<button type="button" class="btn btn-outline-secondary btn-sm btn-app" ' +
-                'data-action="add-plan-row">+ Agregar fila</button>' +
-                '<button type="button" class="btn btn-success btn-sm btn-app" ' +
-                'data-action="save-weekly-plan">Guardar plan del cliente</button>' +
-                "</div>";
+            html += '</div>'; // End top section
 
+            // Cards por empleado
+            html += '<div id="weekly-plan-cards" class="d-flex flex-column gap-3">';
+
+            Object.keys(groupedByEmpleado).forEach((empleado, empIdx) => {
+                const empleadoRows = groupedByEmpleado[empleado];
+                const collapseId = "plan-emp-" + empIdx;
+                const totalHoras = empleadoRows.reduce((sum, r) => sum + (parseFloat(r.horasPlan) || 0), 0);
+                const activeDays = empleadoRows.length;
+
+                // Lista de días
+                const diasList = [...new Set(empleadoRows.map(r => r.diaSemana).filter(Boolean))].join(", ");
+                const diasLabel = diasList || (empleadoRows.length + ' día' + (empleadoRows.length !== 1 ? 's' : ''));
+
+                // Determinar si debe estar abierto:
+                // 1. Si es "Sin asignar" (donde van los nuevos)
+                // 2. O si no hay ninguno abierto (opcional, aquí lo dejamos cerrado por defecto excepto Sin Asignar)
+                const isSinAsignar = empleado === "Sin asignar";
+                const isOpen = isSinAsignar;
+
+                html += '<div class="card shadow-sm border-0">';
+
+                // Card Header
+                html += '<div class="card-header py-2 px-3 bg-white d-flex flex-wrap justify-content-between align-items-center gap-2" ';
+                html += 'style="cursor: pointer; background: linear-gradient(135deg, #f8fafc, #f1f5f9);" ';
+                html += 'data-bs-toggle="collapse" data-bs-target="#' + collapseId + '" ';
+                html += 'aria-expanded="' + isOpen + '" aria-controls="' + collapseId + '" role="button">';
+
+                html += '<div class="d-flex flex-wrap gap-2 align-items-center">';
+                html += '<span class="fw-semibold" style="color: #1e293b;">👤 ' + HtmlHelpers.escapeHtml(empleado) + '</span>';
+                html += '<span class="badge bg-primary bg-opacity-75">' + diasLabel + '</span>';
+                html += '<span class="badge" style="background: linear-gradient(135deg, #10b981, #059669); color: white;">' + totalHoras.toFixed(1) + ' hs totales</span>';
+                html += '</div>';
+
+                html += '<div class="d-flex gap-2 align-items-center">';
+                html += '<span class="text-muted small">' + activeDays + ' día(s)</span>';
+                html += '<span class="text-muted fw-semibold" data-role="collapse-arrow">' + (isOpen ? '▲' : '▼') + '</span>';
+                html += '</div>';
+
+                html += '</div>';
+
+                // Card Body (collapsible)
+                // Fix: Quitar 'show' por defecto, solo ponerlo si isOpen es true
+                html += '<div id="' + collapseId + '" class="collapse ' + (isOpen ? 'show' : '') + '">';
+                html += '<div class="card-body pt-2 pb-3 px-3">';
+
+                // Días del empleado
+                empleadoRows.forEach((r) => {
+                    const rowId = "plan-row-" + r.originalIdx;
+                    const empleadoOptions = HtmlHelpers.getEmpleadoOptionsHtml(r.empleado || "", referenceData.empleados);
+                    const diaOptions = HtmlHelpers.getDiaOptionsHtml(r.diaSemana || "");
+                    const horaFormatted = HtmlHelpers.formatHoraEntradaForInput(r.horaEntrada);
+                    html += '<div class="border rounded p-3 mb-2" style="background-color:#f8f9fa;">';
+
+                    // Header de día
+                    html += '<div class="d-flex justify-content-between align-items-center mb-2">';
+                    html += '<div class="d-flex gap-2 align-items-center">';
+                    html += '<span class="badge bg-primary bg-opacity-75 text-white">Plan</span>';
+                    html += '<span class="fw-semibold">' + (r.diaSemana || 'Día no seleccionado') + '</span>';
+                    if (r.horasPlan) {
+                        html += '<span class="text-muted">• ' + r.horasPlan + ' hs</span>';
+                    }
+                    html += '</div>';
+                    html += '<button type="button" class="btn btn-sm btn-outline-danger" data-action="delete-plan-row" data-idx="' + r.originalIdx + '">🗑️</button>';
+                    html += '</div>';
+
+                    // Campos del día
+                    html += '<div class="row g-2">';
+
+                    html += '<div class="col-12 col-md-6">';
+                    html += '<label class="small text-muted fw-semibold d-block mb-1">Empleado</label>';
+                    html += '<select class="form-select form-select-sm bg-white border" id="' + rowId + '-empleado">' + empleadoOptions + '</select>';
+                    html += '</div>';
+
+                    html += '<div class="col-6 col-md-3">';
+                    html += '<label class="small text-muted fw-semibold d-block mb-1">Día</label>';
+                    html += '<select class="form-select form-select-sm text-center bg-white border" id="' + rowId + '-dia">' + diaOptions + '</select>';
+                    html += '</div>';
+
+                    html += '<div class="col-6 col-md-3">';
+                    html += '<label class="small text-muted fw-semibold d-block mb-1">Hora entrada</label>';
+                    html += '<input type="time" class="form-control form-control-sm text-center" id="' + rowId + '-horaEntrada" value="' + HtmlHelpers.escapeHtml(horaFormatted) + '" step="1800">';
+                    html += '</div>';
+
+                    html += '<div class="col-6 col-md-3">';
+                    html += '<label class="small text-muted fw-semibold d-block mb-1">Horas plan</label>';
+                    html += '<input type="number" step="0.5" min="0" class="form-control form-control-sm text-end" id="' + rowId + '-horasPlan" value="' + HtmlHelpers.escapeHtml(r.horasPlan != null ? String(r.horasPlan) : "") + '">';
+                    html += '</div>';
+
+                    html += '<div class="col-12 col-md-6">';
+                    html += '<label class="small text-muted fw-semibold d-block mb-1">Observaciones</label>';
+                    html += '<input type="text" class="form-control form-control-sm" id="' + rowId + '-obs" value="' + HtmlHelpers.escapeHtml(r.observaciones || "") + '">';
+                    html += '</div>';
+
+                    html += '<input type="hidden" id="' + rowId + '-id" value="' + HtmlHelpers.escapeHtml(r.id || "") + '">';
+
+                    html += '</div>'; // row
+                    html += '</div>'; // border rounded
+                });
+
+                html += '</div>'; // card-body
+                html += '</div>'; // collapse
+                html += '</div>'; // card
+            });
+
+            html += '</div>'; // weekly-plan-cards
+
+            // Botones de acción (Solo Guardar, Agregar se movió arriba)
+            html += '<div class="d-flex justify-content-end align-items-center mt-3 pt-3 border-top">';
+            html += '<button type="button" class="btn btn-sm fw-semibold text-white shadow-sm" ';
+            html += 'style="background: linear-gradient(135deg, #10b981, #059669); border: none; padding: 8px 24px; border-radius: 8px;" ';
+            html += 'data-action="save-weekly-plan" id="btn-save-weekly">💾 Guardar plan del cliente</button>';
             html += "</div>";
+
+            if (panel.id === "plan-semanal-panel") {
+                html += "</div>";
+            }
 
             panel.innerHTML = html;
 
-            const tbody = panel.querySelector("tbody");
-            if (tbody) {
-                const frag = document.createDocumentFragment();
-                rows.forEach(function (r, idx) {
-                    const rowId = "plan-row-" + idx;
-                    const empleadoOptions = HtmlHelpers.getEmpleadoOptionsHtml(r.empleado || "", referenceData.empleados);
-                    const diaOptions = HtmlHelpers.getDiaOptionsHtml(r.diaSemana || "");
-                    const checkedActivo = r.activo ? "checked" : "";
-                    const horaFormatted = HtmlHelpers.formatHoraEntradaForInput(r.horaEntrada);
+            // Set vigencias en inputs superiores
+            const vigDesdeInput = document.getElementById('plan-vig-desde');
+            const vigHastaInput = document.getElementById('plan-vig-hasta');
+            if (vigDesdeInput && rows[0]) vigDesdeInput.value = formatDateForInput(rows[0].vigDesde || vigDesdeInputVal());
+            if (vigHastaInput && rows[0]) vigHastaInput.value = formatDateForInput(rows[0].vigHasta || vigHastaInputVal());
 
-                    const tr = document.createElement("tr");
-                    tr.setAttribute("data-idx", idx);
-                    tr.innerHTML =
-                        "<td>" +
-                        '<select class="form-select form-select-sm" ' +
-                        'id="' + rowId + '-empleado">' +
-                        empleadoOptions +
-                        "</select>" +
-                        "</td>" +
-                        "<td>" +
-                        '<select class="form-select form-select-sm text-center" ' +
-                        'id="' + rowId + '-dia">' +
-                        diaOptions +
-                        "</select>" +
-                        "</td>" +
-                        "<td>" +
-                        '<input type="time" class="form-control form-control-sm text-center" ' +
-                        'id="' + rowId + '-hora" value="' +
-                        HtmlHelpers.escapeHtml(horaFormatted) +
-                        '" step="1800">' +
-                        "</td>" +
-                        "<td>" +
-                        '<input type="number" step="0.5" min="0" ' +
-                        'class="form-control form-control-sm text-end" ' +
-                        'id="' + rowId + '-horas" value="' +
-                        HtmlHelpers.escapeHtml(r.horasPlan != null ? String(r.horasPlan) : "") +
-                        '">' +
-                        "</td>" +
-                        "<td class='text-center'>" +
-                        '<input type="checkbox" class="form-check-input" ' +
-                        'id="' + rowId + '-activo" ' + checkedActivo + ">" +
-                        "</td>" +
-                        "<td>" +
-                        '<input type="text" class="form-control form-control-sm" ' +
-                        'id="' + rowId + '-obs" value="' +
-                        HtmlHelpers.escapeHtml(r.observaciones || "") +
-                        '">' +
-                        "</td>" +
-                        "<td class='text-center'>" +
-                        '<button type="button" class="btn btn-outline-danger btn-sm" ' +
-                        'data-action="delete-plan-row" data-idx="' + idx + '">🗑️</button>' +
-                        "</td>";
-
-                    frag.appendChild(tr);
-                });
-                tbody.appendChild(frag);
-            }
-
+            // Bind collapse arrows
+            bindWeeklyPlanCollapseArrows();
             attachWeeklyPlanHandlers(panel);
+        }
+
+        function bindWeeklyPlanCollapseArrows() {
+            const panel = document.getElementById("plan-semanal-panel");
+            if (!panel) return;
+
+            const collapses = panel.querySelectorAll(".collapse");
+            collapses.forEach(function (col) {
+                const targetId = col.id;
+                const header = panel.querySelector(`[data-bs-target="#${targetId}"]`);
+                if (!header) return;
+                const arrowEl = header.querySelector('[data-role="collapse-arrow"]');
+                if (!arrowEl) return;
+
+                const updateArrow = function () {
+                    const isShown = col.classList.contains("show");
+                    arrowEl.textContent = isShown ? "▲" : "▼";
+                    header.setAttribute("aria-expanded", isShown ? "true" : "false");
+                };
+
+                col.addEventListener("shown.bs.collapse", updateArrow);
+                col.addEventListener("hidden.bs.collapse", updateArrow);
+                updateArrow();
+            });
         }
 
         function attachWeeklyPlanHandlers(panel) {
@@ -237,65 +657,124 @@
         }
 
         function addEmptyPlanRow() {
+            // Simplemente recargamos el plan con una fila nueva agregada
+            const clienteSelect = document.getElementById("field-CLIENTE");
+            if (!clienteSelect) return;
+
+            const cliente = clienteSelect.value;
+            if (!cliente) {
+                if (Alerts) Alerts.showAlert("Seleccioná un cliente primero.", "warning");
+                return;
+            }
+
+            // Obtener las filas actuales del DOM
             const panel = document.getElementById("plan-semanal-panel");
             if (!panel) return;
 
-            const tbody = panel.querySelector("tbody");
-            if (!tbody) return;
+            const currentRows = [];
+            const allInputs = panel.querySelectorAll('[id^="plan-row-"]');
+            const processedIndices = new Set();
 
-            const idx = tbody.querySelectorAll("tr").length;
-            const rowId = "plan-row-" + idx;
+            allInputs.forEach(input => {
+                const match = input.id.match(/plan-row-(\d+)-/);
+                if (match && !processedIndices.has(match[1])) {
+                    const idx = match[1];
+                    processedIndices.add(idx);
 
-            const tr = document.createElement("tr");
-            tr.setAttribute("data-idx", idx);
+                    const empleadoSelect = document.getElementById(`plan-row-${idx}-empleado`);
+                    const diaSelect = document.getElementById(`plan-row-${idx}-dia`);
+                    const horaInput = document.getElementById(`plan-row-${idx}-horaEntrada`);
+                    const horasInput = document.getElementById(`plan-row-${idx}-horasPlan`);
+                    const obsInput = document.getElementById(`plan-row-${idx}-obs`);
 
-            tr.innerHTML =
-                "<td>" +
-                '<select class="form-select form-select-sm" id="' + rowId + '-empleado">' +
-                HtmlHelpers.getEmpleadoOptionsHtml("", referenceData.empleados) +
-                "</select>" +
-                "</td>" +
-                "<td>" +
-                '<select class="form-select form-select-sm text-center" id="' + rowId + '-dia">' +
-                HtmlHelpers.getDiaOptionsHtml("") +
-                "</select>" +
-                "</td>" +
-                "<td>" +
-                '<input type="time" class="form-control form-control-sm text-center" ' +
-                'id="' + rowId + '-hora" step="1800">' +
-                "</td>" +
-                "<td>" +
-                '<input type="number" step="0.5" min="0" ' +
-                'class="form-control form-control-sm text-end" ' +
-                'id="' + rowId + '-horas">' +
-                "</td>" +
-                "<td class='text-center'>" +
-                '<input type="checkbox" class="form-check-input" ' +
-                'id="' + rowId + '-activo" checked>' +
-                "</td>" +
-                "<td>" +
-                '<input type="text" class="form-control form-control-sm" ' +
-                'id="' + rowId + '-obs">' +
-                "</td>" +
-                "<td class='text-center'>" +
-                '<button type="button" class="btn btn-outline-danger btn-sm" ' +
-                'data-action="delete-plan-row" data-idx="' + idx + '">🗑️</button>' +
-                "</td>";
+                    const row = {
+                        empleado: empleadoSelect ? empleadoSelect.value : "",
+                        diaSemana: diaSelect ? diaSelect.value : "",
+                        horaEntrada: horaInput ? horaInput.value : "",
+                        horasPlan: horasInput ? horasInput.value : "",
+                        vigDesde: vigDesdeInputVal(),
+                        vigHasta: vigHastaInputVal(),
+                        observaciones: obsInput ? obsInput.value : ""
+                    };
 
-            tbody.appendChild(tr);
+                    // Solo agregar si no es una fila completamente vacía
+                    if (row.empleado || row.diaSemana || row.horaEntrada || row.horasPlan || row.observaciones) {
+                        currentRows.push(row);
+                    }
+                }
+            });
+
+            // Agregar nueva fila vacía AL INICIO (para que aparezca arriba)
+            currentRows.unshift({
+                empleado: "",
+                diaSemana: "",
+                horaEntrada: "",
+                horasPlan: "",
+                vigDesde: vigDesdeInputVal(),
+                vigHasta: vigHastaInputVal(),
+                observaciones: ""
+            });
+
+            // Reconstruir el panel
+            buildWeeklyPlanPanel(currentRows, cliente, null);
+
+            // Expandir automáticamente el grupo "Sin asignar"
+            setTimeout(() => {
+                const sinAsignarCollapse = document.querySelector('[id*="collapse-Sin asignar"]');
+                if (sinAsignarCollapse && !sinAsignarCollapse.classList.contains('show')) {
+                    const bsCollapse = new bootstrap.Collapse(sinAsignarCollapse, { show: true });
+                }
+            }, 100);
         }
 
         function deletePlanRow(idx) {
+            const clienteSelect = document.getElementById("field-CLIENTE");
+            if (!clienteSelect) return;
+
+            const cliente = clienteSelect.value;
+            if (!cliente) return;
+
             const panel = document.getElementById("plan-semanal-panel");
             if (!panel) return;
 
-            const tbody = panel.querySelector("tbody");
-            if (!tbody) return;
+            // Obtener todas las filas actuales excepto la que queremos eliminar
+            const currentRows = [];
+            const allInputs = panel.querySelectorAll('[id^="plan-row-"]');
+            const processedIndices = new Set();
 
-            const tr = tbody.querySelector('tr[data-idx="' + idx + '"]');
-            if (tr) {
-                tr.remove();
-            }
+            allInputs.forEach(input => {
+                const match = input.id.match(/plan-row-(\d+)-/);
+                if (match && !processedIndices.has(match[1])) {
+                    const currentIdx = match[1];
+
+                    // Saltar la fila que queremos eliminar
+                    if (currentIdx === String(idx)) {
+                        processedIndices.add(currentIdx);
+                        return;
+                    }
+
+                    processedIndices.add(currentIdx);
+
+                    const empleadoSelect = document.getElementById(`plan-row-${currentIdx}-empleado`);
+                    const diaSelect = document.getElementById(`plan-row-${currentIdx}-dia`);
+                    const horaInput = document.getElementById(`plan-row-${currentIdx}-horaEntrada`);
+                    const horasInput = document.getElementById(`plan-row-${currentIdx}-horasPlan`);
+                    const obsInput = document.getElementById(`plan-row-${currentIdx}-obs`);
+
+                    currentRows.push({
+                        empleado: empleadoSelect ? empleadoSelect.value : "",
+                        diaSemana: diaSelect ? diaSelect.value : "",
+                        horaEntrada: horaInput ? horaInput.value : "",
+                        horasPlan: horasInput ? horasInput.value : "",
+                        vigDesde: vigDesdeInputVal(),
+                        vigHasta: vigHastaInputVal(),
+                        observaciones: obsInput ? obsInput.value : ""
+                    });
+                }
+            });
+
+            // Reconstruir el panel sin la fila eliminada
+            buildWeeklyPlanPanel(currentRows, cliente, null);
         }
 
         function saveWeeklyPlan() {
@@ -311,47 +790,104 @@
             const panel = document.getElementById("plan-semanal-panel");
             if (!panel) return;
 
-            const tbody = panel.querySelector("tbody");
-            if (!tbody) return;
+            // Recolectar filas por índice de los inputs
+            const itemsMap = new Map();
+            const inputs = panel.querySelectorAll('[id^="plan-row-"]');
+            inputs.forEach((el) => {
+                // Fix: Use unambiguous IDs
+                const match = el.id.match(/plan-row-(\d+)-(empleado|dia|horaEntrada|horasPlan|obs|id)/);
+                if (!match) return;
+                const idx = match[1];
+                const field = match[2];
 
-            const rows = Array.from(tbody.querySelectorAll("tr"));
-            const items = rows.map(function (tr) {
-                const idx = tr.getAttribute("data-idx");
-                const empleadoSelect = document.getElementById(`plan-row-${idx}-empleado`);
-                const diaSelect = document.getElementById(`plan-row-${idx}-dia`);
-                const horaInput = document.getElementById(`plan-row-${idx}-hora`);
-                const horasInput = document.getElementById(`plan-row-${idx}-horas`);
-                const activoCheck = document.getElementById(`plan-row-${idx}-activo`);
-                const obsInput = document.getElementById(`plan-row-${idx}-obs`);
+                if (!itemsMap.has(idx)) {
+                    itemsMap.set(idx, {
+                        id: "",
+                        empleado: "",
+                        diaSemana: "",
+                        horaEntrada: "",
+                        horasPlan: "",
+                        vigDesde: vigDesdeInputVal(),
+                        vigHasta: vigHastaInputVal(),
+                        observaciones: ""
+                    });
+                }
+                const obj = itemsMap.get(idx);
+                const val = el.value;
 
-                return {
-                    empleado: empleadoSelect ? empleadoSelect.value : "",
-                    diaSemana: diaSelect ? diaSelect.value : "",
-                    horaEntrada: horaInput ? horaInput.value : "",
-                    horasPlan: horasInput ? horasInput.value : "",
-                    activo: activoCheck ? activoCheck.checked : true,
-                    observaciones: obsInput ? obsInput.value : ""
-                };
-            }).filter(item => item.empleado || item.diaSemana || item.horasPlan);
+                if (field === "id") obj.id = val;
+                if (field === "empleado") obj.empleado = val;
+                if (field === "dia") obj.diaSemana = val;
+                if (field === "horaEntrada") obj.horaEntrada = val;
+                if (field === "horasPlan") obj.horasPlan = val;
+                if (field === "obs") obj.observaciones = val;
+            });
 
+            const items = Array.from(itemsMap.values()).filter(item =>
+                item.id || item.empleado || item.diaSemana || item.horasPlan || item.observaciones
+            );
+
+            if (!items.length) {
+                UiState && UiState.setGlobalLoading(false);
+                setSavingState(false);
+                Alerts && Alerts.showAlert("No hay filas para guardar. Agregá al menos un día.", "warning");
+                return;
+            }
+
+            setSavingState(true);
             UiState.setGlobalLoading(true, "Guardando plan semanal...");
-            ApiService.call('saveWeeklyPlanForClient', cliente, items)
+
+            // Pasamos currentOriginalVigencia para que el backend sepa qué reemplazar
+            ApiService.call('saveWeeklyPlanForClient', cliente, items, currentOriginalVigencia)
                 .then(function () {
                     if (Alerts) Alerts.showAlert("✅ Plan semanal guardado correctamente.", "success");
-                    fetchWeeklyPlanForClient();
+                    // Recargar la lista completa desde el servidor
+                    reloadList();
                 })
                 .catch(function (err) {
                     if (Alerts) Alerts.showAlert("Error al guardar plan: " + err.message, "danger");
                 })
                 .finally(function () {
                     UiState.setGlobalLoading(false);
+                    setSavingState(false);
+                });
+        }
+
+        function setSavingState(isSaving) {
+            const btn = document.getElementById('btn-save-weekly');
+            if (!btn) return;
+            if (isSaving) {
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Guardando...';
+            } else {
+                btn.disabled = false;
+                btn.innerHTML = '💾 Guardar plan del cliente';
+            }
+        }
+
+        function reloadList() {
+            if (!currentContainer) return;
+
+            // Mostrar loading en el contenedor actual
+            currentContainer.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary" role="status"></div><div class="mt-2">Actualizando lista...</div></div>';
+
+            ApiService.call("searchRecords", "ASISTENCIA_PLAN", "")
+                .then(function (records) {
+                    renderList(currentContainer, records || []);
+                })
+                .catch(function (err) {
+                    console.error("Error recargando lista:", err);
+                    currentContainer.innerHTML = '<div class="alert alert-danger">Error al actualizar la lista.</div>';
                 });
         }
 
         return {
             init,
             setup,
-            fetchWeeklyPlanForClient
+            render,
+            renderList,
+            fetchWeeklyPlanForClient,
+            reloadList
         };
     })();
 

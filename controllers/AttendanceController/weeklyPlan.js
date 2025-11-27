@@ -99,15 +99,18 @@ const AttendanceWeeklyPlan = (function () {
         }
 
         const headerPlan = dataPlan[0];
+        const headerNorm = headerPlan.map(h => String(h || '').trim());
         const rowsPlan = dataPlan.slice(1);
 
-        const idxCliente = headerPlan.indexOf('CLIENTE');
-        const idxEmpleado = headerPlan.indexOf('EMPLEADO');
-        const idxDiaSemana = headerPlan.indexOf('DIA SEMANA');
-        const idxHoraEntrada = headerPlan.indexOf('HORA ENTRADA');
-        const idxHorasPlan = headerPlan.indexOf('HORAS PLAN');
-        const idxActivo = headerPlan.indexOf('ACTIVO');
-        const idxObs = headerPlan.indexOf('OBSERVACIONES');
+        const idxId = headerNorm.indexOf('ID');
+        const idxCliente = headerNorm.indexOf('CLIENTE');
+        const idxEmpleado = headerNorm.indexOf('EMPLEADO');
+        const idxDiaSemana = headerNorm.indexOf('DIA SEMANA');
+        const idxHoraEntrada = headerNorm.indexOf('HORA ENTRADA');
+        const idxHorasPlan = headerNorm.indexOf('HORAS PLAN');
+        const idxVigDesde = headerNorm.indexOf('VIGENTE DESDE');
+        const idxVigHasta = headerNorm.indexOf('VIGENTE HASTA');
+        const idxObs = headerNorm.indexOf('OBSERVACIONES');
 
         if (
             idxCliente === -1 ||
@@ -115,7 +118,6 @@ const AttendanceWeeklyPlan = (function () {
             idxDiaSemana === -1 ||
             idxHoraEntrada === -1 ||
             idxHorasPlan === -1 ||
-            idxActivo === -1 ||
             idxObs === -1
         ) {
             throw new Error('Faltan columnas en ASISTENCIA_PLAN_DB. Revisar encabezados.');
@@ -130,12 +132,14 @@ const AttendanceWeeklyPlan = (function () {
             if (cliNorm !== targetNorm) return;
 
             result.push({
+                id: idxId > -1 ? row[idxId] : '',
                 cliente: String(cli || ''),
                 empleado: row[idxEmpleado] || '',
                 diaSemana: row[idxDiaSemana] || '',
                 horaEntrada: row[idxHoraEntrada] || '',
                 horasPlan: row[idxHorasPlan] || '',
-                activo: DataUtils.isTruthy(row[idxActivo]),
+                vigDesde: idxVigDesde > -1 ? row[idxVigDesde] : '',
+                vigHasta: idxVigHasta > -1 ? row[idxVigHasta] : '',
                 observaciones: row[idxObs] || ''
             });
         });
@@ -144,11 +148,13 @@ const AttendanceWeeklyPlan = (function () {
     }
 
     /**
-     * Guarda el plan semanal completo para un cliente
+     * Guarda el plan semanal para un cliente, permitiendo gestionar vigencias múltiples.
      * @param {string} cliente - Nombre del cliente
      * @param {Array} items - Array de items del plan
+     * @param {Object} originalVigencia - { desde: string, hasta: string } para identificar qué plan reemplazar
      */
-    function saveWeeklyPlanForClient(cliente, items) {
+    function saveWeeklyPlanForClient(cliente, items, originalVigencia) {
+        console.log("Iniciando saveWeeklyPlanForClient para:", cliente);
         if (!cliente) throw new Error('Falta el cliente para guardar el plan.');
 
         items = items || [];
@@ -158,60 +164,165 @@ const AttendanceWeeklyPlan = (function () {
             throw new Error('No se encontró la hoja para ASISTENCIA_PLAN.');
         }
 
+        // 1. Leer estado actual
         const lastRow = sheet.getLastRow();
         const lastCol = sheet.getLastColumn();
-        const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+        let currentHeaders = [];
+        let existingData = [];
 
-        const idxCliente = headers.indexOf('CLIENTE');
-        const idxEmpleado = headers.indexOf('EMPLEADO');
-        const idxDiaSemana = headers.indexOf('DIA SEMANA');
-        const idxHoraEntrada = headers.indexOf('HORA ENTRADA');
-        const idxHorasPlan = headers.indexOf('HORAS PLAN');
-        const idxActivo = headers.indexOf('ACTIVO');
-        const idxObs = headers.indexOf('OBSERVACIONES');
-
-        if (idxCliente === -1) {
-            throw new Error('No existe la columna "CLIENTE" en ASISTENCIA_PLAN.');
+        if (lastCol > 0) {
+            currentHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || '').trim());
+            if (lastRow > 1) {
+                existingData = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+            }
         }
 
-        // Mantener registros de otros clientes
-        let existing = [];
-        if (lastRow > 1) {
-            existing = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
-        }
+        // 2. Definir esquema deseado (Standard Schema)
+        const standardHeaders = [
+            'ID', 'CLIENTE', 'EMPLEADO', 'DIA SEMANA',
+            'HORA ENTRADA', 'HORAS PLAN', 'OBSERVACIONES',
+            'VIGENTE DESDE', 'VIGENTE HASTA'
+        ];
 
-        const kept = existing.filter(function (row) {
-            return String(row[idxCliente] || '') !== String(cliente);
+        // 3. Mapear índices actuales
+        const idxMap = {};
+        currentHeaders.forEach((h, i) => {
+            idxMap[h] = i;
         });
 
-        // Crear nuevas filas para este cliente
-        const newRows = (items || []).map(function (it) {
-            const row = new Array(headers.length).fill('');
+        // Identificar columnas extra para preservarlas
+        const extraHeaders = currentHeaders.filter(h => !standardHeaders.includes(h) && h !== '');
+        const finalHeaders = [...standardHeaders, ...extraHeaders];
 
-            row[idxCliente] = cliente;
+        // 4. Procesar datos existentes (KEPT)
+        const idxCliente = idxMap['CLIENTE'];
+        const idxVigDesde = idxMap['VIGENTE DESDE'];
+        const idxVigHasta = idxMap['VIGENTE HASTA'];
 
-            if (idxEmpleado > -1) row[idxEmpleado] = it.empleado || '';
-            if (idxDiaSemana > -1) row[idxDiaSemana] = it.diaSemana || '';
-            if (idxHoraEntrada > -1) row[idxHoraEntrada] = it.horaEntrada || '';
-            if (idxHorasPlan > -1 && it.horasPlan !== '') {
-                row[idxHorasPlan] = Number(it.horasPlan);
+        // Helper para comparar fechas (strings YYYY-MM-DD o Date objects)
+        const areDatesEqual = (d1, d2) => {
+            if (!d1 && !d2) return true;
+            if (!d1 || !d2) return false;
+            const t1 = new Date(d1).setHours(0, 0, 0, 0);
+            const t2 = new Date(d2).setHours(0, 0, 0, 0);
+            return t1 === t2;
+        };
+
+        const keptRows = existingData.filter(row => {
+            // Si no hay columna cliente, asumimos que no es de este cliente
+            if (idxCliente === undefined) return false;
+
+            const rowCliente = String(row[idxCliente] || '');
+            if (rowCliente !== String(cliente)) return true; // Mantener otros clientes
+
+            // Es el mismo cliente. Verificamos si corresponde al plan que estamos editando.
+            // Si se pasó originalVigencia, borramos SOLO lo que coincida con esa vigencia.
+            if (originalVigencia) {
+                const rowDesde = row[idxVigDesde];
+                const rowHasta = row[idxVigHasta];
+
+                const matchDesde = areDatesEqual(rowDesde, originalVigencia.desde);
+                const matchHasta = areDatesEqual(rowHasta, originalVigencia.hasta);
+
+                if (matchDesde && matchHasta) {
+                    return false; // Es del plan que estamos reemplazando, NO mantener (borrar)
+                }
+                return true; // Es de otro plan del mismo cliente, MANTENER.
+            } else {
+                // Comportamiento legacy/default: Si no se especifica vigencia original,
+                // asumimos que es un "Nuevo Plan" que NO reemplaza a los anteriores,
+                // O que el usuario quiere reemplazar TODO?
+                // Según requerimiento: "gravaria un nuevo plan... por mas de que tenga 2 planes".
+                // Entonces, si no hay originalVigencia (es nuevo), NO borramos nada del cliente.
+                return true;
             }
-            if (idxActivo > -1) row[idxActivo] = it.activo ? true : false;
-            if (idxObs > -1) row[idxObs] = it.observaciones || '';
+        });
+
+        // Mapear keptRows al nuevo formato
+        const mappedKeptRows = keptRows.map(oldRow => {
+            const newRow = new Array(finalHeaders.length).fill('');
+            finalHeaders.forEach((header, newIdx) => {
+                const oldIdx = idxMap[header];
+                if (oldIdx !== undefined && oldIdx < oldRow.length) {
+                    newRow[newIdx] = oldRow[oldIdx];
+                }
+            });
+            return newRow;
+        });
+
+        // 5. Procesar nuevos items
+        let nextId = 1;
+        // Calcular nextId basado en mappedKeptRows
+        const idxId = finalHeaders.indexOf('ID');
+        if (idxId > -1) {
+            mappedKeptRows.forEach(r => {
+                const id = Number(r[idxId]);
+                if (!isNaN(id) && id >= nextId) nextId = id + 1;
+            });
+        }
+
+        const newRows = items.map(it => {
+            const row = new Array(finalHeaders.length).fill('');
+
+            // Helper para setear valor
+            const setVal = (header, val) => {
+                const idx = finalHeaders.indexOf(header);
+                if (idx > -1) {
+                    // Asegurar que no sea undefined
+                    if (val === undefined || val === null) val = '';
+                    row[idx] = val;
+                }
+            };
+
+            setVal('ID', it.id || nextId++);
+            setVal('CLIENTE', cliente);
+            setVal('EMPLEADO', it.empleado || '');
+            setVal('DIA SEMANA', it.diaSemana || '');
+            setVal('HORA ENTRADA', it.horaEntrada || '');
+
+            let horas = '';
+            if (it.horasPlan !== '' && it.horasPlan != null) {
+                horas = Number(it.horasPlan);
+                if (isNaN(horas)) horas = 0;
+            }
+            setVal('HORAS PLAN', horas);
+
+            setVal('OBSERVACIONES', it.observaciones || '');
+            setVal('VIGENTE DESDE', parseDateInput(it.vigDesde));
+            setVal('VIGENTE HASTA', parseDateInput(it.vigHasta));
 
             return row;
         });
 
-        const all = kept.concat(newRows);
+        // 6. Combinar y Guardar
+        const allRows = [...mappedKeptRows, ...newRows];
 
-        // Limpiar y escribir
-        if (lastRow > 1) {
-            sheet.getRange(2, 1, lastRow - 1, lastCol).clearContent();
+        console.log("Guardando " + allRows.length + " filas. (Kept: " + mappedKeptRows.length + ", New: " + newRows.length + ")");
+
+        // Escribir Headers
+        sheet.getRange(1, 1, 1, finalHeaders.length).setValues([finalHeaders]);
+
+        // Limpiar contenido anterior
+        const maxRows = Math.max(lastRow, allRows.length + 1);
+        const maxCols = Math.max(lastCol, finalHeaders.length);
+
+        if (maxRows > 1) {
+            // Limpiar todo el rango de datos posible
+            sheet.getRange(2, 1, maxRows - 1, maxCols).clearContent();
         }
 
-        if (all.length) {
-            sheet.getRange(2, 1, all.length, lastCol).setValues(all);
+        // Escribir nuevos datos
+        if (allRows.length > 0) {
+            sheet.getRange(2, 1, allRows.length, finalHeaders.length).setValues(allRows);
         }
+    }
+
+    function parseDateInput(value) {
+        if (!value) return '';
+        if (value instanceof Date && !isNaN(value)) return value;
+        // Esperamos strings tipo YYYY-MM-DD
+        const d = new Date(value + 'T00:00:00');
+        return isNaN(d) ? '' : d;
     }
 
     return {
