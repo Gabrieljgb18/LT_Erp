@@ -220,8 +220,25 @@ var AccountController = (function () {
         const saldoInicial = getClientBalanceBeforeDate(filter, startDate);
 
         // 2. Obtener movimientos dentro del período
-        const debitos = getClientDebits(filter, startDate, endDate);
+        let debitos = getClientDebits(filter, startDate, endDate);
         const creditos = getClientPayments(filter, startDate, endDate);
+
+        // Fallback: si por alguna razón los débitos salen vacíos, recalcular desde getInvoices (mismo motor que Facturación UI)
+        if ((!debitos || !debitos.length) && (typeof InvoiceController !== 'undefined' && InvoiceController.getInvoices)) {
+            try {
+                const invs = InvoiceController.getInvoices({
+                    cliente: filter.clientName,
+                    idCliente: filter.idCliente,
+                    fechaDesde: startDateStr,
+                    fechaHasta: endDateStr
+                }) || [];
+                if (invs.length) {
+                    debitos = invs.map(inv => mapInvoiceToDebit_(inv)).filter(Boolean);
+                }
+            } catch (e) {
+                // ignore
+            }
+        }
 
         // 3. Unificar y ordenar
         const movimientos = [...debitos, ...creditos].sort((a, b) => a.fecha - b.fecha);
@@ -239,6 +256,39 @@ var AccountController = (function () {
         return {
             saldoInicial: saldoInicial,
             movimientos: movimientosConSaldo
+        };
+    }
+
+    function mapInvoiceToDebit_(inv) {
+        if (!inv) return null;
+        const estado = String(inv['ESTADO'] || '').trim();
+        if (estado && estado.toLowerCase() === 'anulada') return null;
+
+        const fecha = parseDateFlexible_(inv['FECHA']);
+        if (!fecha || isNaN(fecha.getTime())) return null;
+
+        const periodo = inv['PERIODO'] || '';
+        const numero = inv['NUMERO'] || '';
+        const comp = inv['COMPROBANTE'] || '';
+
+        const partes = [];
+        if (comp) partes.push(comp);
+        if (numero) partes.push(numero);
+        if (periodo) partes.push(periodo);
+
+        const monto = toNumber_(inv['TOTAL'] || inv['SUBTOTAL'] || inv['IMPORTE'] || 0);
+        const invId = inv.ID != null ? inv.ID : (inv['ID'] || '');
+
+        return {
+            fecha: fecha,
+            concepto: partes.length ? ('Factura ' + partes.join(' - ')) : 'Factura',
+            debe: monto,
+            haber: 0,
+            tipo: 'FACTURA',
+            idFactura: invId,
+            facturaNumero: numero || '',
+            periodo: periodo || '',
+            estado: estado || ''
         };
     }
 
