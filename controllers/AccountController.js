@@ -165,53 +165,29 @@ var AccountController = (function () {
 
     function getClientInvoices(clientName, idCliente) {
         const filter = normalizeClientFilter_(clientName, idCliente);
-        const resolvedName = filter.clientName;
-        const resolvedId = filter.idCliente;
-        const sheet = DatabaseService.getDbSheetForFormat('FACTURACION');
-        if (!sheet) return [];
+        if (!filter.clientName && !filter.idCliente) return [];
 
-        const data = sheet.getDataRange().getValues();
-        if (!data || data.length < 2) return [];
+        // Preferimos usar el mismo origen que la UI de Facturación para evitar desvíos
+        const invoices = (typeof InvoiceController !== 'undefined' && InvoiceController.getInvoices)
+            ? InvoiceController.getInvoices({ cliente: filter.clientName, idCliente: filter.idCliente })
+            : [];
 
-        const headers = data[0].map(h => String(h || '').trim().toUpperCase());
-        const rows = data.slice(1);
-
-        const idxId = headers.indexOf('ID');
-        const idxIdCliente = headers.indexOf('ID_CLIENTE');
-        const idxCliente = headers.indexOf('RAZÓN SOCIAL');
-        const idxFecha = headers.indexOf('FECHA');
-        const idxPeriodo = headers.indexOf('PERIODO');
-        const idxNum = headers.indexOf('NUMERO');
-        const idxComp = headers.indexOf('COMPROBANTE');
-        const idxTotal = headers.indexOf('TOTAL');
-
-        const targetId = resolvedId || getClientId_(resolvedName);
-        const targetClient = normalizeClientName_(resolvedName);
-
-        return rows.map(row => {
-            let matches = false;
-            if (targetId && idxIdCliente > -1) {
-                matches = String(row[idxIdCliente]) === String(targetId);
-            }
-            if (!matches && idxCliente > -1 && targetClient) {
-                const rowClient = normalizeClientName_(row[idxCliente]);
-                matches = rowClient === targetClient ||
-                    rowClient.indexOf(targetClient) !== -1 ||
-                    targetClient.indexOf(rowClient) !== -1;
-            }
-            if (!matches) return null;
-
-            const fecha = parseDateFlexible_(row[idxFecha]);
+        const list = (invoices || []).map(inv => {
+            const estado = String(inv['ESTADO'] || '').trim();
+            if (estado && estado.toLowerCase() === 'anulada') return null;
+            const fecha = parseDateFlexible_(inv['FECHA']);
             return {
-                id: idxId > -1 ? row[idxId] : '',
-                idCliente: idxIdCliente > -1 ? row[idxIdCliente] : '',
+                id: inv.ID != null ? inv.ID : (inv['ID'] || ''),
+                idCliente: inv['ID_CLIENTE'] || '',
                 fecha: fecha || '',
-                periodo: idxPeriodo > -1 ? row[idxPeriodo] : '',
-                numero: idxNum > -1 ? row[idxNum] : '',
-                comprobante: idxComp > -1 ? row[idxComp] : '',
-                total: idxTotal > -1 ? Number(row[idxTotal]) || 0 : 0
+                periodo: inv['PERIODO'] || '',
+                numero: inv['NUMERO'] || '',
+                comprobante: inv['COMPROBANTE'] || '',
+                total: toNumber_(inv['TOTAL'] || inv['SUBTOTAL'] || inv['IMPORTE'] || 0)
             };
-        }).filter(Boolean).sort((a, b) => {
+        }).filter(Boolean);
+
+        return list.sort((a, b) => {
             const fa = a.fecha instanceof Date ? a.fecha.getTime() : 0;
             const fb = b.fecha instanceof Date ? b.fecha.getTime() : 0;
             return fb - fa;
@@ -301,80 +277,45 @@ var AccountController = (function () {
 
     function getClientDebits(clientName, startDate, endDate, idCliente) {
         const filter = normalizeClientFilter_(clientName, idCliente);
-        const sheet = DatabaseService.getDbSheetForFormat('FACTURACION');
-        const data = sheet.getDataRange().getValues();
-        if (!data || data.length < 2) {
-            return [];
-        }
+        if (!filter.clientName && !filter.idCliente) return [];
 
-        const headers = data[0];
-        const rows = data.slice(1);
-
-        const colMap = {};
-        headers.forEach((h, i) => { colMap[normalizeHeaderKey_(h)] = i; });
-
-        const idxIdCliente = getIdx_(colMap, ['ID_CLIENTE', 'ID CLIENTE']);
-        const idxCliente = getIdx_(colMap, ['RAZÓN SOCIAL', 'RAZON SOCIAL', 'CLIENTE']);
-        const idxFecha = getIdx_(colMap, ['FECHA']);
-        const idxPeriodo = getIdx_(colMap, ['PERIODO']);
-        const idxNum = getIdx_(colMap, ['NUMERO', 'NÚMERO']);
-        const idxComp = getIdx_(colMap, ['COMPROBANTE']);
-        const idxTotal = getIdx_(colMap, ['TOTAL']);
-        const idxImporte = getIdx_(colMap, ['IMPORTE']);
-        const idxSubtotal = getIdx_(colMap, ['SUBTOTAL']);
-        const idxId = getIdx_(colMap, ['ID']);
-        const idxEstado = getIdx_(colMap, ['ESTADO']);
-
-        if (idxFecha === -1) return [];
-
-        const targetId = filter.idCliente || getClientId_(filter.clientName);
-        const targetClient = normalizeClientName_(filter.clientName);
         const from = toStartOfDay_(startDate);
         const to = toEndOfDay_(endDate);
 
-        return rows.map(row => {
-            const fecha = parseDateFlexible_(row[idxFecha]);
-            if (!fecha || isNaN(fecha.getTime())) return null;
+        // Reutilizar el filtro/normalización de InvoiceController para consistencia con el módulo Facturación
+        const invoices = (typeof InvoiceController !== 'undefined' && InvoiceController.getInvoices)
+            ? InvoiceController.getInvoices({
+                cliente: filter.clientName,
+                idCliente: filter.idCliente,
+                fechaDesde: from,
+                fechaHasta: to
+            })
+            : [];
 
-            if (from && fecha < from) return null;
-            if (to && fecha > to) return null;
+        return (invoices || []).map(inv => {
+            const estado = String(inv['ESTADO'] || '').trim();
+            if (estado && estado.toLowerCase() === 'anulada') return null;
 
-            let matches = false;
-            if (targetId && idxIdCliente > -1) {
-                matches = String(row[idxIdCliente]) === String(targetId);
-            }
-            if (!matches && idxCliente > -1 && targetClient) {
-                const rowClient = normalizeClientName_(row[idxCliente]);
-                matches = rowClient === targetClient ||
-                    rowClient.indexOf(targetClient) !== -1 ||
-                    targetClient.indexOf(rowClient) !== -1;
-            }
-            if (!matches) return null;
-
-            const estado = idxEstado > -1 ? String(row[idxEstado] || '').trim() : '';
-            if (estado && String(estado).toLowerCase() === 'anulada') return null;
-
-            const monto = idxTotal > -1 ? toNumber_(row[idxTotal])
-                : idxImporte > -1 ? toNumber_(row[idxImporte])
-                    : idxSubtotal > -1 ? toNumber_(row[idxSubtotal])
-                        : 0;
-
-            const periodo = idxPeriodo > -1 ? row[idxPeriodo] : '';
-            const numero = idxNum > -1 ? row[idxNum] : '';
-            const comp = idxComp > -1 ? row[idxComp] : '';
+            const fecha = parseDateFlexible_(inv['FECHA']);
+            const periodo = inv['PERIODO'] || '';
+            const numero = inv['NUMERO'] || '';
+            const comp = inv['COMPROBANTE'] || '';
 
             const partes = [];
             if (comp) partes.push(comp);
             if (numero) partes.push(numero);
             if (periodo) partes.push(periodo);
 
+            const monto = toNumber_(inv['TOTAL'] || inv['SUBTOTAL'] || inv['IMPORTE'] || 0);
+            const invId = inv.ID != null ? inv.ID : (inv['ID'] || '');
+
             return {
-                fecha: fecha,
+                fecha: fecha || null,
                 concepto: partes.length ? ('Factura ' + partes.join(' - ')) : 'Factura',
                 debe: monto,
                 haber: 0,
                 tipo: 'FACTURA',
-                idFactura: idxId > -1 ? row[idxId] : '',
+                idFactura: invId,
                 facturaNumero: numero || '',
                 periodo: periodo || '',
                 estado: estado || ''

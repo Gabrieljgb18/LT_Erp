@@ -977,6 +977,7 @@ var InvoiceController = (function () {
             const invId = idxId > -1 ? row[idxId] : row[0];
             const numero = idxNumero > -1 ? String(row[idxNumero] || '').trim() : '';
             const estado = idxEstado > -1 ? String(row[idxEstado] || '').trim() : '';
+            if (estado && String(estado).toLowerCase() === 'anulada') return;
             const totalNum = idxTotal > -1 ? Number(row[idxTotal]) : 0;
             const total = isNaN(totalNum) ? 0 : totalNum;
 
