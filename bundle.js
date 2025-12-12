@@ -3089,6 +3089,18 @@ var InvoicePanel = (function () {
     let generatorPage = 1;
     let coverageRows = [];
 
+    function escapeHtml_(val) {
+        if (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.escapeHtml === 'function') {
+            return HtmlHelpers.escapeHtml(val);
+        }
+        return String(val == null ? '' : val)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
 	    function render() {
 	        const container = document.getElementById(containerId);
 	        if (!container) return;
@@ -3623,7 +3635,7 @@ var InvoicePanel = (function () {
                 ? `<span class="badge bg-success-subtle text-success border">Sí</span>`
                 : `<span class="badge bg-danger-subtle text-danger border">No</span>`;
             const facturaLabel = r.facturado
-                ? `<span class="badge bg-light text-dark border">${escapeHtml(r.facturaNumero || ('#' + (r.facturaId || '')))}</span>`
+                ? `<span class="badge bg-light text-dark border">${escapeHtml_(r.facturaNumero || ('#' + (r.facturaId || '')))}</span>`
                 : `<span class="text-muted">—</span>`;
 
             const totalLabel = r.facturado ? formatCurrency(r.facturaTotal || 0) : '—';
@@ -3634,17 +3646,17 @@ var InvoicePanel = (function () {
                    <button class="btn btn-sm btn-outline-danger lt-btn-icon" onclick="InvoicePanel.downloadPdf('${r.facturaId}')" title="PDF">
                         <i class="bi bi-file-earmark-pdf-fill"></i>
                    </button>`
-                : `<button class="btn btn-sm btn-primary invoice-cov-generate" data-id-cliente="${escapeHtml(String(r.idCliente || ''))}" data-cliente="${escapeHtml(String(r.cliente || ''))}" data-period="${escapeHtml(String(period || ''))}">
+                : `<button class="btn btn-sm btn-primary invoice-cov-generate" data-id-cliente="${escapeHtml_(String(r.idCliente || ''))}" data-cliente="${escapeHtml_(String(r.cliente || ''))}" data-period="${escapeHtml_(String(period || ''))}">
                         <i class="bi bi-lightning-charge-fill me-1"></i>Generar
                    </button>`;
 
             tr.innerHTML = `
-                <td class="ps-3">${escapeHtml(r.cliente || '-')}</td>
-                <td class="text-end fw-bold">${escapeHtml(String(r.horas || 0))}</td>
-                <td class="text-end">${escapeHtml(String(r.dias || 0))}</td>
+                <td class="ps-3">${escapeHtml_(r.cliente || '-')}</td>
+                <td class="text-end fw-bold">${escapeHtml_(String(r.horas || 0))}</td>
+                <td class="text-end">${escapeHtml_(String(r.dias || 0))}</td>
                 <td class="text-center">${facturadoBadge}</td>
                 <td>${facturaLabel}</td>
-                <td class="text-end fw-bold">${escapeHtml(totalLabel)}</td>
+                <td class="text-end fw-bold">${escapeHtml_(totalLabel)}</td>
                 <td class="text-center">${actions}</td>
             `;
             tbody.appendChild(tr);
