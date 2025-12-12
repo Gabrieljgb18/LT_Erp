@@ -821,6 +821,235 @@ var InvoiceController = (function () {
         return { filename: filename, base64: base64 };
     }
 
+    /**
+     * Devuelve un control de facturación para un período (yyyy-MM):
+     * - Horas con asistencia por cliente (ASISTENCIA_DB)
+     * - Si existe factura emitida en el período (FACTURACION_DB)
+     */
+    function getInvoicingCoverage(periodStr, opts) {
+        opts = opts || {};
+        const period = String(periodStr || '').trim();
+        if (!/^\d{4}-\d{2}$/.test(period)) {
+            throw new Error('Periodo inválido. Usá formato yyyy-MM.');
+        }
+
+        const tz = Session.getScriptTimeZone();
+        const y = Number(period.slice(0, 4));
+        const m = Number(period.slice(5, 7)) - 1;
+        const start = new Date(y, m, 1);
+        const end = new Date(y, m + 1, 0, 23, 59, 59, 999);
+        const startStr = Utilities.formatDate(start, tz, 'yyyy-MM-dd');
+        const endStr = Utilities.formatDate(end, tz, 'yyyy-MM-dd');
+
+        const attendanceByClient = buildAttendanceByClient_(start, end);
+        const invoicesByClient = buildInvoicesByClientForMonth_(period);
+
+        const rows = [];
+        attendanceByClient.forEach(group => {
+            const key = group.key;
+            const inv = invoicesByClient.get(key);
+            rows.push({
+                idCliente: group.idCliente || '',
+                cliente: group.cliente || '',
+                horas: round2_(group.horas || 0),
+                dias: group.dias || 0,
+                facturado: !!inv,
+                facturas: inv ? inv.count : 0,
+                facturaId: inv ? inv.lastId : '',
+                facturaNumero: inv ? inv.lastNumero : '',
+                facturaEstado: inv ? inv.lastEstado : '',
+                facturaTotal: inv ? round2_(inv.lastTotal) : 0,
+                totalFacturado: inv ? round2_(inv.totalSum) : 0
+            });
+        });
+
+        // Orden: no facturado primero, luego horas desc, luego cliente asc
+        rows.sort((a, b) => {
+            if (a.facturado !== b.facturado) return a.facturado ? 1 : -1;
+            if (Number(b.horas) !== Number(a.horas)) return Number(b.horas) - Number(a.horas);
+            return String(a.cliente || '').localeCompare(String(b.cliente || ''), 'es');
+        });
+
+        return {
+            period: period,
+            start: startStr,
+            end: endStr,
+            rows: rows
+        };
+    }
+
+    function buildAttendanceByClient_(start, end) {
+        const tz = Session.getScriptTimeZone();
+        const sheet = DatabaseService.getDbSheetForFormat('ASISTENCIA');
+        const lastRow = sheet.getLastRow();
+        const lastCol = sheet.getLastColumn();
+        const result = new Map();
+
+        if (lastRow < 2 || lastCol === 0) return result;
+
+        const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || '').toUpperCase());
+        const idxFecha = headers.indexOf('FECHA');
+        const idxCliente = headers.indexOf('CLIENTE');
+        const idxIdCliente = headers.indexOf('ID_CLIENTE');
+        const idxHoras = headers.indexOf('HORAS');
+        const idxAsistencia = headers.indexOf('ASISTENCIA');
+
+        if (idxFecha === -1 || idxCliente === -1 || idxHoras === -1) return result;
+
+        const data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+
+        data.forEach(row => {
+            const fecha = row[idxFecha] instanceof Date ? row[idxFecha] : parseDateSafe_(row[idxFecha]);
+            if (!fecha || fecha < start || fecha > end) return;
+
+            const asistencia = idxAsistencia > -1 ? DataUtils.isTruthy(row[idxAsistencia]) : true;
+            if (!asistencia) return;
+
+            const horasNum = Number(row[idxHoras]);
+            const horas = isNaN(horasNum) ? 0 : horasNum;
+            if (horas <= 0) return;
+
+            const idCliente = idxIdCliente > -1 ? String(row[idxIdCliente] || '').trim() : '';
+            const clienteRaw = String(row[idxCliente] || '').trim();
+            const key = idCliente ? ('id:' + idCliente) : ('name:' + normalize_(clienteRaw));
+            if (!key || key === 'name:') return;
+
+            let group = result.get(key);
+            if (!group) {
+                let clienteLabel = clienteRaw;
+                if (idCliente && DatabaseService.findClienteById) {
+                    const cli = DatabaseService.findClienteById(idCliente);
+                    if (cli && (cli.razonSocial || cli.nombre)) {
+                        clienteLabel = cli.razonSocial || cli.nombre;
+                    }
+                }
+                group = {
+                    key: key,
+                    idCliente: idCliente,
+                    cliente: clienteLabel,
+                    horas: 0,
+                    diasSet: {}
+                };
+                result.set(key, group);
+            }
+
+            group.horas += horas;
+            const d = Utilities.formatDate(fecha, tz, 'yyyy-MM-dd');
+            group.diasSet[d] = true;
+        });
+
+        // compactar diasSet
+        result.forEach(group => {
+            group.dias = Object.keys(group.diasSet || {}).length;
+            delete group.diasSet;
+        });
+
+        return result;
+    }
+
+    function buildInvoicesByClientForMonth_(period) {
+        const sheet = DatabaseService.getDbSheetForFormat(FORMAT_ID);
+        const lastRow = sheet.getLastRow();
+        const lastCol = sheet.getLastColumn();
+        const result = new Map();
+        if (lastRow < 2 || lastCol === 0) return result;
+
+        const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || '').toUpperCase());
+        const idxId = headers.indexOf('ID');
+        const idxIdCliente = headers.indexOf('ID_CLIENTE');
+        const idxCliente = headers.indexOf('RAZÓN SOCIAL') > -1 ? headers.indexOf('RAZÓN SOCIAL') : headers.indexOf('RAZON SOCIAL');
+        const idxPeriodo = headers.indexOf('PERIODO');
+        const idxFecha = headers.indexOf('FECHA');
+        const idxTotal = headers.indexOf('TOTAL');
+        const idxNumero = headers.indexOf('NUMERO');
+        const idxEstado = headers.indexOf('ESTADO');
+
+        const data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+
+        data.forEach(row => {
+            if (!invoiceMatchesMonth_(period, idxPeriodo > -1 ? row[idxPeriodo] : null, idxFecha > -1 ? row[idxFecha] : null)) return;
+
+            const idCliente = idxIdCliente > -1 ? String(row[idxIdCliente] || '').trim() : '';
+            const clienteRaw = idxCliente > -1 ? String(row[idxCliente] || '').trim() : '';
+            const key = idCliente ? ('id:' + idCliente) : ('name:' + normalize_(clienteRaw));
+            if (!key || key === 'name:') return;
+
+            const invId = idxId > -1 ? row[idxId] : row[0];
+            const numero = idxNumero > -1 ? String(row[idxNumero] || '').trim() : '';
+            const estado = idxEstado > -1 ? String(row[idxEstado] || '').trim() : '';
+            const totalNum = idxTotal > -1 ? Number(row[idxTotal]) : 0;
+            const total = isNaN(totalNum) ? 0 : totalNum;
+
+            let entry = result.get(key);
+            if (!entry) {
+                entry = { count: 0, totalSum: 0, lastId: '', lastNumero: '', lastEstado: '', lastTotal: 0 };
+                result.set(key, entry);
+            }
+
+            entry.count += 1;
+            entry.totalSum += total;
+
+            // "última" factura: preferimos la de mayor ID numérico, si se puede
+            const invIdNum = Number(invId);
+            const lastIdNum = Number(entry.lastId);
+            const isNewer = !entry.lastId ||
+                (!isNaN(invIdNum) && !isNaN(lastIdNum) ? invIdNum > lastIdNum : String(invId) > String(entry.lastId));
+
+            if (isNewer) {
+                entry.lastId = invId != null ? String(invId) : '';
+                entry.lastNumero = numero;
+                entry.lastEstado = estado;
+                entry.lastTotal = total;
+            }
+        });
+
+        return result;
+    }
+
+    function invoiceMatchesMonth_(targetPeriod, periodoRaw, fechaRaw) {
+        const period = String(targetPeriod || '').trim();
+        if (!period) return false;
+
+        // PERIODO como Date (Sheets)
+        if (periodoRaw instanceof Date && !isNaN(periodoRaw)) {
+            const p = Utilities.formatDate(periodoRaw, Session.getScriptTimeZone(), 'yyyy-MM');
+            if (p === period) return true;
+        }
+
+        const periodo = String(periodoRaw || '').trim();
+        if (periodo) {
+            if (/^\d{4}-\d{2}$/.test(periodo)) return periodo === period;
+            if (periodo.indexOf(period) !== -1) return true; // ej: "2025-11-01 a 2025-11-30"
+
+            const m = periodo.match(/(\d{4}-\d{2}-\d{2})\s*a\s*(\d{4}-\d{2}-\d{2})/i);
+            if (m) {
+                const s = parseDateSafe_(m[1]);
+                const e = parseDateSafe_(m[2]);
+                if (s && e) {
+                    const y = Number(period.slice(0, 4));
+                    const mm = Number(period.slice(5, 7)) - 1;
+                    const monthStart = new Date(y, mm, 1);
+                    const monthEnd = new Date(y, mm + 1, 0, 23, 59, 59, 999);
+                    return e >= monthStart && s <= monthEnd;
+                }
+            }
+
+            if (/^\d{4}-\d{2}-\d{2}$/.test(periodo)) {
+                const p = periodo.slice(0, 7);
+                if (p === period) return true;
+            }
+        }
+
+        // Fallback: FECHA
+        const fecha = (fechaRaw instanceof Date && !isNaN(fechaRaw)) ? fechaRaw : parseDateSafe_(fechaRaw);
+        if (fecha) {
+            const fp = Utilities.formatDate(fecha, Session.getScriptTimeZone(), 'yyyy-MM');
+            if (fp === period) return true;
+        }
+
+        return false;
+    }
+
     // Helper para parsear fechas
     function parseDate(val) {
         if (!val) return null;
@@ -833,6 +1062,7 @@ var InvoiceController = (function () {
         getInvoiceById: getInvoiceById,
         createInvoice: createInvoice,
         createInvoiceFromAttendance: createInvoiceFromAttendance,
+        getInvoicingCoverage: getInvoicingCoverage,
         updateInvoice: updateInvoice,
         deleteInvoice: deleteInvoice,
         generateInvoicePdf: generateInvoicePdf

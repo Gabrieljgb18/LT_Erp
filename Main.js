@@ -256,6 +256,15 @@ function createInvoiceFromAttendance(cliente, fechaDesde, fechaHasta, extra, idC
   return InvoiceController.createInvoiceFromAttendance(cliente, fechaDesde, fechaHasta, extra, idCliente);
 }
 
+/**
+ * Control de facturación mensual: horas por cliente y si fue facturado.
+ * @param {string} period yyyy-MM
+ * @param {object=} opts
+ */
+function getInvoicingCoverage(period, opts) {
+  return InvoiceController.getInvoicingCoverage(period, opts);
+}
+
 function updateInvoice(id, data) {
   return InvoiceController.updateInvoice(id, data);
 }
