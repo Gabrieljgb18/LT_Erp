@@ -22,39 +22,6 @@ var HoursController = (function () {
         return new Date(dateStr);
     }
 
-    function getEmployeeData(employeeName) {
-        if (!employeeName) return { valorHora: 0, viaticos: 0 };
-
-        const sheet = DatabaseService.getDbSheetForFormat('EMPLEADOS');
-        const lastRow = sheet.getLastRow();
-        const lastCol = sheet.getLastColumn();
-        if (lastRow < 2 || lastCol === 0) return { valorHora: 0, viaticos: 0 };
-
-        const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-        const idxEmpleado = headers.indexOf('EMPLEADO');
-        const idxValorHora = headers.indexOf('VALOR DE HORA');
-        const idxViaticos = headers.indexOf('VIATICOS');
-        if (idxEmpleado === -1) return { valorHora: 0, viaticos: 0 };
-
-        const data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
-        const target = employeeName.toLowerCase().trim();
-
-        for (let i = 0; i < data.length; i++) {
-            const row = data[i];
-            const rowEmp = String(row[idxEmpleado] || '').toLowerCase().trim();
-            if (rowEmp === target) {
-                const rate = idxValorHora > -1 ? Number(row[idxValorHora]) : 0;
-                const viaticos = idxViaticos > -1 ? Number(row[idxViaticos]) : 0;
-                return {
-                    valorHora: isNaN(rate) ? 0 : rate,
-                    viaticos: isNaN(viaticos) ? 0 : viaticos
-                };
-            }
-        }
-
-        return { valorHora: 0, viaticos: 0 };
-    }
-
     function parseDateAtEnd(dateStr) {
         if (!dateStr) return null;
         if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
@@ -107,6 +74,7 @@ var HoursController = (function () {
     }
 
     function getEmployeeData(employeeName) {
+        if (!employeeName) return { valorHora: 0, viaticos: 0 };
         const rate = getEmployeeHourlyRate(employeeName);
         const sheet = DatabaseService.getDbSheetForFormat('EMPLEADOS');
         const lastRow = sheet.getLastRow();
@@ -338,11 +306,6 @@ var HoursController = (function () {
         // Normalize client name for comparison
         const targetClient = clientName ? clientName.toLowerCase().trim() : '';
         const targetClientNorm = normalizeClientName(clientName);
-        const targetClientObj = (clientIdFromPayload && { id: clientIdFromPayload }) ||
-            (clientName && typeof DatabaseService.findClienteByNombreORazon === 'function'
-                ? (DatabaseService.findClienteByNombreORazon(clientName) || {})
-                : {});
-        const targetClientId = targetClientObj && targetClientObj.id ? String(targetClientObj.id) : '';
 
         const results = [];
 

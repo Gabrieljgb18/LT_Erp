@@ -21,32 +21,27 @@ var InvoiceController = (function () {
         const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
         const data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
 
-        // Map headers to indices
+        // Map headers to indices (normalized)
         const colMap = {};
-        headers.forEach((h, i) => { colMap[h] = i; });
+        headers.forEach((h, i) => {
+            colMap[normalizeHeader_(h)] = i;
+        });
 
         // Prepare search terms
-        const searchClient = filters.cliente ? filters.cliente.toLowerCase().trim() : null;
+        const searchClient = filters.cliente ? normalizeClientSearch_(filters.cliente) : null;
         const searchPeriod = filters.periodo || null;
         const searchStatus = (filters.estado && filters.estado !== 'Todos') ? filters.estado : null;
 
-        let dateFrom = null;
-        if (filters.fechaDesde) {
-            dateFrom = parseDate(filters.fechaDesde);
-        }
-
-        let dateTo = null;
-        if (filters.fechaHasta) {
-            dateTo = parseDate(filters.fechaHasta);
-            if (dateTo) dateTo.setHours(23, 59, 59);
-        }
+        let dateFrom = parseDateSafe_(filters.fechaDesde);
+        let dateTo = parseDateSafe_(filters.fechaHasta);
+        if (dateTo) dateTo.setHours(23, 59, 59, 999);
 
         const results = [];
-        const idxId = colMap['ID'];
-        const idxCliente = colMap['RAZÓN SOCIAL'];
-        const idxPeriodo = colMap['PERIODO'];
-        const idxEstado = colMap['ESTADO'];
-        const idxFecha = colMap['FECHA'];
+        const idxId = getColIdx_(colMap, ['ID']);
+        const idxCliente = getColIdx_(colMap, ['RAZON SOCIAL', 'CLIENTE']);
+        const idxPeriodo = getColIdx_(colMap, ['PERIODO']);
+        const idxEstado = getColIdx_(colMap, ['ESTADO']);
+        const idxFecha = getColIdx_(colMap, ['FECHA']);
 
         for (let i = 0; i < data.length; i++) {
             const row = data[i];
@@ -54,23 +49,30 @@ var InvoiceController = (function () {
             // 1. Filter Logic (on RAW values)
 
             // Client
-            if (searchClient) {
-                const cli = String(row[idxCliente] || '').toLowerCase();
-                if (!cli.includes(searchClient)) continue;
+            if (searchClient && idxCliente > -1) {
+                const cliNorm = normalizeClientSearch_(row[idxCliente] || '');
+                if (cliNorm.indexOf(searchClient) === -1) continue;
             }
 
             // Period
-            if (searchPeriod) {
-                if (row[idxPeriodo] !== searchPeriod) continue;
+            if (searchPeriod && idxPeriodo > -1) {
+                const val = row[idxPeriodo];
+                let periodVal = '';
+                if (val instanceof Date && !isNaN(val)) {
+                    periodVal = Utilities.formatDate(val, Session.getScriptTimeZone(), 'yyyy-MM');
+                } else {
+                    periodVal = String(val || '');
+                }
+                if (periodVal !== searchPeriod && periodVal.indexOf(searchPeriod) === -1) continue;
             }
 
             // Status
-            if (searchStatus) {
-                if (row[idxEstado] !== searchStatus) continue;
+            if (searchStatus && idxEstado > -1) {
+                if (String(row[idxEstado] || '') !== String(searchStatus)) continue;
             }
 
             // Date Range
-            if (dateFrom || dateTo) {
+            if ((dateFrom || dateTo) && idxFecha > -1) {
                 const rowDate = parseDateSafe_(row[idxFecha]);
                 if (dateFrom && (!rowDate || rowDate < dateFrom)) continue;
                 if (dateTo && (!rowDate || rowDate > dateTo)) continue;
@@ -83,7 +85,7 @@ var InvoiceController = (function () {
                 record[h] = DataUtils.normalizeCellForSearch(row[colIdx]);
             });
             // Ensure ID is present
-            record.ID = row[idxId];
+            record.ID = idxId > -1 ? row[idxId] : row[0];
             results.push(record);
         }
 
@@ -94,14 +96,22 @@ var InvoiceController = (function () {
      * Obtiene una factura por ID
      */
     function getInvoiceById(id) {
-        const records = RecordController.searchRecords(FORMAT_ID, id);
-        const match = records.find(r => r.id == id);
-        if (match) {
-            const r = match.record;
-            r.ID = match.id;
-            return r;
-        }
-        return null;
+        const sheet = DatabaseService.getDbSheetForFormat(FORMAT_ID);
+        const rowNumber = DatabaseService.findRowById(sheet, id);
+        if (!rowNumber) return null;
+
+        const lastCol = sheet.getLastColumn();
+        if (!lastCol) return null;
+
+        const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+        const row = sheet.getRange(rowNumber, 1, 1, lastCol).getValues()[0];
+
+        const record = {};
+        headers.forEach((h, colIdx) => {
+            record[h] = DataUtils.normalizeCellForSearch(row[colIdx]);
+        });
+        record.ID = row[0];
+        return record;
     }
 
     /**
@@ -237,6 +247,7 @@ var InvoiceController = (function () {
         let totalImporte = 0;
         const targetId = clienteData.id ? String(clienteData.id) : '';
         const targetNorm = normalize_(clienteData.razonSocial || '');
+        const resolveRateAtDate = buildClientRateResolver_(clienteData.razonSocial || '');
 
         data.forEach(row => {
             const fecha = row[idxFecha] instanceof Date ? row[idxFecha] : new Date(row[idxFecha]);
@@ -259,7 +270,7 @@ var InvoiceController = (function () {
             const horas = isNaN(horasVal) ? 0 : horasVal;
             if (!horas) return;
 
-            const rate = DatabaseService.getClientRateAtDate ? DatabaseService.getClientRateAtDate(clienteData.razonSocial || clienteData.nombre || '', fecha) : 0;
+            const rate = resolveRateAtDate(fecha);
             const rateNum = isNaN(rate) ? 0 : Number(rate);
 
             totalHoras += horas;
@@ -267,6 +278,100 @@ var InvoiceController = (function () {
         });
 
         return { totalHoras: totalHoras, totalImporte: totalImporte };
+    }
+
+    function normalizeHeader_(h) {
+        return normalize_(h).toUpperCase();
+    }
+
+    function getColIdx_(map, keys) {
+        for (let i = 0; i < keys.length; i++) {
+            const k = keys[i];
+            if (map[k] !== undefined && map[k] !== null) return map[k];
+        }
+        return -1;
+    }
+
+    function normalizeClientSearch_(val) {
+        if (!val) return '';
+        const base = String(val).replace(/\([^)]*\)/g, '');
+        return normalize_(base);
+    }
+
+    function normalizeClientNameForRates_(name) {
+        if (!name) return '';
+        return String(name)
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase()
+            .replace(/\([^)]*\)/g, '')
+            .replace(/\s+/g, ' ')
+            .replace(/\./g, '')
+            .replace(/s\.?a\.?$/i, 'sa')
+            .replace(/s\.?r\.?l\.?$/i, 'srl')
+            .trim();
+    }
+
+    /**
+     * Construye un resolver de tarifas para un cliente leyendo el histórico una sola vez.
+     */
+    function buildClientRateResolver_(clientName) {
+        const fallbackRateRaw = DatabaseService.getClientHourlyRate ? DatabaseService.getClientHourlyRate(clientName) : 0;
+        const fallbackRate = isNaN(fallbackRateRaw) ? 0 : Number(fallbackRateRaw);
+        const ss = DatabaseService.getDbSpreadsheet ? DatabaseService.getDbSpreadsheet() : null;
+        const sheet = ss ? ss.getSheetByName('CLIENTES_VHORA_DB') : null;
+        if (!sheet) {
+            return () => fallbackRate;
+        }
+
+        const lastRow = sheet.getLastRow();
+        if (lastRow < 2) {
+            return () => fallbackRate;
+        }
+
+        const data = sheet.getRange(2, 1, lastRow - 1, 3).getValues();
+        const targetNorm = normalizeClientNameForRates_(clientName);
+        const entries = [];
+
+        data.forEach(r => {
+            const cliNorm = normalizeClientNameForRates_(r[0]);
+            if (!cliNorm || !targetNorm) return;
+            const matches = cliNorm === targetNorm ||
+                cliNorm.indexOf(targetNorm) !== -1 ||
+                targetNorm.indexOf(cliNorm) !== -1;
+            if (!matches) return;
+
+            const fecha = parseDateSafe_(r[1]);
+            if (!fecha) return;
+            const rate = Number(r[2]);
+            if (isNaN(rate)) return;
+            entries.push({ ts: fecha.getTime(), rate: rate });
+        });
+
+        if (!entries.length) {
+            return () => fallbackRate;
+        }
+
+        entries.sort((a, b) => a.ts - b.ts);
+
+        return (dateObj) => {
+            const d = parseDateSafe_(dateObj);
+            if (!d) return fallbackRate;
+            const ts = d.getTime();
+            let lo = 0;
+            let hi = entries.length - 1;
+            let best = null;
+            while (lo <= hi) {
+                const mid = Math.floor((lo + hi) / 2);
+                if (entries[mid].ts <= ts) {
+                    best = entries[mid].rate;
+                    lo = mid + 1;
+                } else {
+                    hi = mid - 1;
+                }
+            }
+            return best != null ? best : fallbackRate;
+        };
     }
 
     function normalize_(val) {

@@ -110,18 +110,30 @@ var RecordController = (function () {
             sheet.appendRow(headers);
         }
 
-        // Generate new ID
-        const newId = DatabaseService.getNextId(sheet);
-        record['ID'] = newId;
-
-        const row = buildRowValues(headers, record);
-
-        // Ensure ID is in first position
-        if (row[0] != newId) {
-            row[0] = newId;
+        // Generate new ID y escribir fila con lock para evitar duplicados
+        const lock = LockService.getScriptLock();
+        try {
+            lock.waitLock(30000);
+        } catch (e) {
+            throw new Error('No se pudo obtener lock para guardar. Reintentá.');
         }
 
-        sheet.appendRow(row);
+        let newId;
+        try {
+            newId = DatabaseService.getNextId(sheet);
+            record['ID'] = newId;
+
+            const row = buildRowValues(headers, record);
+
+            // Ensure ID is in first position
+            if (row[0] != newId) {
+                row[0] = newId;
+            }
+
+            sheet.appendRow(row);
+        } finally {
+            lock.releaseLock();
+        }
 
         // Log value changes for CLIENTES
         if (tipoFormato === 'CLIENTES') {
@@ -251,17 +263,28 @@ var RecordController = (function () {
         if (sheet.getLastRow() === 0) {
             sheet.appendRow(templateHeaders);
         }
-        const id = DatabaseService.getNextId(sheet);
-        const fecha = fechaStr ? new Date(fechaStr) : new Date();
-        const row = [
-            id,
-            fecha,
-            empleado || '',
-            concepto || '',
-            Number(monto) || 0,
-            obs || ''
-        ];
-        sheet.appendRow(row);
+        const lock = LockService.getScriptLock();
+        try {
+            lock.waitLock(30000);
+        } catch (e) {
+            throw new Error('No se pudo obtener lock para registrar pago. Reintentá.');
+        }
+        let id;
+        try {
+            id = DatabaseService.getNextId(sheet);
+            const fecha = fechaStr ? new Date(fechaStr) : new Date();
+            const row = [
+                id,
+                fecha,
+                empleado || '',
+                concepto || '',
+                Number(monto) || 0,
+                obs || ''
+            ];
+            sheet.appendRow(row);
+        } finally {
+            lock.releaseLock();
+        }
         return id;
     }
 
