@@ -4,6 +4,7 @@
 var ClientAccountPanel = (function () {
     const containerId = 'client-account-panel';
     const clientIdMap = new Map();
+    let lastQuery = null;
 
     function render() {
         // Find or create container
@@ -46,6 +47,9 @@ var ClientAccountPanel = (function () {
                         <div class="col-md-5 d-flex gap-2">
                             <button class="btn btn-primary btn-sm flex-fill d-flex align-items-center justify-content-center gap-1" id="client-acc-search">
                                 <i class="bi bi-search"></i> Consultar
+                            </button>
+                            <button class="btn btn-outline-secondary btn-sm flex-fill d-flex align-items-center justify-content-center gap-1" id="client-acc-open-invoices" title="Abrir facturas del cliente">
+                                <i class="bi bi-receipt"></i> Ver facturas
                             </button>
                             <button class="btn btn-success btn-sm flex-fill d-flex align-items-center justify-content-center gap-1" id="client-acc-pay">
                                 <i class="bi bi-cash-coin"></i> Registrar Pago
@@ -134,6 +138,9 @@ var ClientAccountPanel = (function () {
         const searchBtn = document.getElementById('client-acc-search');
         if (searchBtn) searchBtn.addEventListener('click', handleSearch);
 
+        const openInvBtn = document.getElementById('client-acc-open-invoices');
+        if (openInvBtn) openInvBtn.addEventListener('click', openInvoicesView);
+
         const payBtn = document.getElementById('client-acc-pay');
         if (payBtn) payBtn.addEventListener('click', openPaymentModal);
     }
@@ -166,14 +173,62 @@ var ClientAccountPanel = (function () {
             return;
         }
 
+        lastQuery = { clientRaw, client, idCliente, startDate, endDate };
+
         toggleLoading(true);
         ApiService.call('getClientAccountStatement', client, startDate, endDate, idCliente)
-            .then(renderTable)
+            .then((data) => {
+                renderTable(data);
+                // Si viene vacío, mostrar diagnóstico mínimo (cuántas facturas encuentra el buscador)
+                const rows = data && data.movimientos ? data.movimientos : [];
+                const saldoInicial = data && typeof data.saldoInicial === 'number' ? data.saldoInicial : 0;
+                if (rows.length === 0 && saldoInicial === 0) {
+                    ApiService.call('getInvoices', { cliente: client, idCliente: idCliente, fechaDesde: startDate, fechaHasta: endDate })
+                        .then((invs) => {
+                            const count = Array.isArray(invs) ? invs.length : 0;
+                            const empty = document.getElementById('client-acc-empty');
+                            if (empty) {
+                                empty.innerHTML = '<i class="bi bi-info-circle" style="font-size: 1.5rem; opacity: 0.5;"></i>' +
+                                    '<p class="small mt-2 mb-1">No hay movimientos registrados en este período.</p>' +
+                                    '<div class="small text-muted">Facturas encontradas para este cliente y rango: <strong>' + count + '</strong></div>';
+                            }
+                        })
+                        .catch(() => { /* ignore diagnóstico */ });
+                }
+            })
             .catch(err => {
                 console.error(err);
                 Alerts && Alerts.showAlert('Error al cargar cuenta corriente: ' + err.message, 'danger');
             })
             .finally(() => toggleLoading(false));
+    }
+
+    function openInvoicesView() {
+        const q = lastQuery || {
+            clientRaw: document.getElementById('client-acc-input')?.value || '',
+            startDate: document.getElementById('client-acc-start')?.value || '',
+            endDate: document.getElementById('client-acc-end')?.value || ''
+        };
+
+        const evt = new CustomEvent('view-change', { detail: { view: 'facturacion' } });
+        document.dispatchEvent(evt);
+
+        setTimeout(() => {
+            const collapseEl = document.getElementById('invoice-history-collapse');
+            if (collapseEl && typeof bootstrap !== 'undefined' && bootstrap.Collapse) {
+                try {
+                    bootstrap.Collapse.getOrCreateInstance(collapseEl, { toggle: false }).show();
+                } catch (e) { /* ignore */ }
+            }
+            const cli = document.getElementById('invoice-filter-client');
+            const from = document.getElementById('invoice-filter-from');
+            const to = document.getElementById('invoice-filter-to');
+            if (cli && q.clientRaw) cli.value = q.clientRaw;
+            if (from && q.startDate) from.value = q.startDate;
+            if (to && q.endDate) to.value = q.endDate;
+            const btn = document.getElementById('invoice-search-btn');
+            if (btn) btn.click();
+        }, 250);
     }
 
     function renderTable(data) {
