@@ -2,7 +2,8 @@
  * Panel de Detalle de Horas - Seguimiento por Empleado
  */
 var HoursDetailPanel = (function () {
-    let containerId = 'hours-detail-panel';
+	    let containerId = 'hours-detail-panel';
+	    let employeeIdMap = new Map();
 
     function render() {
         const container = document.getElementById(containerId);
@@ -89,15 +90,15 @@ var HoursDetailPanel = (function () {
                                 </div>
                             </div>
                         </div>
-                        <div class="col-6 col-md-2">
-                            <div class="card h-100 shadow-sm border-0 text-center" style="background: linear-gradient(135deg, #0f172a, #334155); color: #fff;">
-                                <div class="card-body py-2 px-2">
-                                    <div class="small text-white-50 text-uppercase" style="font-size: 0.7rem;">Total a pagar</div>
-                                    <div class="fs-6 fw-bold" id="hours-summary-total-net">$0</div>
-                                    <div class="small text-white-50" style="font-size: 0.65rem;" id="hours-summary-total-gross"></div>
-                                </div>
-                            </div>
-                        </div>
+	                        <div class="col-6 col-md-2">
+	                            <div class="lt-metric lt-metric--dark h-100 text-center">
+	                                <div class="card-body py-2 px-2">
+	                                    <div class="small lt-metric__k text-uppercase" style="font-size: 0.7rem;">Total a pagar</div>
+	                                    <div class="fs-6 fw-bold" id="hours-summary-total-net">$0</div>
+	                                    <div class="small lt-metric__k" style="font-size: 0.65rem;" id="hours-summary-total-gross"></div>
+	                                </div>
+	                            </div>
+	                        </div>
                     </div>
 
                     <!-- Tabla de Resultados -->
@@ -176,29 +177,59 @@ var HoursDetailPanel = (function () {
             });
     }
 
-    function populateEmployeeSelect(employees) {
-        const datalist = document.getElementById('hours-employee-list');
-        if (!datalist) return;
+	    function formatEmployeeLabel_(emp) {
+	        if (!emp) return '';
+	        if (typeof emp === 'string') return emp;
+	        return (emp.nombre || emp.displayName || emp.empleado || emp.label || emp.razonSocial || '').toString().trim();
+	    }
 
-        const list = Array.isArray(employees) ? employees.slice().sort() : [];
-        datalist.innerHTML = '';
+	    function getEmployeeIdFromLabel_(label) {
+	        if (!label) return '';
+	        return employeeIdMap.get(label) || '';
+	    }
 
-        list.forEach(employee => {
-            const option = document.createElement('option');
-            option.value = employee;
-            datalist.appendChild(option);
-        });
-    }
+	    function populateEmployeeSelect(employees) {
+	        const datalist = document.getElementById('hours-employee-list');
+	        if (!datalist) return;
+
+	        employeeIdMap = new Map();
+	        const list = Array.isArray(employees) ? employees.slice() : [];
+	        datalist.innerHTML = '';
+
+	        const labels = list.map(emp => {
+	            const label = formatEmployeeLabel_(emp);
+	            if (label && emp && typeof emp === 'object') {
+	                const id = emp.id || emp.ID || emp.ID_EMPLEADO;
+	                if (id) {
+	                    employeeIdMap.set(label, String(id));
+	                }
+	                const base = (emp.nombre || emp.displayName || emp.empleado || '').toString().trim();
+	                if (base && id) {
+	                    employeeIdMap.set(base, String(id));
+	                }
+	            }
+	            return label;
+	        }).filter(Boolean);
+
+	        labels.sort((a, b) => a.localeCompare(b, 'es'));
+	        labels.forEach(label => {
+	            const option = document.createElement('option');
+	            option.value = label;
+	            datalist.appendChild(option);
+	        });
+	    }
 
     function handleSearch() {
         const start = document.getElementById('hours-filter-start').value;
         const end = document.getElementById('hours-filter-end').value;
-        const employee = document.getElementById('hours-filter-employee').value;
+	        const employeeRaw = document.getElementById('hours-filter-employee').value;
+	        const idEmpleado = getEmployeeIdFromLabel_(employeeRaw);
+	        const employee = employeeRaw;
 
-        if (!employee) {
-            Alerts.showAlert("Por favor seleccione un empleado", "warning");
-            return;
-        }
+	        if (!employee) {
+	            Alerts.showAlert("Por favor seleccione un empleado", "warning");
+	            return;
+	        }
 
         // UI Loading
         document.getElementById('hours-results-container').classList.add('d-none');
@@ -208,8 +239,8 @@ var HoursDetailPanel = (function () {
         const summaryBox = document.getElementById('hours-summary');
         if (summaryBox) summaryBox.classList.add('d-none');
 
-        ApiService.call('getHoursByEmployee', start, end, employee)
-            .then(results => {
+	        ApiService.call('getHoursByEmployee', start, end, employee, idEmpleado)
+	            .then(results => {
                 const parsed = (typeof results === 'string')
                     ? (function () { try { return JSON.parse(results); } catch (e) { console.warn('No se pudo parsear resultados', e); return {}; } })()
                     : results || {};
@@ -292,24 +323,22 @@ var HoursDetailPanel = (function () {
             total += hours;
             const isAbsent = row.asistencia === false;
 
-            tr.innerHTML = `
-                <td>${row.cliente || '-'}</td>
-                <td>${row.fecha}</td>
-                <td class="text-center fw-bold">${hours}</td>
-                <td class="text-muted small">${row.observaciones || '-'}</td>
-                <td class="text-end">
-                    <div class="d-flex gap-2 justify-content-end">
-                        <button class="btn btn-sm text-white btn-edit-hour" data-id="${row.id}" title="Editar"
-                            style="background:#5b7bfa;border:none;border-radius:12px; padding:6px 12px;">
-                            <i class="bi bi-pencil-fill"></i>
-                        </button>
-                        <button class="btn btn-sm text-white btn-delete-hour" data-id="${row.id}" title="Eliminar"
-                            style="background:#e53e3e;border:none;border-radius:12px; padding:6px 12px;">
-                            <i class="bi bi-trash-fill"></i>
-                        </button>
-                    </div>
-                </td>
-            `;
+	            tr.innerHTML = `
+	                <td>${row.cliente || '-'}</td>
+	                <td>${row.fecha}</td>
+	                <td class="text-center fw-bold">${hours}</td>
+	                <td class="text-muted small">${row.observaciones || '-'}</td>
+	                <td class="text-end">
+	                    <div class="d-flex gap-2 justify-content-end">
+	                        <button class="btn btn-sm btn-outline-primary lt-btn-icon btn-edit-hour" data-id="${row.id}" title="Editar">
+	                            <i class="bi bi-pencil-fill"></i>
+	                        </button>
+	                        <button class="btn btn-sm btn-outline-danger lt-btn-icon btn-delete-hour" data-id="${row.id}" title="Eliminar">
+	                            <i class="bi bi-trash-fill"></i>
+	                        </button>
+	                    </div>
+	                </td>
+	            `;
             if (isAbsent) {
                 tr.classList.add('absence-row');
             }

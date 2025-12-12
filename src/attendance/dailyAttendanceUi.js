@@ -46,22 +46,22 @@
         function buildBaseLayout() {
             return `
                 <div id="attendance-daily-root" class="d-flex flex-column gap-3">
-                    <div class="d-flex align-items-center gap-2 flex-nowrap" style="overflow-x:auto; padding-bottom:4px;">
-                        <div class="d-flex align-items-center gap-2 flex-shrink-0">
-                            <label class="form-label small fw-semibold text-muted mb-0">Fecha</label>
-                            <input type="date" id="attendance-date" class="form-control form-control-sm" value="${state.fecha}" style="width: 130px;">
+                    <div class="lt-surface lt-surface--subtle p-2">
+                        <div class="lt-toolbar">
+                            <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                                <label class="form-label small fw-semibold text-muted mb-0">Fecha</label>
+                                <input type="date" id="attendance-date" class="form-control form-control-sm" value="${state.fecha}" style="width: 140px;">
+                            </div>
+                            <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                                <button type="button" id="attendance-add-extra" class="btn btn-sm btn-primary lt-btn-compact text-nowrap">
+                                    <i class="bi bi-plus-circle me-1"></i>Fuera de plan
+                                </button>
+                            </div>
+                            <div id="attendance-summary" class="d-flex flex-nowrap gap-2 flex-shrink-0"></div>
                         </div>
-                        <div class="d-flex align-items-center gap-2 flex-shrink-0">
-                            <button type="button" id="attendance-add-extra" class="btn btn-sm fw-semibold text-white"
-                                style="background: linear-gradient(135deg, #5b7bfa, #4f46e5); border: none; padding: 6px 10px; border-radius: 10px; white-space: nowrap;">
-                                + Agregar fuera de plan
-                            </button>
-                        </div>
-                        <div id="attendance-summary" class="d-flex flex-nowrap gap-2 flex-shrink-0" style="white-space: nowrap;"></div>
-                    </div>
                     </div>
 
-                    <div class="border rounded shadow-sm position-relative">
+                    <div class="lt-surface p-0 position-relative">
                         <div id="attendance-loading" class="position-absolute top-0 start-0 end-0 bottom-0 d-flex align-items-center justify-content-center bg-white bg-opacity-75 d-none">
                             <div class="text-center">
                                 <div class="spinner-border text-primary mb-2" role="status"></div>
@@ -117,6 +117,7 @@
                 horasReales: row && row.horasReales !== undefined && row.horasReales !== null ? row.horasReales : "",
                 observaciones: row && row.observaciones ? String(row.observaciones) : "",
                 asistenciaRowNumber: row && row.asistenciaRowNumber ? row.asistenciaRowNumber : null,
+                idAsistencia: row && (row.idAsistencia != null && row.idAsistencia !== "") ? row.idAsistencia : null,
                 fueraDePlan: !!extra || !!(row && row.fueraDePlan)
             };
         }
@@ -240,7 +241,7 @@
                             <span class="fw-semibold text-primary">${HtmlHelpers.escapeHtml(row.cliente || "Cliente")}</span>
                         </div>
                         <div class="d-flex gap-2 align-items-center">
-                            ${row.fueraDePlan ? '<span class="badge bg-secondary">Fuera de plan</span>' : '<span class="badge" style="background:#d8f5d0;color:#2f7a1f;">Plan</span>'}
+                            ${row.fueraDePlan ? '<span class="badge bg-secondary">Fuera de plan</span>' : '<span class="badge text-bg-success">Plan</span>'}
                             <span class="text-muted fw-semibold" data-role="collapse-arrow" aria-hidden="true">${arrow}</span>
                         </div>
                     </div>
@@ -427,16 +428,15 @@
                 }
             });
 
-            const chipStyle = "border-radius:999px;padding:3px 8px;font-size:12px;line-height:1.1;box-shadow:0 2px 6px rgba(0,0,0,0.08);display:inline-flex;align-items:center;gap:4px;";
             summaryEl.innerHTML = `
-                <span class="text-white fw-semibold" style="${chipStyle}background:linear-gradient(135deg,#2563eb,#1d4ed8);">
-                    <span style="opacity:0.9;">👥 Clientes:</span> <strong>${clientesAtendidos.size}</strong>
+                <span class="lt-chip lt-chip--primary">
+                    <span class="opacity-75">Clientes</span> <strong>${clientesAtendidos.size}</strong>
                 </span>
-                <span class="text-white fw-semibold" style="${chipStyle}background:linear-gradient(135deg,#16a34a,#15803d);">
-                    <span style="opacity:0.9;">⏱ Horas:</span> <strong>${totalHoras.toFixed(2)}</strong>
+                <span class="lt-chip lt-chip--success">
+                    <span class="opacity-75">Horas</span> <strong>${totalHoras.toFixed(2)}</strong>
                 </span>
-                <span class="fw-semibold text-white" style="${chipStyle}background:linear-gradient(135deg,#6b7280,#4b5563);">
-                    <span style="opacity:0.9;">✔ Asistencias:</span> <strong>${presentes}/${registros}</strong>
+                <span class="lt-chip lt-chip--muted">
+                    <span class="opacity-75">Asistencias</span> <strong>${presentes}/${registros}</strong>
                 </span>
             `;
         }
@@ -638,7 +638,8 @@
                 horasReales: r.horasReales !== undefined && r.horasReales !== null ? r.horasReales : "",
                 horasPlan: r.horasPlan !== undefined && r.horasPlan !== null ? r.horasPlan : "",
                 observaciones: r.observaciones || "",
-                asistenciaRowNumber: r.asistenciaRowNumber || null
+                asistenciaRowNumber: r.asistenciaRowNumber || null,
+                idAsistencia: r.idAsistencia || null
             }));
 
             ApiService.call("saveDailyAttendance", fecha, payload)

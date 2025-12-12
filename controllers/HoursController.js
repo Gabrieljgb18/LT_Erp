@@ -44,9 +44,10 @@ var HoursController = (function () {
 
     /**
      * Obtiene valor hora de un empleado (EMPLEADOS_DB)
+     * Prioriza búsqueda por ID si se provee.
      */
-    function getEmployeeHourlyRate(employeeName) {
-        if (!employeeName) return 0;
+    function getEmployeeHourlyRate(employeeName, idEmpleado) {
+        if (!employeeName && !idEmpleado) return 0;
 
         const sheet = DatabaseService.getDbSheetForFormat('EMPLEADOS');
         const lastRow = sheet.getLastRow();
@@ -56,10 +57,19 @@ var HoursController = (function () {
         const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
         const idxEmpleado = headers.indexOf('EMPLEADO');
         const idxValorHora = headers.indexOf('VALOR DE HORA');
-        if (idxEmpleado === -1 || idxValorHora === -1) return 0;
+        if (idxValorHora === -1) return 0;
 
+        if (idEmpleado) {
+            const rowNumber = DatabaseService.findRowById(sheet, idEmpleado);
+            if (rowNumber) {
+                const v = Number(sheet.getRange(rowNumber, idxValorHora + 1).getValue());
+                return isNaN(v) ? 0 : v;
+            }
+        }
+
+        if (idxEmpleado === -1) return 0;
         const data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
-        const target = employeeName.toLowerCase().trim();
+        const target = String(employeeName || '').toLowerCase().trim();
 
         for (let i = 0; i < data.length; i++) {
             const row = data[i];
@@ -73,9 +83,9 @@ var HoursController = (function () {
         return 0;
     }
 
-    function getEmployeeData(employeeName) {
-        if (!employeeName) return { valorHora: 0, viaticos: 0 };
-        const rate = getEmployeeHourlyRate(employeeName);
+    function getEmployeeData(employeeName, idEmpleado) {
+        if (!employeeName && !idEmpleado) return { valorHora: 0, viaticos: 0 };
+        const rate = getEmployeeHourlyRate(employeeName, idEmpleado);
         const sheet = DatabaseService.getDbSheetForFormat('EMPLEADOS');
         const lastRow = sheet.getLastRow();
         const lastCol = sheet.getLastColumn();
@@ -85,15 +95,23 @@ var HoursController = (function () {
             const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
             const idxEmpleado = headers.indexOf('EMPLEADO');
             const idxViaticos = headers.indexOf('VIATICOS');
-            if (idxEmpleado > -1 && idxViaticos > -1) {
-                const data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
-                const target = employeeName ? employeeName.toLowerCase().trim() : '';
-                for (let i = 0; i < data.length; i++) {
-                    const rowEmp = String(data[i][idxEmpleado] || '').toLowerCase().trim();
-                    if (rowEmp === target) {
-                        const v = Number(data[i][idxViaticos]);
+            if (idxViaticos > -1) {
+                if (idEmpleado) {
+                    const rowNumber = DatabaseService.findRowById(sheet, idEmpleado);
+                    if (rowNumber) {
+                        const v = Number(sheet.getRange(rowNumber, idxViaticos + 1).getValue());
                         viaticos = isNaN(v) ? 0 : v;
-                        break;
+                    }
+                } else if (idxEmpleado > -1) {
+                    const data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+                    const target = employeeName ? employeeName.toLowerCase().trim() : '';
+                    for (let i = 0; i < data.length; i++) {
+                        const rowEmp = String(data[i][idxEmpleado] || '').toLowerCase().trim();
+                        if (rowEmp === target) {
+                            const v = Number(data[i][idxViaticos]);
+                            viaticos = isNaN(v) ? 0 : v;
+                            break;
+                        }
                     }
                 }
             }
@@ -126,6 +144,7 @@ var HoursController = (function () {
         const idxFecha = headers.indexOf('FECHA');
         const idxCliente = headers.indexOf('CLIENTE');
         const idxEmpleado = headers.indexOf('EMPLEADO');
+        const idxIdEmpleado = headers.indexOf('ID_EMPLEADO');
         const idxHoras = headers.indexOf('HORAS');
         const idxAsistencia = headers.indexOf('ASISTENCIA');
 
@@ -133,16 +152,17 @@ var HoursController = (function () {
             return [];
         }
 
-        const summaryMap = new Map(); // empleado -> {horas, hasAbsence, clientes:Set}
+        const summaryMap = new Map(); // key -> {idEmpleado, empleado, horas, hasAbsence, clientes:Set}
 
         rows.forEach(function (row) {
             const rowDate = row[idxFecha] instanceof Date ? row[idxFecha] : new Date(row[idxFecha]);
             if (rowDate < start || rowDate > end) return;
 
             const empleado = row[idxEmpleado];
-            if (!empleado) return;
-            const key = String(empleado);
-            const entry = summaryMap.get(key) || { horas: 0, hasAbsence: false, clientes: new Set() };
+            const rowIdEmpleado = idxIdEmpleado > -1 ? String(row[idxIdEmpleado] || '').trim() : '';
+            if (!empleado && !rowIdEmpleado) return;
+            const key = rowIdEmpleado || String(empleado || '').toLowerCase().trim();
+            const entry = summaryMap.get(key) || { idEmpleado: rowIdEmpleado, empleado: empleado, horas: 0, hasAbsence: false, clientes: new Set() };
 
             const asistencia = idxAsistencia > -1 ? DataUtils.isTruthy(row[idxAsistencia]) : true;
             const horasVal = idxHoras > -1 ? Number(row[idxHoras]) : 0;
@@ -163,8 +183,9 @@ var HoursController = (function () {
 
         const result = [];
 
-        summaryMap.forEach(function (entry, empleado) {
-            const empData = getEmployeeData(empleado);
+        summaryMap.forEach(function (entry) {
+            const displayName = entry.empleado || '';
+            const empData = getEmployeeData(displayName, entry.idEmpleado);
             const valorHora = empData.valorHora;
             const viaticosBase = empData.viaticos;
             const horas = entry.horas;
@@ -181,12 +202,13 @@ var HoursController = (function () {
                 else if (horas >= 60) presentismoCalc = presMedia;
             }
 
-            const adelantos = getEmployeeAdvancesTotal(empleado, start, end);
+            const adelantos = getEmployeeAdvancesTotal(displayName, start, end);
             const totalBruto = valorHora * horas;
             const total = totalBruto + viaticosCalc + presentismoCalc - adelantos;
 
             result.push({
-                empleado: empleado,
+                empleado: displayName,
+                idEmpleado: entry.idEmpleado || '',
                 clientes: Array.from(entry.clientes),
                 horas: horas,
                 valorHora: valorHora,
@@ -276,7 +298,27 @@ var HoursController = (function () {
      * @param {string} clientName - Nombre del cliente
      * @returns {Array} Lista de registros filtrados
      */
-    function getHoursDetail(startDateStr, endDateStr, clientName) {
+    function getHoursDetail(startDateStr, endDateStr, clientName, idCliente) {
+        // Soportar objeto {fechaDesde, fechaHasta, cliente, idCliente}
+        if (startDateStr && typeof startDateStr === 'object' && !Array.isArray(startDateStr)) {
+            const obj = startDateStr;
+            startDateStr = obj.fechaDesde || obj.startDateStr || obj.startDate;
+            endDateStr = obj.fechaHasta || obj.endDateStr || obj.endDate;
+            clientName = obj.cliente || obj.clientName;
+            idCliente = obj.idCliente || obj.clientId || idCliente;
+        } else if (Array.isArray(startDateStr)) {
+            var params = startDateStr;
+            startDateStr = params[0];
+            endDateStr = params[1];
+            clientName = params[2];
+            idCliente = params[3] || idCliente;
+        } else if (startDateStr && typeof startDateStr === 'string' && startDateStr.indexOf(',') !== -1 && !endDateStr && !clientName) {
+            var parts = startDateStr.split(',');
+            startDateStr = parts[0];
+            endDateStr = parts[1];
+            clientName = parts[2];
+            idCliente = parts[3] || idCliente;
+        }
         const sheet = DatabaseService.getDbSheetForFormat('ASISTENCIA');
         const data = sheet.getDataRange().getValues();
 
@@ -288,6 +330,7 @@ var HoursController = (function () {
         const idxId = headers.indexOf('ID');
         const idxFecha = headers.indexOf('FECHA');
         const idxCliente = headers.indexOf('CLIENTE');
+        const idxIdCliente = headers.indexOf('ID_CLIENTE');
         const idxEmpleado = headers.indexOf('EMPLEADO');
         const idxHoras = headers.indexOf('HORAS');
         const idxAsistencia = headers.indexOf('ASISTENCIA');
@@ -306,6 +349,7 @@ var HoursController = (function () {
         // Normalize client name for comparison
         const targetClient = clientName ? clientName.toLowerCase().trim() : '';
         const targetClientNorm = normalizeClientName(clientName);
+        const targetClientId = idCliente ? String(idCliente) : '';
 
         const results = [];
 
@@ -313,15 +357,22 @@ var HoursController = (function () {
             const rowClient = String(row[idxCliente] || '').toLowerCase().trim();
             const rowClientNorm = normalizeClientName(row[idxCliente]);
             const rowDate = row[idxFecha] instanceof Date ? row[idxFecha] : new Date(row[idxFecha]);
+            const rowIdCliente = idxIdCliente > -1 ? String(row[idxIdCliente] || '').trim() : '';
 
             // Filter by Client
             if (targetClient) {
+                if (targetClientId && rowIdCliente && rowIdCliente === targetClientId) {
+                    // ok
+                } else {
                 const exact = rowClient === targetClient;
                 const normMatch = rowClientNorm === targetClientNorm;
                 const partial = rowClientNorm && targetClientNorm && (rowClientNorm.indexOf(targetClientNorm) !== -1 || targetClientNorm.indexOf(rowClientNorm) !== -1);
                 if (!exact && !normMatch && !partial) {
                     return;
                 }
+                }
+            } else if (targetClientId) {
+                if (!rowIdCliente || rowIdCliente !== targetClientId) return;
             }
 
             // Filter by Date Range
@@ -333,6 +384,7 @@ var HoursController = (function () {
                 id: row[idxId],
                 fecha: DataUtils.normalizeCellForSearch(row[idxFecha]), // Return as string for frontend
                 cliente: row[idxCliente], // Include client name
+                idCliente: idxIdCliente > -1 ? row[idxIdCliente] : '',
                 empleado: row[idxEmpleado],
                 horas: row[idxHoras],
                 observaciones: row[idxObs],
@@ -405,7 +457,7 @@ var HoursController = (function () {
         const targetClientObj = clientName && typeof DatabaseService.findClienteByNombreORazon === 'function'
             ? (DatabaseService.findClienteByNombreORazon(clientName) || {})
             : {};
-        const targetClientId = targetClientObj.id ? String(targetClientObj.id) : '';
+        const targetClientId = clientIdFromPayload ? String(clientIdFromPayload) : (targetClientObj.id ? String(targetClientObj.id) : '');
 
         const resultRows = [];
         const empleadosSet = new Set();
@@ -416,13 +468,19 @@ var HoursController = (function () {
             const rowClient = String(row[idxCliente] || '').toLowerCase().trim();
             const rowClientNorm = normalizeClientName(row[idxCliente]);
             const rowIdCliente = idxIdCliente > -1 ? String(row[idxIdCliente] || '').trim() : '';
-            if (targetClient) {
+            if (targetClientId || targetClient) {
                 const matchById = targetClientId && rowIdCliente && String(rowIdCliente) === String(targetClientId);
-                const exact = rowClient === targetClient;
-                const normMatch = rowClientNorm === targetClientNorm;
-                const partial = rowClientNorm && targetClientNorm && (rowClientNorm.indexOf(targetClientNorm) !== -1 || targetClientNorm.indexOf(rowClientNorm) !== -1);
-                const matchByName = exact || normMatch || partial;
-                if (!matchById && !matchByName) return;
+                if (matchById) {
+                    // ok
+                } else if (targetClient) {
+                    const exact = rowClient === targetClient;
+                    const normMatch = rowClientNorm === targetClientNorm;
+                    const partial = rowClientNorm && targetClientNorm && (rowClientNorm.indexOf(targetClientNorm) !== -1 || targetClientNorm.indexOf(rowClientNorm) !== -1);
+                    const matchByName = exact || normMatch || partial;
+                    if (!matchByName) return;
+                } else {
+                    return;
+                }
             }
 
             const rowDate = row[idxFecha] instanceof Date ? row[idxFecha] : new Date(row[idxFecha]);
@@ -501,6 +559,7 @@ var HoursController = (function () {
 
             const idxFecha = headers.indexOf('FECHA');
             const idxCliente = headers.indexOf('CLIENTE');
+            const idxIdCliente = headers.indexOf('ID_CLIENTE');
             const idxEmpleado = headers.indexOf('EMPLEADO');
             const idxHoras = headers.indexOf('HORAS');
             const idxAsistencia = headers.indexOf('ASISTENCIA');
@@ -509,14 +568,15 @@ var HoursController = (function () {
                 return [];
             }
 
-            const summaryMap = new Map(); // cliente -> {horas, empleados:Set, dias:Set, totalFacturacion}
+            const summaryMap = new Map(); // key -> {idCliente, cliente, horas, empleados:Set, dias:Set, totalFacturacion}
 
             rows.forEach(function (row) {
                 const fecha = row[idxFecha] instanceof Date ? row[idxFecha] : new Date(row[idxFecha]);
                 if (isNaN(fecha.getTime()) || fecha < start || fecha > end) return;
 
                 const cliente = row[idxCliente];
-                if (!cliente) return;
+                const rowIdCliente = idxIdCliente > -1 ? String(row[idxIdCliente] || '').trim() : '';
+                if (!cliente && !rowIdCliente) return;
 
                 const asistencia = idxAsistencia > -1 ? DataUtils.isTruthy(row[idxAsistencia]) : true;
                 if (!asistencia) return;
@@ -526,8 +586,15 @@ var HoursController = (function () {
                 const rate = getClientRateAtDate(cliente, fecha);
                 const facturacion = horas * (isNaN(rate) ? 0 : rate);
 
-                const key = String(cliente);
-                const entry = summaryMap.get(key) || { horas: 0, empleados: new Set(), dias: new Set(), totalFacturacion: 0 };
+                const key = rowIdCliente || normalizeClientName(cliente);
+                const entry = summaryMap.get(key) || {
+                    idCliente: rowIdCliente,
+                    cliente: cliente,
+                    horas: 0,
+                    empleados: new Set(),
+                    dias: new Set(),
+                    totalFacturacion: 0
+                };
 
                 entry.horas += horas;
                 entry.totalFacturacion += facturacion;
@@ -538,10 +605,12 @@ var HoursController = (function () {
             });
 
             const result = [];
-            summaryMap.forEach(function (entry, cliente) {
-                const rateFin = getClientRateAtDate(cliente, end);
+            summaryMap.forEach(function (entry) {
+                const displayName = entry.cliente || '';
+                const rateFin = getClientRateAtDate(displayName, end);
                 result.push({
-                    cliente: cliente,
+                    cliente: displayName,
+                    idCliente: entry.idCliente || '',
                     horas: entry.horas,
                     empleados: entry.empleados.size,
                     dias: entry.dias.size,
@@ -566,19 +635,31 @@ var HoursController = (function () {
      * @param {string} employeeName - Nombre del empleado
      * @returns {Array} Lista de registros filtrados
      */
-    function getHoursByEmployee(startDateStr, endDateStr, employeeName) {
-        // Tolerar llamadas antiguas que envían un array como primer argumento
-        if (Array.isArray(startDateStr)) {
+    function getHoursByEmployee(startDateStr, endDateStr, employeeName, idEmpleado) {
+        // Soportar objeto {fechaDesde, fechaHasta, empleado, idEmpleado}
+        if (startDateStr && typeof startDateStr === 'object' && !Array.isArray(startDateStr)) {
+            const obj = startDateStr;
+            startDateStr = obj.fechaDesde || obj.startDateStr || obj.startDate;
+            endDateStr = obj.fechaHasta || obj.endDateStr || obj.endDate;
+            employeeName = obj.empleado || obj.employeeName;
+            idEmpleado = obj.idEmpleado || obj.employeeId || idEmpleado;
+        } else if (Array.isArray(startDateStr)) {
             var params = startDateStr;
             startDateStr = params[0];
             endDateStr = params[1];
             employeeName = params[2];
+            idEmpleado = params[3] || idEmpleado;
         } else if (startDateStr && typeof startDateStr === 'string' && startDateStr.indexOf(',') !== -1 && !endDateStr && !employeeName) {
-            // También tolerar string "a,b,c" que llega de un array stringify
             var parts = startDateStr.split(',');
             startDateStr = parts[0];
             endDateStr = parts[1];
             employeeName = parts[2];
+            idEmpleado = parts[3] || idEmpleado;
+        }
+
+        if (!employeeName && idEmpleado && DatabaseService.findEmpleadoById) {
+            const emp = DatabaseService.findEmpleadoById(idEmpleado);
+            if (emp && emp.nombre) employeeName = emp.nombre;
         }
 
         const sheet = DatabaseService.getDbSheetForFormat('ASISTENCIA');
@@ -596,6 +677,7 @@ var HoursController = (function () {
         const idxHoras = headers.indexOf('HORAS');
         const idxObs = headers.indexOf('OBSERVACIONES');
         const idxAsistencia = headers.indexOf('ASISTENCIA');
+        const idxIdEmpleado = headers.indexOf('ID_EMPLEADO');
 
         if (idxFecha === -1 || idxEmpleado === -1) {
             console.error("Columnas requeridas no encontradas en ASISTENCIA");
@@ -608,6 +690,7 @@ var HoursController = (function () {
 
         // Normalize employee name for comparison
         const targetEmployee = employeeName ? employeeName.toLowerCase().trim() : '';
+        const targetEmployeeId = idEmpleado ? String(idEmpleado) : '';
 
         // DEBUG
         Logger.log('=== getHoursByEmployee DEBUG ===');
@@ -622,6 +705,7 @@ var HoursController = (function () {
 
         rows.forEach(function (row, idx) {
             const rowEmployee = String(row[idxEmpleado] || '').toLowerCase().trim();
+            const rowIdEmpleado = idxIdEmpleado > -1 ? String(row[idxIdEmpleado] || '').trim() : '';
             const rowDate = row[idxFecha] instanceof Date ? row[idxFecha] : new Date(row[idxFecha]);
             const rowAsistencia = idxAsistencia > -1 ? DataUtils.isTruthy(row[idxAsistencia]) : true;
 
@@ -636,8 +720,10 @@ var HoursController = (function () {
                 Logger.log('  end: ' + end);
             }
 
-            // Filter by Employee
-            if (targetEmployee && rowEmployee !== targetEmployee) {
+            // Filter by Employee (prioriza ID)
+            if (targetEmployeeId && idxIdEmpleado > -1) {
+                if (!rowIdEmpleado || rowIdEmpleado !== targetEmployeeId) return;
+            } else if (targetEmployee && rowEmployee !== targetEmployee) {
                 return;
             }
 
@@ -654,6 +740,7 @@ var HoursController = (function () {
                 fecha: DataUtils.normalizeCellForSearch(row[idxFecha]),
                 cliente: row[idxCliente],
                 empleado: row[idxEmpleado],
+                idEmpleado: idxIdEmpleado > -1 ? row[idxIdEmpleado] : '',
                 horas: rowAsistencia ? horasValue : 0,
                 asistencia: rowAsistencia,
                 observaciones: obsValue
@@ -671,7 +758,7 @@ var HoursController = (function () {
             const h = Number(r.horas);
             return acc + (isNaN(h) ? 0 : h);
         }, 0);
-        const empleadoData = getEmployeeData(employeeName);
+        const empleadoData = getEmployeeData(employeeName, idEmpleado);
         const valorHora = empleadoData.valorHora;
         const viaticosBase = empleadoData.viaticos;
         const adelantos = getEmployeeAdvancesTotal(employeeName, start, end);

@@ -80,14 +80,14 @@ var ClientReportPanel = (function () {
                                 </div>
                             </div>
                         </div>
-                        <div class="col-12 col-md-3">
-                            <div class="card h-100 shadow-sm border-0 text-center" style="background: linear-gradient(135deg, #0f172a, #334155); color:#fff;">
-                                <div class="card-body py-2 px-1">
-                                    <div class="small text-white-50 text-uppercase" style="font-size: 0.7rem;">Total a Facturar</div>
-                                    <div class="fs-5 fw-bold mb-0" id="client-summary-total">$0</div>
-                                </div>
-                            </div>
-                        </div>
+	                        <div class="col-12 col-md-3">
+	                            <div class="lt-metric lt-metric--dark h-100 text-center">
+	                                <div class="card-body py-2 px-1">
+	                                    <div class="small lt-metric__k text-uppercase" style="font-size: 0.7rem;">Total a Facturar</div>
+	                                    <div class="fs-5 fw-bold mb-0" id="client-summary-total">$0</div>
+	                                </div>
+	                            </div>
+	                        </div>
                     </div>
 
                     <div id="client-report-aggregate" class="card shadow-none border mb-3 d-none">

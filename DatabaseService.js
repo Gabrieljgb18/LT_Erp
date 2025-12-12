@@ -428,6 +428,30 @@ var DatabaseService = (function () {
     return null;
   }
 
+  function findClienteById(id) {
+    if (id == null || id === '') return null;
+    const sheet = getDbSheetForFormat('CLIENTES');
+    const rowNumber = findRowById(sheet, id);
+    if (!rowNumber) return null;
+
+    const lastCol = sheet.getLastColumn();
+    const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || '').trim().toUpperCase());
+    const row = sheet.getRange(rowNumber, 1, 1, lastCol).getValues()[0];
+
+    const idxId = headers.indexOf('ID');
+    const idxNombre = headers.indexOf('NOMBRE');
+    const idxRazon = headers.indexOf('RAZON SOCIAL');
+    const idxCuit = headers.indexOf('CUIT');
+
+    return {
+      id: idxId > -1 ? row[idxId] : row[0],
+      nombre: idxNombre > -1 ? row[idxNombre] : '',
+      razonSocial: idxRazon > -1 ? row[idxRazon] : '',
+      cuit: idxCuit > -1 ? row[idxCuit] : '',
+      rowNumber: rowNumber
+    };
+  }
+
   function findEmpleadoByNombre(nombre) {
     if (!nombre) return null;
 
@@ -456,6 +480,28 @@ var DatabaseService = (function () {
     return null;
   }
 
+  function findEmpleadoById(id) {
+    if (id == null || id === '') return null;
+    const sheet = getDbSheetForFormat('EMPLEADOS');
+    const rowNumber = findRowById(sheet, id);
+    if (!rowNumber) return null;
+
+    const lastCol = sheet.getLastColumn();
+    const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || '').trim().toUpperCase());
+    const row = sheet.getRange(rowNumber, 1, 1, lastCol).getValues()[0];
+
+    const idxId = headers.indexOf('ID');
+    const idxNombre = headers.indexOf('EMPLEADO');
+    const idxEstado = headers.indexOf('ESTADO');
+
+    return {
+      id: idxId > -1 ? row[idxId] : row[0],
+      nombre: idxNombre > -1 ? row[idxNombre] : '',
+      estado: idxEstado > -1 ? row[idxEstado] : '',
+      rowNumber: rowNumber
+    };
+  }
+
   // ====== REFERENCIAS PARA LA UI ======
 
   function getReferenceData() {
@@ -475,7 +521,9 @@ var DatabaseService = (function () {
     getConfig: getConfig,
     getDbSheetForFormat: getDbSheetForFormat,
     findClienteByNombreORazon: findClienteByNombreORazon,
+    findClienteById: findClienteById,
     findEmpleadoByNombre: findEmpleadoByNombre,
+    findEmpleadoById: findEmpleadoById,
     appendHoraLogCliente: appendHoraLogCliente,
     appendHoraLogEmpleado: appendHoraLogEmpleado,
     getNextId: getNextId,

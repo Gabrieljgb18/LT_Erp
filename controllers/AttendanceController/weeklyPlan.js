@@ -10,7 +10,11 @@ const AttendanceWeeklyPlan = (function () {
      * @param {string} cliente - Nombre del cliente
      * @returns {Array} Template con días y horas
      */
-    function buildWeeklyTemplateFromClient(cliente) {
+    function buildWeeklyTemplateFromClient(cliente, idCliente) {
+        if (cliente && typeof cliente === 'object' && !Array.isArray(cliente)) {
+            idCliente = cliente.idCliente || cliente.ID_CLIENTE || idCliente;
+            cliente = cliente.cliente || cliente.clientName || cliente.label || '';
+        }
         const sheetClientes = DatabaseService.getDbSheetForFormat('CLIENTES');
         const dataCli = sheetClientes.getDataRange().getValues();
         if (dataCli.length < 2) {
@@ -20,6 +24,7 @@ const AttendanceWeeklyPlan = (function () {
         const header = dataCli[0];
         const rows = dataCli.slice(1);
 
+        const idxId = header.indexOf('ID');
         const idxNombre = header.indexOf('NOMBRE');
         const idxRazon = header.indexOf('RAZON SOCIAL');
         const idxLunes = header.indexOf('LUNES HS');
@@ -40,11 +45,15 @@ const AttendanceWeeklyPlan = (function () {
             throw new Error('Faltan columnas de horas (LUNES HS, etc.) en CLIENTES_DB.');
         }
 
+        const targetId = idCliente != null && idCliente !== '' ? String(idCliente) : '';
         let rowCliente = null;
         rows.forEach(function (row) {
+            const rowId = idxId > -1 ? String(row[idxId] || '').trim() : '';
             const nombre = row[idxNombre];
             const razon = row[idxRazon];
-            if (nombre === cliente || razon === cliente) {
+            if (targetId && rowId && rowId === targetId) {
+                rowCliente = row;
+            } else if (!targetId && (nombre === cliente || razon === cliente)) {
                 rowCliente = row;
             }
         });
@@ -70,7 +79,7 @@ const AttendanceWeeklyPlan = (function () {
             const horas = Number(val) || 0;
             if (horas > 0) {
                 result.push({
-                    cliente: cliente,
+                    cliente: cliente || (rowCliente[idxRazon] || rowCliente[idxNombre] || ''),
                     empleado: '',
                     diaSemana: d.label,
                     horaEntrada: '',
@@ -89,8 +98,12 @@ const AttendanceWeeklyPlan = (function () {
      * @param {string} cliente - Nombre del cliente
      * @returns {Array} Plan semanal actual
      */
-    function getWeeklyPlanForClient(cliente) {
-        if (!cliente) return [];
+    function getWeeklyPlanForClient(cliente, idCliente) {
+        if (cliente && typeof cliente === 'object' && !Array.isArray(cliente)) {
+            idCliente = cliente.idCliente || cliente.ID_CLIENTE || idCliente;
+            cliente = cliente.cliente || cliente.clientName || cliente.label || '';
+        }
+        if (!cliente && !idCliente) return [];
 
         const sheetPlan = DatabaseService.getDbSheetForFormat('ASISTENCIA_PLAN');
         const dataPlan = sheetPlan.getDataRange().getValues();
@@ -104,7 +117,9 @@ const AttendanceWeeklyPlan = (function () {
 
         const idxId = headerNorm.indexOf('ID');
         const idxCliente = headerNorm.indexOf('CLIENTE');
+        const idxIdCliente = headerNorm.indexOf('ID_CLIENTE');
         const idxEmpleado = headerNorm.indexOf('EMPLEADO');
+        const idxIdEmpleado = headerNorm.indexOf('ID_EMPLEADO');
         const idxDiaSemana = headerNorm.indexOf('DIA SEMANA');
         const idxHoraEntrada = headerNorm.indexOf('HORA ENTRADA');
         const idxHorasPlan = headerNorm.indexOf('HORAS PLAN');
@@ -124,17 +139,27 @@ const AttendanceWeeklyPlan = (function () {
         }
 
         const targetNorm = String(cliente || '').trim().toLowerCase();
+        const targetId = idCliente != null && idCliente !== '' ? String(idCliente) : '';
         const result = [];
 
         rowsPlan.forEach(function (row) {
             const cli = row[idxCliente];
             const cliNorm = String(cli || '').trim().toLowerCase();
-            if (cliNorm !== targetNorm) return;
+            const rowIdCli = idxIdCliente > -1 ? String(row[idxIdCliente] || '').trim() : '';
+            if (targetId) {
+                if (rowIdCli) {
+                    if (rowIdCli !== targetId) return;
+                } else if (cliNorm !== targetNorm) {
+                    return;
+                }
+            } else if (cliNorm !== targetNorm) return;
 
             result.push({
                 id: idxId > -1 ? row[idxId] : '',
                 cliente: String(cli || ''),
+                idCliente: idxIdCliente > -1 ? row[idxIdCliente] : '',
                 empleado: row[idxEmpleado] || '',
+                idEmpleado: idxIdEmpleado > -1 ? row[idxIdEmpleado] : '',
                 diaSemana: row[idxDiaSemana] || '',
                 horaEntrada: row[idxHoraEntrada] || '',
                 horasPlan: row[idxHorasPlan] || '',
@@ -153,9 +178,19 @@ const AttendanceWeeklyPlan = (function () {
      * @param {Array} items - Array de items del plan
      * @param {Object} originalVigencia - { desde: string, hasta: string } para identificar qué plan reemplazar
      */
-    function saveWeeklyPlanForClient(cliente, items, originalVigencia) {
-        console.log("Iniciando saveWeeklyPlanForClient para:", cliente);
-        if (!cliente) throw new Error('Falta el cliente para guardar el plan.');
+    function saveWeeklyPlanForClient(cliente, items, originalVigencia, idCliente) {
+        if (cliente && typeof cliente === 'object' && !Array.isArray(cliente)) {
+            idCliente = cliente.idCliente || cliente.ID_CLIENTE || idCliente;
+            cliente = cliente.cliente || cliente.clientName || cliente.label || '';
+        }
+        if (!cliente && idCliente && DatabaseService.findClienteById) {
+            const cli = DatabaseService.findClienteById(idCliente);
+            if (cli && (cli.razonSocial || cli.nombre)) {
+                cliente = cli.razonSocial || cli.nombre;
+            }
+        }
+        console.log("Iniciando saveWeeklyPlanForClient para:", cliente || idCliente);
+        if (!cliente && !idCliente) throw new Error('Falta el cliente para guardar el plan.');
 
         items = items || [];
 
@@ -202,17 +237,19 @@ const AttendanceWeeklyPlan = (function () {
         const idxVigHasta = idxMap['VIGENTE HASTA'];
 
         // Intentar reutilizar el ID del cliente si ya existe en datos previos
-        let defaultIdCliente = '';
+        let defaultIdCliente = idCliente != null && idCliente !== '' ? String(idCliente) : '';
         if (idxCliente !== undefined && idxIdCliente !== undefined && idxIdCliente > -1) {
-            existingData.some(row => {
-                const rowCliente = String(row[idxCliente] || '');
-                const idCli = row[idxIdCliente];
-                if (rowCliente === String(cliente) && idCli) {
-                    defaultIdCliente = idCli;
-                    return true;
-                }
-                return false;
-            });
+            if (!defaultIdCliente) {
+                existingData.some(row => {
+                    const rowCliente = String(row[idxCliente] || '');
+                    const idCli = row[idxIdCliente];
+                    if (rowCliente === String(cliente) && idCli) {
+                        defaultIdCliente = String(idCli);
+                        return true;
+                    }
+                    return false;
+                });
+            }
         }
 
         if (!defaultIdCliente) {
@@ -242,7 +279,11 @@ const AttendanceWeeklyPlan = (function () {
             if (idxCliente === undefined) return false;
 
             const rowCliente = String(row[idxCliente] || '');
-            if (rowCliente !== String(cliente)) return true; // Mantener otros clientes
+            const rowIdCli = idxIdCliente > -1 ? String(row[idxIdCliente] || '').trim() : '';
+            const isSameClient = defaultIdCliente && rowIdCli
+                ? rowIdCli === String(defaultIdCliente)
+                : rowCliente === String(cliente);
+            if (!isSameClient) return true; // Mantener otros clientes
 
             // Es el mismo cliente. Verificamos si corresponde al plan que estamos editando.
             // Si se pasó originalVigencia, borramos SOLO lo que coincida con esa vigencia.

@@ -1,4 +1,13 @@
 (function (global) {
+  function escapeHtml(val) {
+    return String(val == null ? "" : val)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
   function toggleControls(disabled) {
     // Don't disable search-query so users can keep typing during search
     ["formato", "btn-nuevo"].forEach(function (id) {
@@ -12,12 +21,17 @@
       const c = document.getElementById(componentId);
       if (!c) return;
       c.innerHTML =
-        '<div class="mt-2 p-2 border rounded bg-light">' +
-        '<div class="small fw-bold mb-1">' +
-        title +
+        '<div class="lt-surface lt-surface--subtle p-3">' +
+        '<div class="d-flex align-items-center gap-2">' +
+        '<div class="spinner-border spinner-border-sm text-primary" role="status"></div>' +
+        '<div class="flex-grow-1">' +
+        '<div class="small fw-bold mb-0">' +
+        escapeHtml(title) +
         "</div>" +
         '<div class="small text-muted">' +
-        message +
+        escapeHtml(message) +
+        "</div>" +
+        "</div>" +
         "</div>" +
         "</div>";
     },
@@ -30,9 +44,11 @@
       if (isLoading) {
         badge.classList.remove("d-none");
         badge.innerHTML =
-          '<div class="spinner-border spinner-border-sm me-2" role="status"></div>' +
-          '<span class="small">' +
-          (message || "Procesando...") +
+          '<span class="lt-chip lt-chip--muted">' +
+          '<span class="spinner-border spinner-border-sm" role="status" style="width:12px;height:12px;"></span>' +
+          '<span>' +
+          escapeHtml(message || "Procesando...") +
+          "</span>" +
           "</span>";
       } else {
         badge.classList.add("d-none");
