@@ -1,6 +1,9 @@
 src/**
 bundle.js
 generate_bundle_html.js
-node_modules/
-.git/
-README.md                                                                                                                                                                                                                                                                                                                                                                                       
+node_modules/**
+.git/**
+README.md
+mcp/**
+**/*.ts
+**/*.map

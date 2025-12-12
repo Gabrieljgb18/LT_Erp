@@ -138,8 +138,8 @@ function getHoursDetail(startDate, endDate, client) {
 /**
  * Obtiene horas por cliente (con resumen)
  */
-function getHoursByClient(startDate, endDate, client) {
-  return HoursController.getHoursByClient(startDate, endDate, client);
+function getHoursByClient(startDate, endDate, client, idCliente) {
+  return HoursController.getHoursByClient(startDate, endDate, client, idCliente);
 }
 
 /**
@@ -164,10 +164,17 @@ function getClientAccountStatement(clientName, startDate, endDate) {
 }
 
 /**
+ * Lista facturas de un cliente
+ */
+function getClientInvoices(clientName) {
+  return AccountController.getClientInvoices(clientName);
+}
+
+/**
  * Registra un cobro de cliente
  */
-function recordClientPayment(fecha, cliente, monto, obs) {
-  return AccountController.recordClientPayment(fecha, cliente, monto, obs);
+function recordClientPayment(payload) {
+  return AccountController.recordClientPayment(payload);
 }
 
 /**
@@ -208,13 +215,47 @@ function getEmployeeAccountStatement(year, month) {
 /**
  * Cuenta corriente mensual por cliente
  */
-function getClientAccountStatement(year, month) {
+function getClientMonthlyAccountStatement(year, month) {
   return ClientAccountController.getClientAccountStatement(year, month);
 }
 
 /**
  * Registrar cobro de cliente
  */
-function recordClientPayment(fecha, cliente, concepto, monto, obs) {
+function recordClientMonthlyPayment(fecha, cliente, concepto, monto, obs) {
   return ClientAccountController.recordClientPayment(fecha, cliente, concepto, monto, obs);
+}
+
+
+// ===================== FACTURACIÓN API =====================
+
+function getInvoices(filters) {
+  return InvoiceController.getInvoices(filters);
+}
+
+function getInvoiceById(id) {
+  return InvoiceController.getInvoiceById(id);
+}
+
+function createInvoice(data) {
+  return InvoiceController.createInvoice(data);
+}
+
+/**
+ * Crea factura a partir de asistencia (cliente + rango)
+ */
+function createInvoiceFromAttendance(cliente, fechaDesde, fechaHasta, extra) {
+  return InvoiceController.createInvoiceFromAttendance(cliente, fechaDesde, fechaHasta, extra);
+}
+
+function updateInvoice(id, data) {
+  return InvoiceController.updateInvoice(id, data);
+}
+
+function deleteInvoice(id) {
+  return InvoiceController.deleteInvoice(id);
+}
+
+function generateInvoicePdf(id) {
+  return InvoiceController.generateInvoicePdf(id);
 }

@@ -373,6 +373,7 @@
           registro: 'Formularios',
           reportes: 'Reporte Empleados',
           'reportes-clientes': 'Reporte Clientes',
+          facturacion: 'Facturación',
           configuracion: 'Configuración'
         };
 
@@ -409,6 +410,9 @@
         }
         if (viewId === 'configuracion' && BulkValuesPanel) {
           BulkValuesPanel.render();
+        }
+        if (viewId === 'facturacion' && typeof InvoicePanel !== 'undefined') {
+          InvoicePanel.render();
         }
       });
     }

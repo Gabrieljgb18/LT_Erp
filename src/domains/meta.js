@@ -34,8 +34,8 @@
         );
       }
     },
-    PAGOS: {
-      entity: "pago",
+    PAGOS_CLIENTES: {
+      entity: "pago de cliente",
       label: function (record) {
         return record["RAZÓN SOCIAL"] || "";
       }

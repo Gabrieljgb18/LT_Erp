@@ -44,6 +44,7 @@
     FACTURACION: {
       title: "Registro de facturación",
       fields: [
+        { id: "ID_CLIENTE", label: "ID Cliente", type: "text", hidden: true },
         { id: "FECHA", label: "Fecha", type: "date" },
         { id: "COMPROBANTE", label: "Comprobante", type: "text" },
         { id: "NUMERO", label: "Número", type: "text" },
@@ -54,16 +55,19 @@
         { id: "TOTAL", label: "Total", type: "number", step: "0.01" }
       ]
     },
-    PAGOS: {
-      title: "Registro de pagos",
+    PAGOS_CLIENTES: {
+      title: "Pagos de clientes",
       fields: [
+        { id: "ID_CLIENTE", label: "ID Cliente", type: "text", hidden: true },
         { id: "FECHA", label: "Fecha", type: "date" },
         { id: "RAZÓN SOCIAL", label: "Razón social", type: "cliente", full: true },
         { id: "CUIT", label: "CUIT", type: "text" },
         { id: "DETALLE", label: "Detalle", type: "text", full: true },
         { id: "N° COMPROBANTE", label: "Nº comprobante", type: "text" },
         { id: "MEDIO DE PAGO", label: "Medio de pago", type: "text" },
-        { id: "MONTO", label: "Monto", type: "number", step: "0.01" }
+        { id: "MONTO", label: "Monto", type: "number", step: "0.01" },
+        { id: "ID_FACTURA", label: "ID Factura", type: "text", hidden: true },
+        { id: "FACTURA_NUMERO", label: "Factura número", type: "text" }
       ]
     },
     ASISTENCIA_PLAN: {

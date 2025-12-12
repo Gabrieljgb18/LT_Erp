@@ -108,7 +108,9 @@
             return {
                 uid: (extra ? "extra-" : "plan-") + (idx != null ? idx : Date.now()),
                 cliente: row && row.cliente ? String(row.cliente) : "",
+                idCliente: row && row.idCliente ? row.idCliente : "",
                 empleado: row && row.empleado ? String(row.empleado) : "",
+                idEmpleado: row && row.idEmpleado ? row.idEmpleado : "",
                 horaPlan: row && row.horaPlan ? String(row.horaPlan) : "",
                 horasPlan: row && row.horasPlan !== undefined && row.horasPlan !== null ? row.horasPlan : "",
                 asistencia: row && row.asistencia ? true : false,
@@ -385,6 +387,12 @@
             const row = state.rows.find(r => r.uid === uid);
             if (!row) return;
             row[field] = value;
+            if (field === "cliente") {
+                row.idCliente = "";
+            }
+            if (field === "empleado") {
+                row.idEmpleado = "";
+            }
             updateSummary();
         }
 
@@ -623,7 +631,9 @@
 
             const payload = state.rows.map(r => ({
                 cliente: r.cliente,
+                idCliente: r.idCliente || "",
                 empleado: r.empleado,
+                idEmpleado: r.idEmpleado || "",
                 asistencia: !!r.asistencia,
                 horasReales: r.horasReales !== undefined && r.horasReales !== null ? r.horasReales : "",
                 horasPlan: r.horasPlan !== undefined && r.horasPlan !== null ? r.horasPlan : "",

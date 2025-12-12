@@ -4,7 +4,6 @@ const DB_SHEETS_BY_FORMAT = {
   CLIENTES: 'CLIENTES_DB',
   EMPLEADOS: 'EMPLEADOS_DB',
   FACTURACION: 'FACTURACION_DB',
-  PAGOS: 'PAGOS_DB',
   ASISTENCIA: 'ASISTENCIA_DB',
   ASISTENCIA_PLAN: 'ASISTENCIA_PLAN_DB',
   ADELANTOS: 'ADELANTOS_DB',
@@ -171,6 +170,7 @@ var DatabaseService = (function () {
 
     const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
 
+    const idxId = headers.indexOf('ID');
     const idxNombre = headers.indexOf('NOMBRE');
     const idxRazon = headers.indexOf('RAZON SOCIAL');
     const idxCuit = headers.indexOf('CUIT');
@@ -191,6 +191,7 @@ var DatabaseService = (function () {
 
       if (isActive && (nombre || razon)) {
         result.push({
+          id: idxId > -1 ? row[idxId] : '',
           nombre: nombre,
           razonSocial: razon,
           cuit: cuit
@@ -343,8 +344,23 @@ var DatabaseService = (function () {
   function normalizeClientName_(name) {
     if (!name) return '';
     return String(name)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // Remove accents/diacritics
       .toLowerCase()
-      .replace(/\([^)]*\)/g, '')
+      .replace(/\([^)]*\)/g, '') // Remove content in parentheses
+      .replace(/\s+/g, ' ')
+      .replace(/\./g, '')        // Remove dots
+      .replace(/s\.?a\.?$/i, 'sa')
+      .replace(/s\.?r\.?l\.?$/i, 'srl')
+      .trim();
+  }
+
+  function normalizePersonName_(name) {
+    if (!name) return '';
+    return String(name)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // Remove accents/diacritics
+      .toLowerCase()
       .replace(/\s+/g, ' ')
       .trim();
   }
@@ -367,6 +383,71 @@ var DatabaseService = (function () {
     return isNaN(parsed.getTime()) ? null : parsed;
   }
 
+  // ====== LOOKUPS POR NOMBRE/RAZON ======
+
+  function findClienteByNombreORazon(nombreORazon) {
+    if (!nombreORazon) return null;
+
+    const sheet = getDbSheetForFormat('CLIENTES');
+    const data = sheet.getDataRange().getValues();
+    if (data.length < 2) return null;
+
+    const headers = data[0].map(h => String(h || '').trim().toUpperCase());
+    const idxId = headers.indexOf('ID');
+    const idxNombre = headers.indexOf('NOMBRE');
+    const idxRazon = headers.indexOf('RAZON SOCIAL');
+    if (idxId === -1 || (idxNombre === -1 && idxRazon === -1)) return null;
+
+    const targetNorm = normalizeClientName_(nombreORazon);
+    if (!targetNorm) return null;
+
+    const rows = data.slice(1);
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const nombre = idxNombre > -1 ? row[idxNombre] : '';
+      const razon = idxRazon > -1 ? row[idxRazon] : '';
+      const normNombre = normalizeClientName_(nombre);
+      const normRazon = normalizeClientName_(razon);
+      if (normNombre === targetNorm || normRazon === targetNorm) {
+        return {
+          id: row[idxId],
+          nombre: nombre,
+          razonSocial: razon,
+          rowNumber: i + 2
+        };
+      }
+    }
+    return null;
+  }
+
+  function findEmpleadoByNombre(nombre) {
+    if (!nombre) return null;
+
+    const sheet = getDbSheetForFormat('EMPLEADOS');
+    const data = sheet.getDataRange().getValues();
+    if (data.length < 2) return null;
+
+    const headers = data[0].map(h => String(h || '').trim().toUpperCase());
+    const idxId = headers.indexOf('ID');
+    const idxNombre = headers.indexOf('EMPLEADO');
+    if (idxId === -1 || idxNombre === -1) return null;
+
+    const target = normalizePersonName_(nombre);
+    const rows = data.slice(1);
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const nom = row[idxNombre];
+      if (nom && normalizePersonName_(nom) === target) {
+        return {
+          id: row[idxId],
+          nombre: nom,
+          rowNumber: i + 2
+        };
+      }
+    }
+    return null;
+  }
+
   // ====== REFERENCIAS PARA LA UI ======
 
   function getReferenceData() {
@@ -385,10 +466,13 @@ var DatabaseService = (function () {
     upsertConfig: upsertConfig,
     getConfig: getConfig,
     getDbSheetForFormat: getDbSheetForFormat,
+    findClienteByNombreORazon: findClienteByNombreORazon,
+    findEmpleadoByNombre: findEmpleadoByNombre,
     appendHoraLogCliente: appendHoraLogCliente,
     appendHoraLogEmpleado: appendHoraLogEmpleado,
     getNextId: getNextId,
-    findRowById: findRowById
+    findRowById: findRowById,
+    getDbSpreadsheet: getDbSpreadsheet
   };
 
 })();

@@ -22,6 +22,7 @@ if (typeof require === "undefined") {
     path.join(root, "src", "attendance", "weeklyPlanPanel.js"),
     path.join(root, "src", "attendance", "dailyAttendanceUi.js"),
     path.join(root, "src", "attendance", "attendancePanels.js"),
+    path.join(root, "src", "invoice", "invoicePanel.js"),
     path.join(root, "src", "hours", "hoursDetailPanel.js"),
     path.join(root, "src", "hours", "clientMonthlySummaryPanel.js"),
     path.join(root, "src", "hours", "clientAccountPanel.js"),

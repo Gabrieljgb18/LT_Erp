@@ -179,9 +179,9 @@ const AttendanceWeeklyPlan = (function () {
 
         // 2. Definir esquema deseado (Standard Schema)
         const standardHeaders = [
-            'ID', 'CLIENTE', 'EMPLEADO', 'DIA SEMANA',
-            'HORA ENTRADA', 'HORAS PLAN', 'OBSERVACIONES',
-            'VIGENTE DESDE', 'VIGENTE HASTA'
+            'ID', 'ID_CLIENTE', 'CLIENTE', 'ID_EMPLEADO', 'EMPLEADO',
+            'DIA SEMANA', 'HORA ENTRADA', 'HORAS PLAN',
+            'OBSERVACIONES', 'VIGENTE DESDE', 'VIGENTE HASTA'
         ];
 
         // 3. Mapear índices actuales
@@ -196,8 +196,37 @@ const AttendanceWeeklyPlan = (function () {
 
         // 4. Procesar datos existentes (KEPT)
         const idxCliente = idxMap['CLIENTE'];
+        const idxIdCliente = idxMap['ID_CLIENTE'];
+        const idxIdEmpleado = idxMap['ID_EMPLEADO'];
         const idxVigDesde = idxMap['VIGENTE DESDE'];
         const idxVigHasta = idxMap['VIGENTE HASTA'];
+
+        // Intentar reutilizar el ID del cliente si ya existe en datos previos
+        let defaultIdCliente = '';
+        if (idxCliente !== undefined && idxIdCliente !== undefined && idxIdCliente > -1) {
+            existingData.some(row => {
+                const rowCliente = String(row[idxCliente] || '');
+                const idCli = row[idxIdCliente];
+                if (rowCliente === String(cliente) && idCli) {
+                    defaultIdCliente = idCli;
+                    return true;
+                }
+                return false;
+            });
+        }
+
+        if (!defaultIdCliente) {
+            const foundCli = DatabaseService.findClienteByNombreORazon(cliente);
+            if (foundCli && foundCli.id) {
+                defaultIdCliente = foundCli.id;
+            }
+        }
+
+        function resolveEmpleadoId(nombre) {
+            if (!nombre) return '';
+            const found = DatabaseService.findEmpleadoByNombre(nombre);
+            return found && found.id ? found.id : '';
+        }
 
         // Helper para comparar fechas (strings YYYY-MM-DD o Date objects)
         const areDatesEqual = (d1, d2) => {
@@ -275,7 +304,9 @@ const AttendanceWeeklyPlan = (function () {
             };
 
             setVal('ID', it.id || nextId++);
+            setVal('ID_CLIENTE', it.idCliente || it.id_cliente || defaultIdCliente || '');
             setVal('CLIENTE', cliente);
+            setVal('ID_EMPLEADO', it.idEmpleado || it.id_empleado || resolveEmpleadoId(it.empleado));
             setVal('EMPLEADO', it.empleado || '');
             setVal('DIA SEMANA', it.diaSemana || '');
             setVal('HORA ENTRADA', it.horaEntrada || '');

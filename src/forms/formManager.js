@@ -39,9 +39,12 @@
          * Construye formatos desde definiciones locales
          */
         function buildLocalFormats() {
-            return Object.keys(FORM_DEFINITIONS).map(function (id) {
-                return { id: id, name: FORM_DEFINITIONS[id].title || id };
-            });
+            const hidden = new Set(['FACTURACION', 'PAGOS', 'PAGOS_CLIENTES']);
+            return Object.keys(FORM_DEFINITIONS)
+                .filter(function (id) { return !hidden.has(id); })
+                .map(function (id) {
+                    return { id: id, name: FORM_DEFINITIONS[id].title || id };
+                });
         }
 
         /**
@@ -143,8 +146,8 @@
                 container.appendChild(colDiv);
             });
 
-            // Autocompletar CUIT para FACTURACION y PAGOS
-            if (tipoFormato === "FACTURACION" || tipoFormato === "PAGOS") {
+            // Autocompletar CUIT para FACTURACION y PAGOS_CLIENTES
+            if (tipoFormato === "FACTURACION" || tipoFormato === "PAGOS_CLIENTES") {
                 setupCuitAutocomplete();
             }
 

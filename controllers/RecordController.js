@@ -63,11 +63,34 @@ var RecordController = (function () {
      * @param {Object} record - Objeto con los datos del registro
      * @returns {Array} Array de valores ordenados según headers
      */
-    function buildRowValues(headers, record) {
-        return headers.map(function (h) {
-            return record[h] != null ? record[h] : '';
-        });
+  function buildRowValues(headers, record) {
+    return headers.map(function (h) {
+      return record[h] != null ? record[h] : '';
+    });
+  }
+
+  function enrichAttendanceIds(tipoFormato, record) {
+    if (tipoFormato === 'ASISTENCIA') {
+      if (!record['ID_CLIENTE'] && record['CLIENTE']) {
+        const cli = DatabaseService.findClienteByNombreORazon(record['CLIENTE']);
+        if (cli && cli.id) record['ID_CLIENTE'] = cli.id;
+      }
+      if (!record['ID_EMPLEADO'] && record['EMPLEADO']) {
+        const emp = DatabaseService.findEmpleadoByNombre(record['EMPLEADO']);
+        if (emp && emp.id) record['ID_EMPLEADO'] = emp.id;
+      }
     }
+    if (tipoFormato === 'ASISTENCIA_PLAN') {
+      if (!record['ID_CLIENTE'] && record['CLIENTE']) {
+        const cli = DatabaseService.findClienteByNombreORazon(record['CLIENTE']);
+        if (cli && cli.id) record['ID_CLIENTE'] = cli.id;
+      }
+      if (!record['ID_EMPLEADO'] && record['EMPLEADO']) {
+        const emp = DatabaseService.findEmpleadoByNombre(record['EMPLEADO']);
+        if (emp && emp.id) record['ID_EMPLEADO'] = emp.id;
+      }
+    }
+  }
 
     /**
      * Guarda un nuevo registro
@@ -79,6 +102,8 @@ var RecordController = (function () {
         const sheet = DatabaseService.getDbSheetForFormat(tipoFormato);
         const template = Formats.getFormatTemplate(tipoFormato);
         const headers = template.headers || [];
+
+        enrichAttendanceIds(tipoFormato, record);
 
         // Si la hoja está vacía, agregar headers
         if (sheet.getLastRow() === 0 && headers.length > 0) {
@@ -155,8 +180,17 @@ var RecordController = (function () {
             currentRecord[h] = currentRowValues[idx];
         });
 
+        // Preserve valores de columnas que el frontend no envía (ej: nuevos IDs)
+        headers.forEach(function (h) {
+            if (newRecord[h] === undefined && currentRecord[h] !== undefined) {
+                newRecord[h] = currentRecord[h];
+            }
+        });
+
         // Ensure ID is set (frontend doesn't send ID field)
         newRecord['ID'] = id;
+
+        enrichAttendanceIds(tipoFormato, newRecord);
 
         // Build new row values with ID in correct position
         const newRowValues = buildRowValues(headers, newRecord);

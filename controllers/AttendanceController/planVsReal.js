@@ -141,11 +141,25 @@ const AttendancePlanVsReal = (function () {
 
         const fecha = fechaStr.toString().trim();
 
+        const clienteId = (DatabaseService.findClienteByNombreORazon(cliente) || {}).id || '';
+        const empIdCache = {};
+
+        function resolveEmpId(nombre) {
+            if (!nombre) return '';
+            if (empIdCache[nombre] !== undefined) return empIdCache[nombre];
+            const found = DatabaseService.findEmpleadoByNombre(nombre);
+            const val = found && found.id ? found.id : '';
+            empIdCache[nombre] = val;
+            return val;
+        }
+
         items.forEach(function (it) {
             if (!it.empleado) return;
 
             const record = {
+                'ID_EMPLEADO': it.idEmpleado || resolveEmpId(it.empleado),
                 'EMPLEADO': it.empleado,
+                'ID_CLIENTE': it.idCliente || clienteId,
                 'CLIENTE': cliente,
                 'FECHA': fecha,
                 'ASISTENCIA': !!it.asistencia,

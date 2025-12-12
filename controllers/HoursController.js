@@ -7,7 +7,19 @@ var HoursController = (function () {
      * Devuelve fecha inicio/fin normalizadas
      */
     function parseDateAtStart(dateStr) {
-        return dateStr ? new Date(dateStr + 'T00:00:00') : null;
+        if (!dateStr) return null;
+        // Soportar yyyy-mm-dd (input date) y dd/mm/yyyy
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+            return new Date(dateStr + 'T00:00:00');
+        }
+        const m = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+        if (m) {
+            const d = Number(m[1]);
+            const mo = Number(m[2]) - 1;
+            const y = Number(m[3]);
+            return new Date(y, mo, d, 0, 0, 0, 0);
+        }
+        return new Date(dateStr);
     }
 
     function getEmployeeData(employeeName) {
@@ -44,7 +56,23 @@ var HoursController = (function () {
     }
 
     function parseDateAtEnd(dateStr) {
-        return dateStr ? new Date(dateStr + 'T23:59:59') : null;
+        if (!dateStr) return null;
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+            return new Date(dateStr + 'T23:59:59');
+        }
+        const m = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+        if (m) {
+            const d = Number(m[1]);
+            const mo = Number(m[2]) - 1;
+            const y = Number(m[3]);
+            return new Date(y, mo, d, 23, 59, 59, 999);
+        }
+        const dt = new Date(dateStr);
+        if (!isNaN(dt.getTime())) {
+            dt.setHours(23, 59, 59, 999);
+            return dt;
+        }
+        return null;
     }
 
     /**
@@ -310,6 +338,11 @@ var HoursController = (function () {
         // Normalize client name for comparison
         const targetClient = clientName ? clientName.toLowerCase().trim() : '';
         const targetClientNorm = normalizeClientName(clientName);
+        const targetClientObj = (clientIdFromPayload && { id: clientIdFromPayload }) ||
+            (clientName && typeof DatabaseService.findClienteByNombreORazon === 'function'
+                ? (DatabaseService.findClienteByNombreORazon(clientName) || {})
+                : {});
+        const targetClientId = targetClientObj && targetClientObj.id ? String(targetClientObj.id) : '';
 
         const results = [];
 
@@ -358,9 +391,16 @@ var HoursController = (function () {
      * @param {string} clientName
      * @returns {{rows:Array, summary:Object}}
      */
-    function getHoursByClient(startDateStr, endDateStr, clientName) {
-        // Tolerar array/string heredado (misma lógica que getHoursByEmployee)
-        if (Array.isArray(startDateStr)) {
+    function getHoursByClient(startDateStr, endDateStr, clientName, idCliente) {
+        var clientIdFromPayload = idCliente || '';
+        // Soportar objeto con propiedades {fechaDesde, fechaHasta, cliente, idCliente}
+        if (startDateStr && typeof startDateStr === 'object' && !Array.isArray(startDateStr)) {
+            const obj = startDateStr;
+            startDateStr = obj.fechaDesde || obj.startDateStr || obj.startDate;
+            endDateStr = obj.fechaHasta || obj.endDateStr || obj.endDate;
+            clientName = obj.cliente || obj.clientName;
+            clientIdFromPayload = obj.idCliente || obj.clientId || clientIdFromPayload;
+        } else if (Array.isArray(startDateStr)) {
             var params = startDateStr;
             startDateStr = params[0];
             endDateStr = params[1];
@@ -388,6 +428,7 @@ var HoursController = (function () {
         const idxHoras = headers.indexOf('HORAS');
         const idxObs = headers.indexOf('OBSERVACIONES');
         const idxAsistencia = headers.indexOf('ASISTENCIA');
+        const idxIdCliente = headers.indexOf('ID_CLIENTE');
 
         if (idxFecha === -1 || idxCliente === -1) {
             Logger.log('Columnas requeridas no encontradas en ASISTENCIA (getHoursByClient)');
@@ -398,6 +439,10 @@ var HoursController = (function () {
         const end = parseDateAtEnd(endDateStr);
         const targetClient = clientName ? clientName.toLowerCase().trim() : '';
         const targetClientNorm = normalizeClientName(clientName);
+        const targetClientObj = clientName && typeof DatabaseService.findClienteByNombreORazon === 'function'
+            ? (DatabaseService.findClienteByNombreORazon(clientName) || {})
+            : {};
+        const targetClientId = targetClientObj.id ? String(targetClientObj.id) : '';
 
         const resultRows = [];
         const empleadosSet = new Set();
@@ -407,11 +452,14 @@ var HoursController = (function () {
         rows.forEach(function (row) {
             const rowClient = String(row[idxCliente] || '').toLowerCase().trim();
             const rowClientNorm = normalizeClientName(row[idxCliente]);
+            const rowIdCliente = idxIdCliente > -1 ? String(row[idxIdCliente] || '').trim() : '';
             if (targetClient) {
+                const matchById = targetClientId && rowIdCliente && String(rowIdCliente) === String(targetClientId);
                 const exact = rowClient === targetClient;
                 const normMatch = rowClientNorm === targetClientNorm;
                 const partial = rowClientNorm && targetClientNorm && (rowClientNorm.indexOf(targetClientNorm) !== -1 || targetClientNorm.indexOf(rowClientNorm) !== -1);
-                if (!exact && !normMatch && !partial) return;
+                const matchByName = exact || normMatch || partial;
+                if (!matchById && !matchByName) return;
             }
 
             const rowDate = row[idxFecha] instanceof Date ? row[idxFecha] : new Date(row[idxFecha]);
@@ -427,6 +475,7 @@ var HoursController = (function () {
                 fecha: DataUtils.normalizeCellForSearch(row[idxFecha]),
                 cliente: row[idxCliente],
                 empleado: row[idxEmpleado],
+                idCliente: rowIdCliente,
                 horas: horas,
                 asistencia: asistencia,
                 observaciones: idxObs > -1 ? row[idxObs] : ''

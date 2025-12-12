@@ -3,6 +3,20 @@
  */
 var AccountController = (function () {
 
+    function logToSheet(msg) {
+        try {
+            const ss = DatabaseService.getDbSpreadsheet();
+            let sheet = ss.getSheetByName('DEBUG_LOG');
+            if (!sheet) {
+                sheet = ss.insertSheet('DEBUG_LOG');
+                sheet.appendRow(['Timestamp', 'Message']);
+            }
+            sheet.appendRow([new Date(), msg]);
+        } catch (e) {
+            // ignore
+        }
+    }
+
     /**
      * Devuelve la cuenta corriente mensual por empleado
      * @param {number} year
@@ -102,6 +116,58 @@ var AccountController = (function () {
         return map;
     }
 
+    function getClientInvoices(clientName) {
+        const sheet = DatabaseService.getDbSheetForFormat('FACTURACION');
+        if (!sheet) return [];
+
+        const data = sheet.getDataRange().getValues();
+        if (!data || data.length < 2) return [];
+
+        const headers = data[0].map(h => String(h || '').trim().toUpperCase());
+        const rows = data.slice(1);
+
+        const idxId = headers.indexOf('ID');
+        const idxIdCliente = headers.indexOf('ID_CLIENTE');
+        const idxCliente = headers.indexOf('RAZÓN SOCIAL');
+        const idxFecha = headers.indexOf('FECHA');
+        const idxPeriodo = headers.indexOf('PERIODO');
+        const idxNum = headers.indexOf('NUMERO');
+        const idxComp = headers.indexOf('COMPROBANTE');
+        const idxTotal = headers.indexOf('TOTAL');
+
+        const targetId = getClientId_(clientName);
+        const targetClient = normalizeClientName_(clientName);
+
+        return rows.map(row => {
+            let matches = false;
+            if (targetId && idxIdCliente > -1) {
+                matches = String(row[idxIdCliente]) === String(targetId);
+            }
+            if (!matches && idxCliente > -1) {
+                const rowClient = normalizeClientName_(row[idxCliente]);
+                matches = rowClient === targetClient ||
+                    rowClient.indexOf(targetClient) !== -1 ||
+                    targetClient.indexOf(rowClient) !== -1;
+            }
+            if (!matches) return null;
+
+            const fecha = parseDateFlexible_(row[idxFecha]);
+            return {
+                id: idxId > -1 ? row[idxId] : '',
+                idCliente: idxIdCliente > -1 ? row[idxIdCliente] : '',
+                fecha: fecha || '',
+                periodo: idxPeriodo > -1 ? row[idxPeriodo] : '',
+                numero: idxNum > -1 ? row[idxNum] : '',
+                comprobante: idxComp > -1 ? row[idxComp] : '',
+                total: idxTotal > -1 ? Number(row[idxTotal]) || 0 : 0
+            };
+        }).filter(Boolean).sort((a, b) => {
+            const fa = a.fecha instanceof Date ? a.fecha.getTime() : 0;
+            const fb = b.fecha instanceof Date ? b.fecha.getTime() : 0;
+            return fb - fa;
+        });
+    }
+
     function getClientAccountStatement(clientName, startDateStr, endDateStr) {
         if (!clientName) return { saldoInicial: 0, movimientos: [] };
 
@@ -152,77 +218,85 @@ var AccountController = (function () {
         return totalDebitos - totalCreditos;
     }
 
-    function getClientDebits(clientName, startDate, endDate) {
-        const sheet = DatabaseService.getDbSheetForFormat('ASISTENCIA');
-        const data = sheet.getDataRange().getValues();
-        if (!data || data.length < 2) return [];
+    function getClientId_(clientName) {
+        const found = DatabaseService.findClienteByNombreORazon(clientName);
+        return found && found.id ? found.id : '';
+    }
 
-        const headers = data[0];
+    function getClientDebits(clientName, startDate, endDate) {
+        const sheet = DatabaseService.getDbSheetForFormat('FACTURACION');
+        const data = sheet.getDataRange().getValues();
+        if (!data || data.length < 2) {
+            return [];
+        }
+
+        const headers = data[0].map(h => String(h || '').trim().toUpperCase());
         const rows = data.slice(1);
 
+        const idxIdCliente = headers.indexOf('ID_CLIENTE');
+        const idxCliente = headers.indexOf('RAZÓN SOCIAL');
         const idxFecha = headers.indexOf('FECHA');
-        const idxCliente = headers.indexOf('CLIENTE');
-        const idxHoras = headers.indexOf('HORAS');
-        const idxAsistencia = headers.indexOf('ASISTENCIA');
+        const idxPeriodo = headers.indexOf('PERIODO');
+        const idxNum = headers.indexOf('NUMERO');
+        const idxComp = headers.indexOf('COMPROBANTE');
+        const idxTotal = headers.indexOf('TOTAL');
+        const idxImporte = headers.indexOf('IMPORTE');
+        const idxSubtotal = headers.indexOf('SUBTOTAL');
+        const idxId = headers.indexOf('ID');
 
-        if (idxFecha === -1 || idxCliente === -1) return [];
+        if (idxFecha === -1) return [];
 
+        const targetId = getClientId_(clientName);
         const targetClient = normalizeClientName_(clientName);
-        const monthlyMap = new Map(); // "YYYY-MM" -> { fecha, monto }
-
-        // Ajustar endDate para incluir todo el día
         const adjustedEndDate = endDate ? new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 23, 59, 59) : null;
 
-        rows.forEach(row => {
-            const rowClient = normalizeClientName_(row[idxCliente]);
-            if (!rowClient) return;
+        return rows.map(row => {
+            const fecha = parseDateFlexible_(row[idxFecha]);
+            if (!fecha || isNaN(fecha.getTime())) return null;
 
-            // Mejorar matching: buscar coincidencia parcial
-            const matches = rowClient === targetClient ||
-                rowClient.indexOf(targetClient) !== -1 ||
-                targetClient.indexOf(rowClient) !== -1;
-
-            if (!matches) return;
-
-            const fecha = row[idxFecha] instanceof Date ? row[idxFecha] : new Date(row[idxFecha]);
-            if (isNaN(fecha.getTime())) return;
-
-            // Filtrar por rango de fechas si se proporciona
             if (startDate && adjustedEndDate) {
-                // Dentro del rango [startDate, endDate]
-                if (fecha < startDate || fecha > adjustedEndDate) return;
+                if (fecha < startDate || fecha > adjustedEndDate) return null;
             } else if (adjustedEndDate && !startDate) {
-                // Antes de endDate (para saldo inicial)
-                if (fecha >= startDate) return;
+                if (fecha >= adjustedEndDate) return null;
             }
 
-            const asistencia = idxAsistencia > -1 ? DataUtils.isTruthy(row[idxAsistencia]) : true;
-            if (!asistencia) return;
-
-            const horas = Number(row[idxHoras]) || 0;
-            let rate = 0;
-            if (typeof DatabaseService.getClientRateAtDate === 'function') {
-                rate = DatabaseService.getClientRateAtDate(clientName, fecha);
+            let matches = false;
+            if (targetId && idxIdCliente > -1) {
+                matches = String(row[idxIdCliente]) === String(targetId);
             }
-
-            const monto = horas * rate;
-
-            // Agrupar por mes (primer día del mes)
-            const key = `${fecha.getFullYear()}-${fecha.getMonth()}`;
-            if (!monthlyMap.has(key)) {
-                monthlyMap.set(key, {
-                    fecha: new Date(fecha.getFullYear(), fecha.getMonth(), 1), // 1ro del mes
-                    concepto: `Servicios ${getMonthName(fecha.getMonth())} ${fecha.getFullYear()}`,
-                    debe: 0,
-                    haber: 0,
-                    tipo: 'FACTURA'
-                });
+            if (!matches && idxCliente > -1) {
+                const rowClient = normalizeClientName_(row[idxCliente]);
+                matches = rowClient === targetClient ||
+                    rowClient.indexOf(targetClient) !== -1 ||
+                    targetClient.indexOf(rowClient) !== -1;
             }
-            const entry = monthlyMap.get(key);
-            entry.debe += monto;
-        });
+            if (!matches) return null;
 
-        return Array.from(monthlyMap.values());
+            const monto = idxTotal > -1 ? Number(row[idxTotal]) || 0
+                : idxImporte > -1 ? Number(row[idxImporte]) || 0
+                    : idxSubtotal > -1 ? Number(row[idxSubtotal]) || 0
+                        : 0;
+
+            const periodo = idxPeriodo > -1 ? row[idxPeriodo] : '';
+            const numero = idxNum > -1 ? row[idxNum] : '';
+            const comp = idxComp > -1 ? row[idxComp] : '';
+
+            const partes = [];
+            if (comp) partes.push(comp);
+            if (numero) partes.push(numero);
+            if (periodo) partes.push(periodo);
+
+            return {
+                fecha: fecha,
+                concepto: partes.length ? ('Factura ' + partes.join(' - ')) : 'Factura',
+                debe: monto,
+                haber: 0,
+                tipo: 'FACTURA',
+                idFactura: idxId > -1 ? row[idxId] : '',
+                facturaNumero: numero || '',
+                periodo: periodo || ''
+            };
+        }).filter(Boolean);
     }
 
     function normalizeClientName_(name) {
@@ -245,72 +319,113 @@ var AccountController = (function () {
 
         const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
         const idxFecha = headers.indexOf('FECHA');
-        const idxCliente = headers.indexOf('CLIENTE');
+        const idxCliente = headers.indexOf('RAZÓN SOCIAL');
+        const idxIdCliente = headers.indexOf('ID_CLIENTE');
         const idxMonto = headers.indexOf('MONTO');
-        const idxObs = headers.indexOf('OBSERVACIONES');
+        const idxDet = headers.indexOf('DETALLE');
+        const idxFactura = headers.indexOf('ID_FACTURA');
+        const idxFacturaNum = headers.indexOf('FACTURA_NUMERO');
 
-        if (idxFecha === -1 || idxCliente === -1 || idxMonto === -1) return [];
+        if (idxFecha === -1 || idxMonto === -1) return [];
 
         const data = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
         const targetClient = normalizeClientName_(clientName);
+        const targetId = getClientId_(clientName);
 
-        // Ajustar endDate para incluir todo el día
         const adjustedEndDate = endDate ? new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 23, 59, 59) : null;
 
         return data.map(row => {
-            const rowClient = normalizeClientName_(row[idxCliente]);
-            if (!rowClient) return null;
+            const fecha = parseDateFlexible_(row[idxFecha]);
+            if (!fecha || isNaN(fecha.getTime())) return null;
 
-            // Mejorar matching: buscar coincidencia parcial
-            const matches = rowClient === targetClient ||
-                rowClient.indexOf(targetClient) !== -1 ||
-                targetClient.indexOf(rowClient) !== -1;
-
-            if (!matches) return null;
-
-            const fecha = row[idxFecha] instanceof Date ? row[idxFecha] : new Date(row[idxFecha]);
-            if (isNaN(fecha.getTime())) return null;
-
-            // Filtrar por rango de fechas si se proporciona
             if (startDate && adjustedEndDate) {
-                // Dentro del rango [startDate, endDate]
                 if (fecha < startDate || fecha > adjustedEndDate) return null;
             } else if (adjustedEndDate && !startDate) {
-                // Antes de endDate (para saldo inicial)
-                if (fecha >= startDate) return null;
+                if (fecha >= adjustedEndDate) return null;
             }
 
+            let matches = false;
+            if (targetId && idxIdCliente > -1) {
+                matches = String(row[idxIdCliente]) === String(targetId);
+            }
+            if (!matches && idxCliente > -1) {
+                const rowClient = normalizeClientName_(row[idxCliente]);
+                matches = rowClient === targetClient ||
+                    rowClient.indexOf(targetClient) !== -1 ||
+                    targetClient.indexOf(rowClient) !== -1;
+            }
+            if (!matches) return null;
+
             const monto = Number(row[idxMonto]) || 0;
+            const idFactura = idxFactura > -1 ? row[idxFactura] : '';
+            const facturaNum = idxFacturaNum > -1 ? row[idxFacturaNum] : '';
+            const det = idxDet > -1 ? row[idxDet] : '';
+
+            let concepto = 'Pago';
+            if (idFactura || facturaNum) {
+                concepto += ` a factura ${facturaNum || idFactura}`;
+            }
+            if (det) {
+                concepto += `: ${det}`;
+            }
 
             return {
                 fecha: fecha,
-                concepto: 'Pago' + (row[idxObs] ? `: ${row[idxObs]}` : ''),
+                concepto: concepto,
                 debe: 0,
                 haber: monto,
-                tipo: 'PAGO'
+                tipo: 'PAGO',
+                idFactura: idFactura,
+                facturaNumero: facturaNum
             };
         }).filter(Boolean);
     }
 
-    function recordClientPayment(fecha, cliente, monto, obs) {
-        const sheet = DatabaseService.getDbSheetForFormat('PAGOS_CLIENTES');
-        // Si no existe, DatabaseService debería crearla o fallar. 
-        // Asumimos que si getDbSheetForFormat devuelve algo, es usable.
-        // Si es nueva, necesitamos headers.
-        if (sheet.getLastRow() === 0) {
-            sheet.appendRow(['ID', 'FECHA', 'CLIENTE', 'MONTO', 'OBSERVACIONES', 'TIMESTAMP']);
+    function recordClientPayment(payload) {
+        // payload: { fecha, cliente, idCliente, monto, detalle, numeroComprobante, medioPago, cuit, razonSocial, idFactura, facturaNumero }
+        if (!payload) throw new Error('Faltan datos de pago');
+        const fecha = payload.fecha || payload.FECHA;
+        const clienteName = payload.cliente || payload.CLIENTE || '';
+        const idCliente = payload.idCliente || payload.ID_CLIENTE || getClientId_(clienteName);
+        const monto = payload.monto || payload.MONTO;
+        if (!fecha || !monto || (!clienteName && !idCliente)) {
+            throw new Error('Datos incompletos para registrar pago');
         }
 
-        const id = new Date().getTime().toString(); // Simple ID
-        sheet.appendRow([
+        const sheet = DatabaseService.getDbSheetForFormat('PAGOS_CLIENTES');
+        if (sheet.getLastRow() === 0) {
+            sheet.appendRow([
+                'ID',
+                'ID_CLIENTE',
+                'FECHA',
+                'RAZÓN SOCIAL',
+                'CUIT',
+                'DETALLE',
+                'N° COMPROBANTE',
+                'MEDIO DE PAGO',
+                'MONTO',
+                'ID_FACTURA',
+                'FACTURA_NUMERO'
+            ]);
+        }
+
+        const id = DatabaseService.getNextId(sheet);
+        const row = [
             id,
+            idCliente || '',
             new Date(fecha),
-            cliente,
-            Number(monto),
-            obs,
-            new Date()
-        ]);
-        return { success: true };
+            payload.razonSocial || clienteName,
+            payload.cuit || '',
+            payload.detalle || '',
+            payload['N° COMPROBANTE'] || payload.nroComprobante || '',
+            payload.medioPago || payload['MEDIO DE PAGO'] || '',
+            Number(monto) || 0,
+            payload.idFactura || payload.ID_FACTURA || '',
+            payload.facturaNumero || payload.FACTURA_NUMERO || ''
+        ];
+
+        sheet.appendRow(row);
+        return { success: true, id };
     }
 
     function getMonthName(monthIndex) {
@@ -339,6 +454,7 @@ var AccountController = (function () {
     return {
         getEmployeeAccountStatement: getEmployeeAccountStatement,
         getClientAccountStatement: getClientAccountStatement,
-        recordClientPayment: recordClientPayment
+        recordClientPayment: recordClientPayment,
+        getClientInvoices: getClientInvoices
     };
 })();

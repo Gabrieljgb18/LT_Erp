@@ -27,6 +27,8 @@ const AttendanceDailyAttendance = (function () {
 
         const headersPlan = planSheet.getRange(1, 1, 1, lastColPlan).getValues()[0];
 
+        const idxIdClientePlan = headersPlan.indexOf('ID_CLIENTE');
+        const idxIdEmpleadoPlan = headersPlan.indexOf('ID_EMPLEADO');
         const idxClientePlan = headersPlan.indexOf('CLIENTE');
         const idxEmpleadoPlan = headersPlan.indexOf('EMPLEADO');
         const idxDiaSemanaPlan = headersPlan.indexOf('DIA SEMANA');
@@ -83,7 +85,9 @@ const AttendanceDailyAttendance = (function () {
                 empleado: empleado,
                 horaPlan: idxHoraEntrada > -1 ? row[idxHoraEntrada] : '',
                 horasPlan: horasPlanVal,
-                observacionesPlan: idxObsPlan > -1 ? row[idxObsPlan] : ''
+                observacionesPlan: idxObsPlan > -1 ? row[idxObsPlan] : '',
+                idCliente: idxIdClientePlan > -1 ? row[idxIdClientePlan] : '',
+                idEmpleado: idxIdEmpleadoPlan > -1 ? row[idxIdEmpleadoPlan] : ''
             });
         });
 
@@ -105,7 +109,9 @@ const AttendanceDailyAttendance = (function () {
         if (lastRowAsis >= 2 && lastColAsis > 0) {
             const headersAsis = asisSheet.getRange(1, 1, 1, lastColAsis).getValues()[0];
 
+            const idxIdEmpleadoAsis = headersAsis.indexOf('ID_EMPLEADO');
             const idxEmpleadoAsis = headersAsis.indexOf('EMPLEADO');
+            const idxIdClienteAsis = headersAsis.indexOf('ID_CLIENTE');
             const idxClienteAsis = headersAsis.indexOf('CLIENTE');
             const idxFechaAsis = headersAsis.indexOf('FECHA');
             const idxAsist = headersAsis.indexOf('ASISTENCIA');
@@ -136,6 +142,8 @@ const AttendanceDailyAttendance = (function () {
                     attendanceRows.push({
                         cliente: clienteRow,
                         empleado: empleadoRow,
+                        idCliente: idxIdClienteAsis > -1 ? row[idxIdClienteAsis] : '',
+                        idEmpleado: idxIdEmpleadoAsis > -1 ? row[idxIdEmpleadoAsis] : '',
                         horaPlan: planData ? planData.horaPlan : '',
                         horasPlan: planData ? planData.horasPlan : '',
                         asistenciaRowNumber: i + 2,
@@ -169,7 +177,9 @@ const AttendanceDailyAttendance = (function () {
                 asistencia: false,
                 horasReales: '',
                 asistenciaRowNumber: null,
-                fueraDePlan: false
+                fueraDePlan: false,
+                idCliente: p.idCliente || '',
+                idEmpleado: p.idEmpleado || ''
             };
         });
 
@@ -189,7 +199,9 @@ const AttendanceDailyAttendance = (function () {
                 horasReales: row.horasReales != null && row.horasReales !== '' ? String(row.horasReales) : '',
                 observaciones: row.observaciones != null ? String(row.observaciones) : '',
                 asistenciaRowNumber: row.asistenciaRowNumber != null ? Number(row.asistenciaRowNumber) : null,
-                fueraDePlan: !!row.fueraDePlan
+                fueraDePlan: !!row.fueraDePlan,
+                idCliente: row.idCliente != null ? row.idCliente : '',
+                idEmpleado: row.idEmpleado != null ? row.idEmpleado : ''
             };
         });
 
@@ -213,11 +225,34 @@ const AttendanceDailyAttendance = (function () {
         const fecha = (fechaStr || '').toString().trim();
         if (!fecha || !Array.isArray(rows)) return;
 
+        const clienteIdCache = {};
+        const empleadoIdCache = {};
+
+        function resolveClienteId(nombre) {
+            if (!nombre) return '';
+            if (clienteIdCache[nombre] !== undefined) return clienteIdCache[nombre];
+            const found = DatabaseService.findClienteByNombreORazon(nombre);
+            const val = found && found.id ? found.id : '';
+            clienteIdCache[nombre] = val;
+            return val;
+        }
+
+        function resolveEmpleadoId(nombre) {
+            if (!nombre) return '';
+            if (empleadoIdCache[nombre] !== undefined) return empleadoIdCache[nombre];
+            const found = DatabaseService.findEmpleadoByNombre(nombre);
+            const val = found && found.id ? found.id : '';
+            empleadoIdCache[nombre] = val;
+            return val;
+        }
+
         rows.forEach(function (item) {
             if (!item || !item.cliente || !item.empleado) return;
 
             const record = {
+                'ID_EMPLEADO': item.idEmpleado || resolveEmpleadoId(item.empleado),
                 'EMPLEADO': item.empleado,
+                'ID_CLIENTE': item.idCliente || resolveClienteId(item.cliente),
                 'CLIENTE': item.cliente,
                 'FECHA': fecha,
                 'ASISTENCIA': !!item.asistencia,

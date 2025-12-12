@@ -228,6 +228,13 @@ var ClientAccountPanel = (function () {
                                 <input type="number" id="cp-monto" class="form-control" step="0.01">
                             </div>
                             <div class="mb-3">
+                                <label class="form-label small text-muted fw-bold">Factura (opcional)</label>
+                                <select id="cp-factura" class="form-select">
+                                    <option value="">-- Sin factura --</option>
+                                </select>
+                                <div class="form-text">Vinculá el pago a una factura para reflejarlo en la cuenta corriente.</div>
+                            </div>
+                            <div class="mb-3">
                                 <label class="form-label small text-muted fw-bold">Observaciones</label>
                                 <textarea id="cp-obs" class="form-control" rows="2"></textarea>
                             </div>
@@ -249,12 +256,38 @@ var ClientAccountPanel = (function () {
         const modal = new bootstrap.Modal(modalEl);
         modal.show();
 
+        // Cargar facturas del cliente
+        ApiService.call('getClientInvoices', client)
+            .then(list => {
+                const select = document.getElementById('cp-factura');
+                if (!select) return;
+                const items = Array.isArray(list) ? list : [];
+                items.forEach(inv => {
+                    const opt = document.createElement('option');
+                    opt.value = inv.id || '';
+                    const fechaStr = inv.fecha ? new Date(inv.fecha).toLocaleDateString('es-AR') : '';
+                    const labelParts = [
+                        inv.numero || inv.comprobante || '',
+                        inv.periodo || '',
+                        fechaStr,
+                        inv.total ? `Total ${formatCurrency(inv.total)}` : ''
+                    ].filter(Boolean);
+                    opt.textContent = labelParts.join(' - ');
+                    opt.dataset.numero = inv.numero || '';
+                    select.appendChild(opt);
+                });
+            })
+            .catch(err => console.error('No se pudieron cargar facturas del cliente:', err));
+
         const saveBtn = document.getElementById('cp-save');
         if (saveBtn) {
             saveBtn.addEventListener('click', function () {
                 const fecha = document.getElementById('cp-fecha').value;
                 const monto = document.getElementById('cp-monto').value;
                 const obs = document.getElementById('cp-obs').value;
+                const facturaSelect = document.getElementById('cp-factura');
+                const facturaId = facturaSelect ? facturaSelect.value : '';
+                const facturaNumero = facturaSelect && facturaSelect.selectedOptions[0] ? (facturaSelect.selectedOptions[0].dataset.numero || '') : '';
 
                 if (!monto) {
                     Alerts.showAlert('Ingresá un monto', 'warning');
@@ -262,7 +295,14 @@ var ClientAccountPanel = (function () {
                 }
 
                 UiState.setGlobalLoading(true, 'Guardando pago...');
-                ApiService.call('recordClientPayment', fecha, client, monto, obs)
+                ApiService.call('recordClientPayment', {
+                    fecha: fecha,
+                    cliente: client,
+                    monto: monto,
+                    detalle: obs,
+                    idFactura: facturaId || '',
+                    facturaNumero: facturaNumero
+                })
                     .then(() => {
                         Alerts.showAlert('Pago registrado', 'success');
                         modal.hide();

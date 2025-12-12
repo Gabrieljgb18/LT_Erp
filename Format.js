@@ -77,33 +77,43 @@ var Formats = (function () {
       displayName: 'Facturación',
       headers: [
         'ID',
+        'ID_CLIENTE',
         'FECHA',
+        'PERIODO',
         'COMPROBANTE',
         'NUMERO',
         'RAZÓN SOCIAL',
         'CUIT',
+        'CONCEPTO',
+        'HORAS',
+        'VALOR HORA',
         'IMPORTE',
         'SUBTOTAL',
-        'TOTAL'
+        'TOTAL',
+        'ESTADO',
+        'OBSERVACIONES'
       ],
-      columnWidths: [60, 100, 140, 120, 220, 120, 100, 100, 100],
+      columnWidths: [60, 60, 100, 80, 140, 120, 220, 120, 200, 80, 100, 100, 100, 100, 100, 250],
       freezeRows: 1
     },
 
-    PAGOS: {
-      id: 'PAGOS',
-      displayName: 'Pagos',
+    PAGOS_CLIENTES: {
+      id: 'PAGOS_CLIENTES',
+      displayName: 'Pagos de clientes',
       headers: [
         'ID',
+        'ID_CLIENTE',
         'FECHA',
         'RAZÓN SOCIAL',
         'CUIT',
         'DETALLE',
         'N° COMPROBANTE',
         'MEDIO DE PAGO',
-        'MONTO'
+        'MONTO',
+        'ID_FACTURA',
+        'FACTURA_NUMERO'
       ],
-      columnWidths: [60, 100, 220, 120, 220, 140, 140, 100],
+      columnWidths: [60, 90, 100, 220, 120, 220, 140, 140, 100, 90, 140],
       freezeRows: 1
     },
 
@@ -112,14 +122,16 @@ var Formats = (function () {
       displayName: 'Registro de asistencia',
       headers: [
         'ID',
+        'ID_EMPLEADO',
         'EMPLEADO',
+        'ID_CLIENTE',
         'CLIENTE',
         'FECHA',
         'ASISTENCIA',
         'HORAS',
         'OBSERVACIONES'
       ],
-      columnWidths: [60, 180, 180, 100, 120, 80, 250],
+      columnWidths: [60, 100, 180, 100, 180, 100, 120, 80, 250],
       freezeRows: 1
     },
 
@@ -129,16 +141,18 @@ var Formats = (function () {
       displayName: 'Plan de asistencia semanal',
       headers: [
         'ID',
+        'ID_CLIENTE',
         'CLIENTE',
+        'ID_EMPLEADO',
         'EMPLEADO',
         'DIA SEMANA',
         'HORA ENTRADA',
         'HORAS PLAN',
+        'OBSERVACIONES',
         'VIGENTE DESDE',
-        'VIGENTE HASTA',
-        'OBSERVACIONES'
+        'VIGENTE HASTA'
       ],
-      columnWidths: [60, 180, 180, 120, 100, 90, 110, 110, 220],
+      columnWidths: [60, 90, 180, 90, 180, 120, 100, 90, 220, 110, 110],
       freezeRows: 1
     },
 
@@ -159,13 +173,15 @@ var Formats = (function () {
   };
 
   function getAvailableFormats() {
-    return Object.keys(FORMAT_TEMPLATES).map(key => {
-      const tpl = FORMAT_TEMPLATES[key];
-      return {
-        id: tpl.id,
-        name: tpl.displayName
-      };
-    });
+    return Object.keys(FORMAT_TEMPLATES)
+      .filter(key => key !== 'FACTURACION')
+      .map(key => {
+        const tpl = FORMAT_TEMPLATES[key];
+        return {
+          id: tpl.id,
+          name: tpl.displayName
+        };
+      });
   }
 
   function getFormatTemplate(tipoFormato) {

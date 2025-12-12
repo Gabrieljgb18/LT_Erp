@@ -11,7 +11,8 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 
   <style>
-    <?!= include('frontend_css') ?>
+    <?!= include('frontend_css');
+    ?>
   </style>
   <script>
     // Fuerza el viewport correcto en móviles (solución conocida para WebApps GAS)
@@ -26,160 +27,170 @@
     })();
   </script>
 </head>
+
 <body>
-<div class="app-wrapper">
-  <!-- Sidebar -->
-  <aside id="app-sidebar" class="sidebar">
-    <div class="sidebar-header">
-      <a href="#" class="sidebar-brand">LT ERP</a>
-    </div>
-    <nav class="sidebar-nav">
-      <a class="nav-link active" data-target="registro">
-        <span class="nav-icon">🗂️</span>
-        <span>Formularios</span>
-      </a>
-      <a class="nav-link" data-target="reportes">
-        <span class="nav-icon">📊</span>
-        <span>Reporte Empleados</span>
-      </a>
-      <a class="nav-link" data-target="reportes-clientes">
-        <span class="nav-icon">📈</span>
-        <span>Reporte Clientes</span>
-      </a>
-      <a class="nav-link" data-target="configuracion">
-        <span class="nav-icon">⚙️</span>
-        <span>Configuración</span>
-      </a>
-    </nav>
-  </aside>
-
-  <!-- Overlay for mobile -->
-  <div id="sidebar-overlay" class="sidebar-overlay"></div>
-
-  <!-- Main Content -->
-  <main class="main-content">
-    <!-- Top Header -->
-    <header class="top-header">
-      <button id="sidebar-toggle" class="sidebar-toggle">
-        ☰
-      </button>
-      <h5 class="m-0" id="page-title">Asistencia</h5>
-    </header>
-
-    <!-- Content Body -->
-    <div class="content-body">
-      <!-- Views Container -->
-      <div id="views-container">
-
-        <!-- View: Registro (Default) -->
-        <div id="view-registro" class="view-section">
-          <!-- Selector de formato -->
-          <div class="row mb-3 g-2 align-items-end">
-            <div class="col-12 col-md-4">
-              <label for="formato" class="form-label small mb-1 fw-semibold">Formato</label>
-              <select id="formato" class="form-select">
-                <option value="">Cargando...</option>
-              </select>
-            </div>
-            <div class="col-12 col-md-8">
-              <div class="d-flex gap-2 justify-content-end">
-                <button id="btn-nuevo" type="button" class="btn btn-primary d-flex align-items-center gap-2">
-                  <span>➕</span>
-                  <span>Nuevo</span>
-                </button>
-                <button id="btn-refresh" type="button" class="btn btn-secondary d-flex align-items-center gap-2">
-                  <span>🔄</span>
-                  <span class="d-none d-md-inline">Actualizar</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Búsqueda -->
-          <div class="mb-3">
-            <input type="text" id="search-query" class="form-control" placeholder="🔍 Buscar registros...">
-          </div>
-
-          <!-- Grilla de datos -->
-          <div id="data-grid-container" class="card shadow-sm border-0">
-            <div class="card-body p-0">
-              <div class="table-responsive">
-                <table id="data-grid" class="table table-hover mb-0">
-                  <thead class="table-light">
-                    <tr id="grid-headers">
-                      <th>Cargando...</th>
-                    </tr>
-                  </thead>
-                  <tbody id="grid-body">
-                    <tr>
-                      <td class="text-center text-muted py-5">
-                        Selecciona un formato para ver los registros
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-
-          <!-- Formulario Modal (oculto por defecto) -->
-          <div id="form-modal" class="modal-overlay d-none">
-            <div class="modal-content-custom">
-              <div class="modal-header-custom">
-                <h3 id="modal-title">Nuevo Registro</h3>
-                <button id="btn-close-modal" class="btn-close-modal">&times;</button>
-              </div>
-              <div class="modal-body-custom">
-                <div id="form-fields" class="row g-3">
-                  <!-- Campos del formulario se generan aquí -->
-                </div>
-              </div>
-              <div class="modal-footer-custom">
-                <div class="d-flex gap-2 justify-content-end">
-                  <button id="btn-cancelar-modal" type="button" class="btn btn-secondary">
-                    Cancelar
-                  </button>
-                  <button id="btn-eliminar-modal" type="button" class="btn btn-danger d-none">
-                    Eliminar
-                  </button>
-                  <button id="btn-guardar-modal" type="button" class="btn btn-success">
-                    Guardar
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- View: Reportes -->
-        <div id="view-reportes" class="view-section d-none">
-          <!-- Resumen mensual -->
-          <div id="monthly-summary-panel" class="mb-3"></div>
-          <!-- Panel de Control de Horas -->
-          <div id="hours-detail-panel"></div>
-          <!-- Cuenta corriente empleados -->
-          <div id="account-statement-panel"></div>
-        </div>
-
-        <!-- View: Reporte Clientes -->
-        <div id="view-reportes-clientes" class="view-section d-none">
-          <div id="client-monthly-summary-panel" class="mb-3"></div>
-          <div id="client-account-panel" class="mb-3"></div>
-          <div id="client-report-panel"></div>
-        </div>
-
-        <!-- View: Configuración -->
-        <div id="view-configuracion" class="view-section d-none">
-          <div id="bulk-values-panel"></div>
-        </div>
-
+  <div class="app-wrapper">
+    <!-- Sidebar -->
+    <aside id="app-sidebar" class="sidebar">
+      <div class="sidebar-header">
+        <a href="#" class="sidebar-brand">LT ERP</a>
       </div>
-    </div>
-  </main>
-</div>
+      <nav class="sidebar-nav">
+        <a class="nav-link active" data-target="registro">
+          <span class="nav-icon">🗂️</span>
+          <span>Formularios</span>
+        </a>
+        <a class="nav-link" data-target="reportes">
+          <span class="nav-icon">📊</span>
+          <span>Reporte Empleados</span>
+        </a>
+        <a class="nav-link" data-target="reportes-clientes">
+          <span class="nav-icon">📈</span>
+          <span>Reporte Clientes</span>
+        </a>
+        <a class="nav-link" data-target="facturacion">
+          <span class="nav-icon">🧾</span>
+          <span>Facturación</span>
+        </a>
+        <a class="nav-link" data-target="configuracion">
+          <span class="nav-icon">⚙️</span>
+          <span>Configuración</span>
+        </a>
+      </nav>
+    </aside>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<?!=include("bundle_js")?>
+    <!-- Overlay for mobile -->
+    <div id="sidebar-overlay" class="sidebar-overlay"></div>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Top Header -->
+      <header class="top-header">
+        <button id="sidebar-toggle" class="sidebar-toggle">
+          ☰
+        </button>
+        <h5 class="m-0" id="page-title">Asistencia</h5>
+      </header>
+
+      <!-- Content Body -->
+      <div class="content-body">
+        <!-- Views Container -->
+        <div id="views-container">
+
+          <!-- View: Registro (Default) -->
+          <div id="view-registro" class="view-section">
+            <!-- Selector de formato -->
+            <div class="row mb-3 g-2 align-items-end">
+              <div class="col-12 col-md-4">
+                <label for="formato" class="form-label small mb-1 fw-semibold">Formato</label>
+                <select id="formato" class="form-select">
+                  <option value="">Cargando...</option>
+                </select>
+              </div>
+              <div class="col-12 col-md-8">
+                <div class="d-flex gap-2 justify-content-end">
+                  <button id="btn-nuevo" type="button" class="btn btn-primary d-flex align-items-center gap-2">
+                    <span>➕</span>
+                    <span>Nuevo</span>
+                  </button>
+                  <button id="btn-refresh" type="button" class="btn btn-secondary d-flex align-items-center gap-2">
+                    <span>🔄</span>
+                    <span class="d-none d-md-inline">Actualizar</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Búsqueda -->
+            <div class="mb-3">
+              <input type="text" id="search-query" class="form-control" placeholder="🔍 Buscar registros...">
+            </div>
+
+            <!-- Grilla de datos -->
+            <div id="data-grid-container" class="card shadow-sm border-0">
+              <div class="card-body p-0">
+                <div class="table-responsive">
+                  <table id="data-grid" class="table table-hover mb-0">
+                    <thead class="table-light">
+                      <tr id="grid-headers">
+                        <th>Cargando...</th>
+                      </tr>
+                    </thead>
+                    <tbody id="grid-body">
+                      <tr>
+                        <td class="text-center text-muted py-5">
+                          Selecciona un formato para ver los registros
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <!-- Formulario Modal (oculto por defecto) -->
+            <div id="form-modal" class="modal-overlay d-none">
+              <div class="modal-content-custom">
+                <div class="modal-header-custom">
+                  <h3 id="modal-title">Nuevo Registro</h3>
+                  <button id="btn-close-modal" class="btn-close-modal">&times;</button>
+                </div>
+                <div class="modal-body-custom">
+                  <div id="form-fields" class="row g-3">
+                    <!-- Campos del formulario se generan aquí -->
+                  </div>
+                </div>
+                <div class="modal-footer-custom">
+                  <div class="d-flex gap-2 justify-content-end">
+                    <button id="btn-cancelar-modal" type="button" class="btn btn-secondary">
+                      Cancelar
+                    </button>
+                    <button id="btn-eliminar-modal" type="button" class="btn btn-danger d-none">
+                      Eliminar
+                    </button>
+                    <button id="btn-guardar-modal" type="button" class="btn btn-success">
+                      Guardar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- View: Reportes -->
+          <div id="view-reportes" class="view-section d-none">
+            <!-- Resumen mensual -->
+            <div id="monthly-summary-panel" class="mb-3"></div>
+            <!-- Panel de Control de Horas -->
+            <div id="hours-detail-panel"></div>
+            <!-- Cuenta corriente empleados -->
+            <div id="account-statement-panel"></div>
+          </div>
+
+          <!-- View: Reporte Clientes -->
+          <div id="view-reportes-clientes" class="view-section d-none">
+            <div id="client-monthly-summary-panel" class="mb-3"></div>
+            <div id="client-account-panel" class="mb-3"></div>
+            <div id="client-report-panel"></div>
+          </div>
+
+          <!-- View: Facturación -->
+          <div id="view-facturacion" class="view-section d-none">
+            <div id="invoice-main-panel"></div>
+          </div>
+
+          <!-- View: Configuración -->
+          <div id="view-configuracion" class="view-section d-none">
+            <div id="bulk-values-panel"></div>
+          </div>
+
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <?!=include("bundle_js")?>
 </body>
 
 </html>
