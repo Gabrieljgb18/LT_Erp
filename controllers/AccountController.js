@@ -116,7 +116,10 @@ var AccountController = (function () {
         return map;
     }
 
-    function getClientInvoices(clientName) {
+    function getClientInvoices(clientName, idCliente) {
+        const filter = normalizeClientFilter_(clientName, idCliente);
+        const resolvedName = filter.clientName;
+        const resolvedId = filter.idCliente;
         const sheet = DatabaseService.getDbSheetForFormat('FACTURACION');
         if (!sheet) return [];
 
@@ -135,15 +138,15 @@ var AccountController = (function () {
         const idxComp = headers.indexOf('COMPROBANTE');
         const idxTotal = headers.indexOf('TOTAL');
 
-        const targetId = getClientId_(clientName);
-        const targetClient = normalizeClientName_(clientName);
+        const targetId = resolvedId || getClientId_(resolvedName);
+        const targetClient = normalizeClientName_(resolvedName);
 
         return rows.map(row => {
             let matches = false;
             if (targetId && idxIdCliente > -1) {
                 matches = String(row[idxIdCliente]) === String(targetId);
             }
-            if (!matches && idxCliente > -1) {
+            if (!matches && idxCliente > -1 && targetClient) {
                 const rowClient = normalizeClientName_(row[idxCliente]);
                 matches = rowClient === targetClient ||
                     rowClient.indexOf(targetClient) !== -1 ||
@@ -168,8 +171,9 @@ var AccountController = (function () {
         });
     }
 
-    function getClientAccountStatement(clientName, startDateStr, endDateStr) {
-        if (!clientName) return { saldoInicial: 0, movimientos: [] };
+    function getClientAccountStatement(clientName, startDateStr, endDateStr, idCliente) {
+        const filter = normalizeClientFilter_(clientName, idCliente);
+        if (!filter.clientName && !filter.idCliente) return { saldoInicial: 0, movimientos: [] };
 
         const startDate = parseDateFlexible_(startDateStr);
         const endDate = parseDateFlexible_(endDateStr);
@@ -179,11 +183,11 @@ var AccountController = (function () {
         }
 
         // 1. Calcular saldo inicial (antes del período)
-        const saldoInicial = getClientBalanceBeforeDate(clientName, startDate);
+        const saldoInicial = getClientBalanceBeforeDate(filter, startDate);
 
         // 2. Obtener movimientos dentro del período
-        const debitos = getClientDebits(clientName, startDate, endDate);
-        const creditos = getClientPayments(clientName, startDate, endDate);
+        const debitos = getClientDebits(filter, startDate, endDate);
+        const creditos = getClientPayments(filter, startDate, endDate);
 
         // 3. Unificar y ordenar
         const movimientos = [...debitos, ...creditos].sort((a, b) => a.fecha - b.fecha);
@@ -204,15 +208,16 @@ var AccountController = (function () {
         };
     }
 
-    function getClientBalanceBeforeDate(clientName, beforeDate) {
-        if (!clientName || !beforeDate) return 0;
+    function getClientBalanceBeforeDate(clientName, beforeDate, idCliente) {
+        const filter = normalizeClientFilter_(clientName, idCliente);
+        if ((!filter.clientName && !filter.idCliente) || !beforeDate) return 0;
 
         // Calcular débitos (facturas) antes de la fecha
-        const debitosAnteriores = getClientDebits(clientName, null, beforeDate);
+        const debitosAnteriores = getClientDebits(filter, null, beforeDate);
         const totalDebitos = debitosAnteriores.reduce((sum, item) => sum + item.debe, 0);
 
         // Calcular créditos (pagos) antes de la fecha
-        const creditosAnteriores = getClientPayments(clientName, null, beforeDate);
+        const creditosAnteriores = getClientPayments(filter, null, beforeDate);
         const totalCreditos = creditosAnteriores.reduce((sum, item) => sum + item.haber, 0);
 
         return totalDebitos - totalCreditos;
@@ -223,7 +228,24 @@ var AccountController = (function () {
         return found && found.id ? found.id : '';
     }
 
-    function getClientDebits(clientName, startDate, endDate) {
+    function normalizeClientFilter_(clientName, idCliente) {
+        if (clientName && typeof clientName === 'object' && !Array.isArray(clientName)) {
+            idCliente = clientName.idCliente || clientName.ID_CLIENTE || idCliente;
+            clientName = clientName.cliente || clientName.clientName || clientName.label || '';
+        }
+        const targetId = idCliente != null && idCliente !== '' ? String(idCliente) : '';
+        if (!clientName && targetId && DatabaseService.findClienteById) {
+            const cli = DatabaseService.findClienteById(targetId);
+            if (cli && (cli.razonSocial || cli.nombre)) {
+                clientName = cli.razonSocial || cli.nombre;
+            }
+        }
+        const resolvedId = targetId || getClientId_(clientName);
+        return { clientName: clientName || '', idCliente: resolvedId || '' };
+    }
+
+    function getClientDebits(clientName, startDate, endDate, idCliente) {
+        const filter = normalizeClientFilter_(clientName, idCliente);
         const sheet = DatabaseService.getDbSheetForFormat('FACTURACION');
         const data = sheet.getDataRange().getValues();
         if (!data || data.length < 2) {
@@ -246,8 +268,8 @@ var AccountController = (function () {
 
         if (idxFecha === -1) return [];
 
-        const targetId = getClientId_(clientName);
-        const targetClient = normalizeClientName_(clientName);
+        const targetId = filter.idCliente || getClientId_(filter.clientName);
+        const targetClient = normalizeClientName_(filter.clientName);
         const adjustedEndDate = endDate ? new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 23, 59, 59) : null;
 
         return rows.map(row => {
@@ -264,7 +286,7 @@ var AccountController = (function () {
             if (targetId && idxIdCliente > -1) {
                 matches = String(row[idxIdCliente]) === String(targetId);
             }
-            if (!matches && idxCliente > -1) {
+            if (!matches && idxCliente > -1 && targetClient) {
                 const rowClient = normalizeClientName_(row[idxCliente]);
                 matches = rowClient === targetClient ||
                     rowClient.indexOf(targetClient) !== -1 ||
@@ -310,7 +332,8 @@ var AccountController = (function () {
             .trim();
     }
 
-    function getClientPayments(clientName, startDate, endDate) {
+    function getClientPayments(clientName, startDate, endDate, idCliente) {
+        const filter = normalizeClientFilter_(clientName, idCliente);
         const sheet = DatabaseService.getDbSheetForFormat('PAGOS_CLIENTES');
         if (!sheet) return [];
 
@@ -329,8 +352,8 @@ var AccountController = (function () {
         if (idxFecha === -1 || idxMonto === -1) return [];
 
         const data = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
-        const targetClient = normalizeClientName_(clientName);
-        const targetId = getClientId_(clientName);
+        const targetClient = normalizeClientName_(filter.clientName);
+        const targetId = filter.idCliente || getClientId_(filter.clientName);
 
         const adjustedEndDate = endDate ? new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 23, 59, 59) : null;
 
@@ -348,7 +371,7 @@ var AccountController = (function () {
             if (targetId && idxIdCliente > -1) {
                 matches = String(row[idxIdCliente]) === String(targetId);
             }
-            if (!matches && idxCliente > -1) {
+            if (!matches && idxCliente > -1 && targetClient) {
                 const rowClient = normalizeClientName_(row[idxCliente]);
                 matches = rowClient === targetClient ||
                     rowClient.indexOf(targetClient) !== -1 ||

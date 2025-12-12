@@ -37,23 +37,23 @@
       </div>
       <nav class="sidebar-nav">
         <a class="nav-link active" data-target="registro">
-          <span class="nav-icon">🗂️</span>
+          <i class="bi bi-ui-checks-grid nav-icon"></i>
           <span>Formularios</span>
         </a>
         <a class="nav-link" data-target="reportes">
-          <span class="nav-icon">📊</span>
+          <i class="bi bi-people nav-icon"></i>
           <span>Reporte Empleados</span>
         </a>
         <a class="nav-link" data-target="reportes-clientes">
-          <span class="nav-icon">📈</span>
+          <i class="bi bi-building nav-icon"></i>
           <span>Reporte Clientes</span>
         </a>
         <a class="nav-link" data-target="facturacion">
-          <span class="nav-icon">🧾</span>
+          <i class="bi bi-receipt nav-icon"></i>
           <span>Facturación</span>
         </a>
         <a class="nav-link" data-target="configuracion">
-          <span class="nav-icon">⚙️</span>
+          <i class="bi bi-sliders nav-icon"></i>
           <span>Configuración</span>
         </a>
       </nav>
@@ -70,6 +70,7 @@
           ☰
         </button>
         <h5 class="m-0" id="page-title">Asistencia</h5>
+        <div id="global-loading" class="ms-auto d-none"></div>
       </header>
 
       <!-- Content Body -->
@@ -90,11 +91,11 @@
               <div class="col-12 col-md-8">
                 <div class="d-flex gap-2 justify-content-end">
                   <button id="btn-nuevo" type="button" class="btn btn-primary d-flex align-items-center gap-2">
-                    <span>➕</span>
+                    <i class="bi bi-plus-lg"></i>
                     <span>Nuevo</span>
                   </button>
                   <button id="btn-refresh" type="button" class="btn btn-secondary d-flex align-items-center gap-2">
-                    <span>🔄</span>
+                    <i class="bi bi-arrow-repeat"></i>
                     <span class="d-none d-md-inline">Actualizar</span>
                   </button>
                 </div>
@@ -103,7 +104,7 @@
 
             <!-- Búsqueda -->
             <div class="mb-3">
-              <input type="text" id="search-query" class="form-control" placeholder="🔍 Buscar registros...">
+              <input type="text" id="search-query" class="form-control" placeholder="Buscar registros...">
             </div>
 
             <!-- Grilla de datos -->

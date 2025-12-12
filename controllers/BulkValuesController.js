@@ -19,6 +19,7 @@ var BulkValuesController = (function () {
         const vVia = sanitizeNumber(payload.viaticos);
         const vPresMedia = sanitizeNumber(payload.presentismoMedia);
         const vPresFull = sanitizeNumber(payload.presentismoCompleta);
+        const vIvaPct = sanitizeNumber(payload.ivaPorcentaje);
 
         if (vEmp != null) {
             updateColumn('EMPLEADOS', 'VALOR DE HORA', vEmp);
@@ -34,6 +35,7 @@ var BulkValuesController = (function () {
         const configEntries = {};
         if (vPresMedia != null) configEntries['PRESENTISMO_MEDIA'] = vPresMedia;
         if (vPresFull != null) configEntries['PRESENTISMO_COMPLETA'] = vPresFull;
+        if (vIvaPct != null) configEntries['IVA_PORCENTAJE'] = vIvaPct;
         if (Object.keys(configEntries).length) {
             DatabaseService.upsertConfig(configEntries);
         }

@@ -7,6 +7,7 @@
 (function (global) {
     const WeeklyPlanPanel = (() => {
         let referenceData = { clientes: [], empleados: [] };
+        let clientIdMap = new Map();
 
         // Estado interno para navegación
         let currentContainer = null;
@@ -15,6 +16,34 @@
 
         function init(refData) {
             referenceData = refData;
+            buildClientIdMap_();
+        }
+
+        function formatClientLabel_(cli) {
+            if (!cli) return '';
+            if (typeof cli === 'string') return cli;
+            const base = cli.razonSocial || cli.nombre || '';
+            const cuit = cli.cuit ? ` (${cli.cuit})` : '';
+            return (base + cuit).trim();
+        }
+
+        function buildClientIdMap_() {
+            clientIdMap = new Map();
+            const clientes = referenceData && referenceData.clientes ? referenceData.clientes : [];
+            clientes.forEach(c => {
+                if (!c || typeof c === 'string') return;
+                const id = c.id || c.ID || c.ID_CLIENTE;
+                if (!id) return;
+                const base = (c.razonSocial || c.nombre || '').toString().trim();
+                const label = formatClientLabel_(c);
+                if (label) clientIdMap.set(label, String(id));
+                if (base) clientIdMap.set(base, String(id));
+            });
+        }
+
+        function getClientIdFromLabel_(label) {
+            if (!label) return '';
+            return clientIdMap.get(label) || '';
         }
 
         function formatDateForInput(v) {
@@ -128,7 +157,7 @@
             html += '<input class="form-check-input" type="checkbox" id="check-active-plans" checked>';
             html += '<label class="form-check-label small" for="check-active-plans">Solo vigentes</label>';
             html += '</div>';
-            html += '<button class="btn btn-primary btn-sm" id="btn-nuevo-plan">➕ Nuevo Plan</button>';
+            html += '<button class="btn btn-primary btn-sm" id="btn-nuevo-plan"><i class="bi bi-plus-lg me-1"></i>Nuevo Plan</button>';
             html += '</div>';
             html += '</div>';
 
@@ -176,7 +205,7 @@
                     // Guardar filas en caché para recuperación segura
                     planGroupsCache[key] = item.rows;
 
-                    html += `<button class="btn btn-sm btn-outline-primary me-1 btn-editar-plan" data-key="${HtmlHelpers.escapeHtml(key)}">✏️ Editar</button>`;
+                    html += `<button class="btn btn-sm btn-outline-primary me-1 btn-editar-plan" data-key="${HtmlHelpers.escapeHtml(key)}"><i class="bi bi-pencil-square me-1"></i>Editar</button>`;
                     html += '</td>';
                     html += '</tr>';
                 });
@@ -265,7 +294,7 @@
             if (panel) {
                 const backBtnDiv = document.createElement('div');
                 backBtnDiv.className = 'mb-3';
-                backBtnDiv.innerHTML = '<button class="btn btn-outline-secondary btn-sm">⬅ Volver al listado</button>';
+                backBtnDiv.innerHTML = '<button class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Volver al listado</button>';
                 backBtnDiv.querySelector('button').addEventListener('click', () => {
                     renderList(currentContainer, allRecordsCache);
                 });
@@ -356,6 +385,7 @@
             if (!clienteSelect) return;
 
             const cliente = clienteSelect.value;
+            const idCliente = getClientIdFromLabel_(cliente);
             if (!cliente) {
                 // Limpiar si no hay cliente
                 if (container) container.innerHTML = '';
@@ -369,7 +399,7 @@
                 "Cargando plan de <strong>" + HtmlHelpers.escapeHtml(cliente) + "</strong>..."
             );
 
-            ApiService.callLatest('weekly-plan-' + cliente, 'getWeeklyPlanForClient', cliente)
+            ApiService.callLatest('weekly-plan-' + cliente, 'getWeeklyPlanForClient', cliente, idCliente)
                 .then(function (rows) {
                     if (rows && rows.ignored) return;
                     const planRows = Array.isArray(rows) ? rows : [];
@@ -438,11 +468,11 @@
 
             // Header solo si estamos en fallback
             if (panel.id === "plan-semanal-panel") {
-                html += '<div class="mt-2 p-3 border rounded shadow-sm" style="background: linear-gradient(to bottom, #f8f9fa, #ffffff);">';
+                html += '<div class="mt-2 p-3 lt-surface lt-surface--subtle">';
                 html += '<div class="d-flex justify-content-between align-items-center mb-3">';
                 html += '<div>';
-                html += '<div class="fw-bold mb-1" style="font-size: 1.1rem; color: #2563eb;">📋 Plan semanal del cliente</div>';
-                html += '<div class="small mb-2">Cliente: <strong style="color: #1d4ed8;">' + HtmlHelpers.escapeHtml(cliente) + "</strong></div>";
+                html += '<div class="fw-bold mb-1 text-primary"><i class="bi bi-calendar-week me-1"></i>Plan semanal del cliente</div>';
+                html += '<div class="small mb-2">Cliente: <strong class="text-primary-emphasis">' + HtmlHelpers.escapeHtml(cliente) + "</strong></div>";
                 html += '</div>';
                 html += '</div>';
             }
@@ -457,7 +487,7 @@
                 const pushSiTieneHoras = (label, valor) => {
                     const num = Number(valor || 0);
                     if (num > 0) {
-                        partes.push('<span class="badge" style="background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 4px 8px; margin: 2px;">' + label + ': ' + num + ' hs</span>');
+                        partes.push('<span class="lt-chip lt-chip--success">' + label + ': ' + num + ' hs</span>');
                     }
                 };
 
@@ -470,7 +500,7 @@
                 pushSiTieneHoras('Do', infoHoras.domingo);
 
                 if (partes.length) {
-                    horasHtml += '<div class="p-2 rounded flex-grow-1" style="background-color: #f0fdf4; border-left: 3px solid #10b981;">';
+                    horasHtml += '<div class="lt-surface lt-surface--subtle p-2 flex-grow-1 border-start border-success border-3">';
                     horasHtml += '<div class="small fw-semibold text-muted mb-1">Horas contratadas por día</div>';
                     horasHtml += '<div class="d-flex flex-wrap gap-1">' + partes.join('') + '</div>';
                     horasHtml += '</div>';
@@ -480,9 +510,8 @@
             html += horasHtml;
 
             // Botón Agregar día (Movido arriba)
-            html += '<button type="button" class="btn btn-sm fw-semibold text-white shadow-sm" ';
-            html += 'style="background: linear-gradient(135deg, #6b7280, #4b5563); border: none; padding: 8px 16px; border-radius: 8px; height: fit-content;" ';
-            html += 'data-action="add-plan-row">+ Agregar día</button>';
+            html += '<button type="button" class="btn btn-sm btn-outline-secondary lt-btn-compact text-nowrap" data-action="add-plan-row">';
+            html += '<i class="bi bi-plus-lg me-1"></i>Agregar día</button>';
 
             html += '</div>'; // End top section
 
@@ -508,15 +537,14 @@
                 html += '<div class="card shadow-sm border-0">';
 
                 // Card Header
-                html += '<div class="card-header py-2 px-3 bg-white d-flex flex-wrap justify-content-between align-items-center gap-2" ';
-                html += 'style="cursor: pointer; background: linear-gradient(135deg, #f8fafc, #f1f5f9);" ';
+                html += '<div class="card-header py-2 px-3 bg-white d-flex flex-wrap justify-content-between align-items-center gap-2 lt-clickable" ';
                 html += 'data-bs-toggle="collapse" data-bs-target="#' + collapseId + '" ';
                 html += 'aria-expanded="' + isOpen + '" aria-controls="' + collapseId + '" role="button">';
 
                 html += '<div class="d-flex flex-wrap gap-2 align-items-center">';
-                html += '<span class="fw-semibold" style="color: #1e293b;">👤 ' + HtmlHelpers.escapeHtml(empleado) + '</span>';
+                html += '<span class="fw-semibold text-dark"><i class="bi bi-person-circle me-1"></i>' + HtmlHelpers.escapeHtml(empleado) + '</span>';
                 html += '<span class="badge bg-primary bg-opacity-75">' + diasLabel + '</span>';
-                html += '<span class="badge" style="background: linear-gradient(135deg, #10b981, #059669); color: white;">' + totalHoras.toFixed(1) + ' hs totales</span>';
+                html += '<span class="badge text-bg-success">' + totalHoras.toFixed(1) + ' hs totales</span>';
                 html += '</div>';
 
                 html += '<div class="d-flex gap-2 align-items-center">';
@@ -537,7 +565,7 @@
                     const empleadoOptions = HtmlHelpers.getEmpleadoOptionsHtml(r.empleado || "", referenceData.empleados);
                     const diaOptions = HtmlHelpers.getDiaOptionsHtml(r.diaSemana || "");
                     const horaFormatted = HtmlHelpers.formatHoraEntradaForInput(r.horaEntrada);
-                    html += '<div class="border rounded p-3 mb-2" style="background-color:#f8f9fa;">';
+                    html += '<div class="lt-surface lt-surface--subtle p-3 mb-2">';
 
                     // Header de día
                     html += '<div class="d-flex justify-content-between align-items-center mb-2">';
@@ -548,7 +576,7 @@
                         html += '<span class="text-muted">• ' + r.horasPlan + ' hs</span>';
                     }
                     html += '</div>';
-                    html += '<button type="button" class="btn btn-sm btn-outline-danger" data-action="delete-plan-row" data-idx="' + r.originalIdx + '">🗑️</button>';
+                    html += '<button type="button" class="btn btn-sm btn-outline-danger lt-btn-icon" data-action="delete-plan-row" data-idx="' + r.originalIdx + '"><i class="bi bi-trash"></i></button>';
                     html += '</div>';
 
                     // Campos del día
@@ -594,9 +622,8 @@
 
             // Botones de acción (Solo Guardar, Agregar se movió arriba)
             html += '<div class="d-flex justify-content-end align-items-center mt-3 pt-3 border-top">';
-            html += '<button type="button" class="btn btn-sm fw-semibold text-white shadow-sm" ';
-            html += 'style="background: linear-gradient(135deg, #10b981, #059669); border: none; padding: 8px 24px; border-radius: 8px;" ';
-            html += 'data-action="save-weekly-plan" id="btn-save-weekly">💾 Guardar plan del cliente</button>';
+            html += '<button type="button" class="btn btn-sm btn-success lt-btn-compact" ';
+            html += 'data-action="save-weekly-plan" id="btn-save-weekly"><i class="bi bi-save2 me-1"></i>Guardar plan del cliente</button>';
             html += "</div>";
 
             if (panel.id === "plan-semanal-panel") {
@@ -782,6 +809,7 @@
             if (!clienteSelect) return;
 
             const cliente = clienteSelect.value;
+            const idCliente = getClientIdFromLabel_(cliente);
             if (!cliente) {
                 if (Alerts) Alerts.showAlert("Seleccioná un cliente primero.", "warning");
                 return;
@@ -838,7 +866,7 @@
             UiState.setGlobalLoading(true, "Guardando plan semanal...");
 
             // Pasamos currentOriginalVigencia para que el backend sepa qué reemplazar
-            ApiService.call('saveWeeklyPlanForClient', cliente, items, currentOriginalVigencia)
+            ApiService.call('saveWeeklyPlanForClient', cliente, items, currentOriginalVigencia, idCliente)
                 .then(function () {
                     if (Alerts) Alerts.showAlert("✅ Plan semanal guardado correctamente.", "success");
                     // Recargar la lista completa desde el servidor
@@ -861,7 +889,7 @@
                 btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Guardando...';
             } else {
                 btn.disabled = false;
-                btn.innerHTML = '💾 Guardar plan del cliente';
+                btn.innerHTML = '<i class="bi bi-save2 me-1"></i>Guardar plan del cliente';
             }
         }
 

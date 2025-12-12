@@ -11,12 +11,13 @@ var InvoicePanel = (function () {
     const clientIdMap = new Map();
     let selectedInvoiceIds = new Set();
     let lastSavedInvoiceId = null;
+    let ivaPct = 0.21; // fracción, default 21%
     let invoicePage = 1;
     let generatorPage = 1;
 
-    function render() {
-        const container = document.getElementById(containerId);
-        if (!container) return;
+	    function render() {
+	        const container = document.getElementById(containerId);
+	        if (!container) return;
 
         container.innerHTML = `
             <div class="d-flex flex-column gap-3">
@@ -77,14 +78,14 @@ var InvoicePanel = (function () {
 
                     <div id="invoice-summary" class="row g-2 mb-3 d-none"></div>
 
-                    <div id="invoice-results" class="d-none">
-                        <div class="table-responsive border rounded">
-                            <table class="table table-hover table-sm align-middle mb-0" style="font-size: 0.85rem;">
-                                <thead class="bg-light">
-                                    <tr>
-                                        <th class="ps-3 py-2 text-muted font-weight-normal">
-                                            <input type="checkbox" id="invoice-select-all">
-                                        </th>
+	                    <div id="invoice-results" class="d-none">
+	                        <div class="table-responsive lt-table-wrap">
+	                            <table class="table table-hover table-sm align-middle mb-0">
+	                                <thead class="table-light">
+	                                    <tr>
+	                                        <th class="ps-3 py-2 text-muted font-weight-normal">
+	                                            <input type="checkbox" id="invoice-select-all">
+	                                        </th>
                                         <th class="py-2 text-muted font-weight-normal">Fecha</th>
                                         <th class="py-2 text-muted font-weight-normal">Periodo</th>
                                         <th class="py-2 text-muted font-weight-normal">Número</th>
@@ -95,10 +96,10 @@ var InvoicePanel = (function () {
                                     </tr>
                                 </thead>
                                 <tbody id="invoice-tbody"></tbody>
-                            </table>
-                        </div>
-                        <div id="invoice-pagination" class="d-flex justify-content-between align-items-center py-2"></div>
-                    </div>
+	                            </table>
+	                        </div>
+	                        <div id="invoice-pagination" class="d-flex justify-content-between align-items-center py-2"></div>
+	                    </div>
 
                     <div id="invoice-empty" class="text-center text-muted py-4">
                         <i class="bi bi-receipt" style="font-size: 1.5rem; opacity: 0.5;"></i>
@@ -128,51 +129,46 @@ var InvoicePanel = (function () {
                             <input type="date" id="invoice-gen-hasta" class="form-control form-control-sm">
                         </div>
                         <div class="col-md-2 d-grid">
-                            <button class="btn btn-secondary btn-sm" id="invoice-gen-search">
-                                <i class="bi bi-search me-1"></i>Buscar
-                            </button>
-                        </div>
-                    </div>
-                    <div class="row g-2 align-items-center">
-                        <div class="col-md-6 d-grid">
-                            <button class="btn btn-primary btn-sm" id="invoice-gen-open-modal">
-                                <i class="bi bi-save me-1"></i>Completar y guardar
-                            </button>
-                        </div>
-                        <div class="col-md-6 d-grid">
-                            <button class="btn btn-outline-danger btn-sm" id="invoice-download-last-btn" disabled>
-                                <i class="bi bi-file-earmark-pdf"></i> Descargar factura
-                            </button>
-                        </div>
-                    </div>
+	                            <button class="btn btn-outline-secondary btn-sm" id="invoice-gen-search">
+	                                <i class="bi bi-search me-1"></i>Buscar
+	                            </button>
+	                        </div>
+	                    </div>
+	                    <div class="row g-2 align-items-center">
+	                        <div class="col-md-6 d-grid">
+	                            <button class="btn btn-primary btn-sm" id="invoice-gen-open-modal">
+	                                <i class="bi bi-check2-circle me-1"></i>Completar y guardar
+	                            </button>
+	                        </div>
+	                        <div class="col-md-6 d-grid">
+	                            <button class="btn btn-danger btn-sm" id="invoice-download-last-btn" disabled>
+	                                <i class="bi bi-file-earmark-pdf-fill me-1"></i>PDF
+	                            </button>
+	                        </div>
+	                    </div>
 
                     <div id="invoice-gen-loading" class="text-center py-3 d-none">
                         <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
                         <p class="text-muted small mt-1 mb-0">Buscando asistencia del cliente...</p>
                     </div>
 
-                    <div id="invoice-gen-results" class="d-none mt-3">
-                        <div class="table-responsive border rounded">
-                            <table class="table table-hover table-sm align-middle mb-0" style="font-size: 0.85rem;">
-                                <thead class="bg-light">
-                                    <tr>
-                                        <th class="ps-3 py-2 text-muted font-weight-normal">Fecha</th>
-                                        <th class="py-2 text-muted font-weight-normal">Empleado</th>
-                                        <th class="py-2 text-muted font-weight-normal">Horas</th>
+	                    <div id="invoice-gen-results" class="d-none mt-3">
+	                        <div class="table-responsive lt-table-wrap">
+	                            <table class="table table-hover table-sm align-middle mb-0">
+	                                <thead class="table-light">
+	                                    <tr>
+	                                        <th class="ps-3 py-2 text-muted font-weight-normal">Fecha</th>
+	                                        <th class="py-2 text-muted font-weight-normal">Empleado</th>
+	                                        <th class="py-2 text-muted font-weight-normal">Horas</th>
                                         <th class="py-2 text-muted font-weight-normal">Observaciones</th>
                                         <th class="text-center py-2 text-muted font-weight-normal">Acciones</th>
                                     </tr>
                                 </thead>
-                                <tbody id="invoice-gen-tbody"></tbody>
-                            </table>
-                        </div>
-                        <div id="invoice-gen-pagination" class="d-flex justify-content-between align-items-center py-2"></div>
-                        <div class="d-flex justify-content-end">
-                            <button class="btn btn-danger btn-sm" id="invoice-download-last-btn-bottom">
-                                <i class="bi bi-file-earmark-pdf"></i> Descargar PDF
-                            </button>
-                        </div>
-                    </div>
+	                                <tbody id="invoice-gen-tbody"></tbody>
+	                            </table>
+	                        </div>
+	                        <div id="invoice-gen-pagination" class="d-flex justify-content-between align-items-center py-2"></div>
+	                    </div>
 
                     <div id="invoice-gen-empty" class="text-center text-muted py-3">
                         <i class="bi bi-calendar4-week" style="font-size: 1.2rem; opacity: 0.5;"></i>
@@ -340,9 +336,10 @@ var InvoicePanel = (function () {
 
         attachEvents();
         loadClients();
+        loadIvaConfig();
     }
 
-    function attachEvents() {
+	    function attachEvents() {
         const newBtn = document.getElementById('invoice-new-btn');
         if (newBtn) newBtn.addEventListener('click', () => openModal());
 
@@ -357,34 +354,20 @@ var InvoicePanel = (function () {
         const saveBtn = document.getElementById('invoice-save-btn');
         if (saveBtn) saveBtn.addEventListener('click', handleSave);
 
-        const dlLastBtn = document.getElementById('invoice-download-last-btn');
-        if (dlLastBtn) dlLastBtn.addEventListener('click', () => {
-            if (lastSavedInvoiceId) downloadPdf(lastSavedInvoiceId);
-        });
-        const dlLastBtnBottom = document.getElementById('invoice-download-last-btn-bottom');
-        if (dlLastBtnBottom) dlLastBtnBottom.addEventListener('click', () => {
-            if (lastSavedInvoiceId) downloadPdf(lastSavedInvoiceId);
-        });
-        const dlSelectedBtn = document.getElementById('invoice-download-selected');
-        if (dlSelectedBtn) dlSelectedBtn.addEventListener('click', downloadSelectedPdfs);
+	        const dlLastBtn = document.getElementById('invoice-download-last-btn');
+	        if (dlLastBtn) dlLastBtn.addEventListener('click', () => {
+	            if (lastSavedInvoiceId) downloadPdf(lastSavedInvoiceId);
+	        });
+	        const dlSelectedBtn = document.getElementById('invoice-download-selected');
+	        if (dlSelectedBtn) dlSelectedBtn.addEventListener('click', downloadSelectedPdfs);
         const selectAll = document.getElementById('invoice-select-all');
         if (selectAll) selectAll.addEventListener('change', (e) => toggleSelectAll(e.target.checked));
 
-        // Auto-calcular importe cuando cambian horas o valor hora
+        // Auto-calcular importes cuando cambian horas o valor hora
         const horasInput = document.getElementById('invoice-horas');
         const valorHoraInput = document.getElementById('invoice-valor-hora');
-        const importeInput = document.getElementById('invoice-importe');
-
-        if (horasInput && valorHoraInput && importeInput) {
-            const calcularImporte = () => {
-                const horas = Number(horasInput.value) || 0;
-                const valorHora = Number(valorHoraInput.value) || 0;
-                importeInput.value = (horas * valorHora).toFixed(2);
-            };
-
-            horasInput.addEventListener('input', calcularImporte);
-            valorHoraInput.addEventListener('input', calcularImporte);
-        }
+        if (horasInput) horasInput.addEventListener('input', recalculateTotals_);
+        if (valorHoraInput) valorHoraInput.addEventListener('input', recalculateTotals_);
 
         // Auto-completar CUIT cuando se selecciona cliente
         const razonSocialInput = document.getElementById('invoice-razon-social');
@@ -522,8 +505,11 @@ var InvoicePanel = (function () {
     }
 
     function getFilters() {
+        const clientRaw = document.getElementById('invoice-filter-client')?.value || '';
+        const idCliente = getClientIdFromLabel(clientRaw);
         return {
-            cliente: document.getElementById('invoice-filter-client')?.value || '',
+            cliente: cleanClientValue(clientRaw),
+            idCliente: idCliente,
             periodo: document.getElementById('invoice-filter-period')?.value || '',
             estado: document.getElementById('invoice-filter-status')?.value || '',
             fechaDesde: document.getElementById('invoice-filter-from')?.value || '',
@@ -557,7 +543,7 @@ var InvoicePanel = (function () {
         summaryDiv.classList.add('d-none');
     }
 
-    function renderGeneratorResults(rows) {
+	    function renderGeneratorResults(rows) {
         const tbody = document.getElementById('invoice-gen-tbody');
         const results = document.getElementById('invoice-gen-results');
         const empty = document.getElementById('invoice-gen-empty');
@@ -577,24 +563,24 @@ var InvoicePanel = (function () {
         const start = (generatorPage - 1) * PAGE_SIZE;
         const pageItems = rows.slice(start, start + PAGE_SIZE);
 
-        pageItems.forEach(item => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td class="ps-3">${item.fecha || '-'}</td>
-                <td>${item.empleado || '-'}</td>
-                <td>${item.horas || 0}</td>
-                <td>${item.observaciones || ''}</td>
-                <td class="text-center">
-                    <button class="btn btn-sm btn-outline-secondary me-1" onclick="InvoicePanel.editAttendance(${item.id})" title="Editar">
-                        <i class="bi bi-pencil"></i>
-                    </button>
-                    <button class="btn btn-sm btn-outline-danger" onclick="InvoicePanel.deleteAttendance(${item.id})" title="Eliminar">
-                        <i class="bi bi-x-circle"></i>
-                    </button>
-                </td>
-            `;
-            tbody.appendChild(tr);
-        });
+	        pageItems.forEach(item => {
+	            const tr = document.createElement('tr');
+	            tr.innerHTML = `
+	                <td class="ps-3">${item.fecha || '-'}</td>
+	                <td>${item.empleado || '-'}</td>
+	                <td>${item.horas || 0}</td>
+	                <td>${item.observaciones || ''}</td>
+	                <td class="text-center">
+	                    <button class="btn btn-sm btn-outline-primary lt-btn-icon me-1" onclick="InvoicePanel.editAttendance(${item.id})" title="Editar">
+	                        <i class="bi bi-pencil-fill"></i>
+	                    </button>
+	                    <button class="btn btn-sm btn-outline-danger lt-btn-icon" onclick="InvoicePanel.deleteAttendance(${item.id})" title="Eliminar">
+	                        <i class="bi bi-trash"></i>
+	                    </button>
+	                </td>
+	            `;
+	            tbody.appendChild(tr);
+	        });
 
         results.classList.remove('d-none');
         empty.classList.add('d-none');
@@ -602,7 +588,7 @@ var InvoicePanel = (function () {
         renderGeneratorPagination(totalPages);
     }
 
-    function renderTable(invoices) {
+	    function renderTable(invoices) {
         const tbody = document.getElementById('invoice-tbody');
         const results = document.getElementById('invoice-results');
         const empty = document.getElementById('invoice-empty');
@@ -629,7 +615,7 @@ var InvoicePanel = (function () {
             const estado = inv['ESTADO'] || 'Pendiente';
             const estadoBadge = getEstadoBadge(estado);
 
-            tr.innerHTML = `
+	            tr.innerHTML = `
                 <td class="ps-3">
                     <input type="checkbox" class="invoice-select" data-id="${inv.ID}" ${selectedInvoiceIds.has(String(inv.ID)) ? 'checked' : ''} onclick="InvoicePanel.toggleInvoiceSelection('${inv.ID}', this.checked)">
                 </td>
@@ -638,16 +624,16 @@ var InvoicePanel = (function () {
                 <td><span class="badge bg-light text-dark border">${inv['NUMERO'] || 'S/N'}</span></td>
                 <td>${inv['RAZÓN SOCIAL'] || '-'}</td>
                 <td class="text-end fw-bold">${formatCurrency(inv['TOTAL'])}</td>
-                <td class="text-center">${estadoBadge}</td>
-                <td class="text-center">
-                    <button class="btn btn-sm btn-outline-primary me-1" onclick="InvoicePanel.editInvoice('${inv.ID}')" title="Editar">
-                        <i class="bi bi-pencil"></i>
-                    </button>
-                    <button class="btn btn-sm btn-outline-danger" onclick="InvoicePanel.deleteInvoice('${inv.ID}')" title="Anular">
-                        <i class="bi bi-x-circle"></i>
-                    </button>
-                </td>
-            `;
+	                <td class="text-center">${estadoBadge}</td>
+	                <td class="text-center">
+	                    <button class="btn btn-sm btn-outline-primary lt-btn-icon me-1" onclick="InvoicePanel.editInvoice('${inv.ID}')" title="Editar">
+	                        <i class="bi bi-pencil-fill"></i>
+	                    </button>
+	                    <button class="btn btn-sm btn-outline-danger lt-btn-icon" onclick="InvoicePanel.deleteInvoice('${inv.ID}')" title="Anular">
+	                        <i class="bi bi-x-circle-fill"></i>
+	                    </button>
+	                </td>
+	            `;
 
             tbody.appendChild(tr);
         });
@@ -775,7 +761,49 @@ var InvoicePanel = (function () {
 
         // Completar CUIT e ID si existe en referencias
         autocompleteCUIT();
+        if (!invoiceData || !invoiceData.ID) {
+            recalculateTotals_();
+        }
         modal.show();
+    }
+
+    function parseIvaPctFromConfig_(config) {
+        if (!config) return 0.21;
+        const raw = config['IVA_PORCENTAJE'] != null ? config['IVA_PORCENTAJE'] : config['IVA'];
+        if (raw == null || raw === '') return 0.21;
+        const cleaned = String(raw).replace('%', '').trim();
+        const n = Number(cleaned);
+        if (isNaN(n)) return 0.21;
+        return n > 1 ? n / 100 : n;
+    }
+
+    function loadIvaConfig() {
+        if (!ApiService || !ApiService.call) return;
+        ApiService.call('getConfig')
+            .then(cfg => {
+                ivaPct = parseIvaPctFromConfig_(cfg);
+                recalculateTotals_();
+            })
+            .catch(() => { /* usar default */ });
+    }
+
+    function recalculateTotals_() {
+        const horasInput = document.getElementById('invoice-horas');
+        const valorHoraInput = document.getElementById('invoice-valor-hora');
+        const importeInput = document.getElementById('invoice-importe');
+        const subtotalInput = document.getElementById('invoice-subtotal');
+        const totalInput = document.getElementById('invoice-total');
+        if (!horasInput || !valorHoraInput) return;
+
+        const horas = Number(horasInput.value) || 0;
+        const valorHora = Number(valorHoraInput.value) || 0;
+        const subtotal = horas * valorHora;
+        const subtotalFixed = (isNaN(subtotal) ? 0 : subtotal).toFixed(2);
+        const totalFixed = (subtotal * (1 + ivaPct)).toFixed(2);
+
+        if (importeInput) importeInput.value = subtotalFixed;
+        if (subtotalInput) subtotalInput.value = subtotalFixed;
+        if (totalInput) totalInput.value = totalFixed;
     }
 
     function handleSave() {
@@ -870,8 +898,10 @@ var InvoicePanel = (function () {
         const numInput = document.getElementById('invoice-att-numero');
         const obsInput = document.getElementById('invoice-att-obs');
 
-        const cliente = clienteInput ? clienteInput.value.trim() : '';
-        if (!cliente) {
+        const clienteRaw = clienteInput ? clienteInput.value.trim() : '';
+        const idCliente = getClientIdFromLabel(clienteRaw);
+        const cliente = cleanClientValue(clienteRaw);
+        if (!clienteRaw) {
             Alerts && Alerts.showAlert('Elegí un cliente', 'warning');
             return;
         }
@@ -884,7 +914,7 @@ var InvoicePanel = (function () {
             comprobante: compInput ? compInput.value : '',
             numero: numInput ? numInput.value : '',
             observaciones: obsInput ? obsInput.value : ''
-        })
+        }, idCliente)
             .then(() => {
                 Alerts && Alerts.showAlert('Factura generada desde asistencia.', 'success');
                 const modalEl = document.getElementById('invoice-att-modal');
@@ -907,11 +937,13 @@ var InvoicePanel = (function () {
         const desdeInput = document.getElementById('invoice-gen-desde');
         const hastaInput = document.getElementById('invoice-gen-hasta');
 
-        const cliente = clientInput ? clientInput.value.trim() : '';
+        const clienteRaw = clientInput ? clientInput.value.trim() : '';
+        const idCliente = getClientIdFromLabel(clienteRaw);
+        const cliente = cleanClientValue(clienteRaw);
         const fechaDesde = desdeInput && desdeInput.value ? desdeInput.value : '';
         const fechaHasta = hastaInput && hastaInput.value ? hastaInput.value : '';
 
-        if (!cliente) {
+        if (!clienteRaw) {
             Alerts && Alerts.showAlert('Elegí un cliente antes de generar.', 'warning');
             return;
         }
@@ -921,7 +953,7 @@ var InvoicePanel = (function () {
         }
 
         UiState && UiState.setGlobalLoading(true, 'Generando factura con filtros...');
-        ApiService.call('createInvoiceFromAttendance', cliente, fechaDesde, fechaHasta, {})
+        ApiService.call('createInvoiceFromAttendance', cliente, fechaDesde, fechaHasta, {}, idCliente)
             .then(() => {
                 Alerts && Alerts.showAlert('Factura generada.', 'success');
                 handleSearch();
@@ -1148,15 +1180,15 @@ var InvoicePanel = (function () {
             .finally(() => UiState && UiState.setGlobalLoading(false));
     }
 
-    function updateSelectionUi() {
-        const dlLast = document.getElementById('invoice-last-download');
-        if (dlLast) {
-            dlLast.classList.toggle('d-none', !lastSavedInvoiceId);
-        }
-        const dlSelected = document.getElementById('invoice-download-selected');
-        if (dlSelected) {
-            dlSelected.disabled = selectedInvoiceIds.size === 0;
-        }
+	    function updateSelectionUi() {
+	        const dlLastBtn = document.getElementById('invoice-download-last-btn');
+	        if (dlLastBtn) {
+	            dlLastBtn.disabled = !lastSavedInvoiceId;
+	        }
+	        const dlSelected = document.getElementById('invoice-download-selected');
+	        if (dlSelected) {
+	            dlSelected.disabled = selectedInvoiceIds.size === 0;
+	        }
         const selectAll = document.getElementById('invoice-select-all');
         if (selectAll) {
             const checkboxes = document.querySelectorAll('.invoice-select');

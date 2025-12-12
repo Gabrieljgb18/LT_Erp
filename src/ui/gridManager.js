@@ -124,21 +124,13 @@
                 tdActions.style.whiteSpace = 'nowrap';
 
                 const btnEdit = document.createElement('button');
-                btnEdit.className = 'btn btn-sm text-white me-1';
-                btnEdit.style.background = '#5b7bfa';
-                btnEdit.style.border = 'none';
-                btnEdit.style.borderRadius = '12px';
-                btnEdit.style.padding = '6px 10px';
+                btnEdit.className = 'btn btn-sm btn-outline-primary lt-btn-icon me-1';
                 btnEdit.innerHTML = '<i class=\"bi bi-pencil-fill\"></i>';
                 btnEdit.title = 'Editar';
                 btnEdit.onclick = () => editRecord(record);
 
                 const btnDelete = document.createElement('button');
-                btnDelete.className = 'btn btn-sm text-white';
-                btnDelete.style.background = '#e53e3e';
-                btnDelete.style.border = 'none';
-                btnDelete.style.borderRadius = '12px';
-                btnDelete.style.padding = '6px 10px';
+                btnDelete.className = 'btn btn-sm btn-outline-danger lt-btn-icon';
                 btnDelete.innerHTML = '<i class=\"bi bi-trash-fill\"></i>';
                 btnDelete.title = 'Eliminar';
                 btnDelete.onclick = () => deleteRecord(record);

@@ -413,6 +413,15 @@
 
 
 (function (global) {
+  function escapeHtml(val) {
+    return String(val == null ? "" : val)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
   function toggleControls(disabled) {
     // Don't disable search-query so users can keep typing during search
     ["formato", "btn-nuevo"].forEach(function (id) {
@@ -426,12 +435,17 @@
       const c = document.getElementById(componentId);
       if (!c) return;
       c.innerHTML =
-        '<div class="mt-2 p-2 border rounded bg-light">' +
-        '<div class="small fw-bold mb-1">' +
-        title +
+        '<div class="lt-surface lt-surface--subtle p-3">' +
+        '<div class="d-flex align-items-center gap-2">' +
+        '<div class="spinner-border spinner-border-sm text-primary" role="status"></div>' +
+        '<div class="flex-grow-1">' +
+        '<div class="small fw-bold mb-0">' +
+        escapeHtml(title) +
         "</div>" +
         '<div class="small text-muted">' +
-        message +
+        escapeHtml(message) +
+        "</div>" +
+        "</div>" +
         "</div>" +
         "</div>";
     },
@@ -444,9 +458,11 @@
       if (isLoading) {
         badge.classList.remove("d-none");
         badge.innerHTML =
-          '<div class="spinner-border spinner-border-sm me-2" role="status"></div>' +
-          '<span class="small">' +
-          (message || "Procesando...") +
+          '<span class="lt-chip lt-chip--muted">' +
+          '<span class="spinner-border spinner-border-sm" role="status" style="width:12px;height:12px;"></span>' +
+          '<span>' +
+          escapeHtml(message || "Procesando...") +
+          "</span>" +
           "</span>";
       } else {
         badge.classList.add("d-none");
@@ -979,21 +995,13 @@ const Sidebar = (() => {
                 tdActions.style.whiteSpace = 'nowrap';
 
                 const btnEdit = document.createElement('button');
-                btnEdit.className = 'btn btn-sm text-white me-1';
-                btnEdit.style.background = '#5b7bfa';
-                btnEdit.style.border = 'none';
-                btnEdit.style.borderRadius = '12px';
-                btnEdit.style.padding = '6px 10px';
+                btnEdit.className = 'btn btn-sm btn-outline-primary lt-btn-icon me-1';
                 btnEdit.innerHTML = '<i class=\"bi bi-pencil-fill\"></i>';
                 btnEdit.title = 'Editar';
                 btnEdit.onclick = () => editRecord(record);
 
                 const btnDelete = document.createElement('button');
-                btnDelete.className = 'btn btn-sm text-white';
-                btnDelete.style.background = '#e53e3e';
-                btnDelete.style.border = 'none';
-                btnDelete.style.borderRadius = '12px';
-                btnDelete.style.padding = '6px 10px';
+                btnDelete.className = 'btn btn-sm btn-outline-danger lt-btn-icon';
                 btnDelete.innerHTML = '<i class=\"bi bi-trash-fill\"></i>';
                 btnDelete.title = 'Eliminar';
                 btnDelete.onclick = () => deleteRecord(record);
@@ -1354,6 +1362,7 @@ const Sidebar = (() => {
 (function (global) {
     const WeeklyPlanPanel = (() => {
         let referenceData = { clientes: [], empleados: [] };
+        let clientIdMap = new Map();
 
         // Estado interno para navegación
         let currentContainer = null;
@@ -1362,6 +1371,34 @@ const Sidebar = (() => {
 
         function init(refData) {
             referenceData = refData;
+            buildClientIdMap_();
+        }
+
+        function formatClientLabel_(cli) {
+            if (!cli) return '';
+            if (typeof cli === 'string') return cli;
+            const base = cli.razonSocial || cli.nombre || '';
+            const cuit = cli.cuit ? ` (${cli.cuit})` : '';
+            return (base + cuit).trim();
+        }
+
+        function buildClientIdMap_() {
+            clientIdMap = new Map();
+            const clientes = referenceData && referenceData.clientes ? referenceData.clientes : [];
+            clientes.forEach(c => {
+                if (!c || typeof c === 'string') return;
+                const id = c.id || c.ID || c.ID_CLIENTE;
+                if (!id) return;
+                const base = (c.razonSocial || c.nombre || '').toString().trim();
+                const label = formatClientLabel_(c);
+                if (label) clientIdMap.set(label, String(id));
+                if (base) clientIdMap.set(base, String(id));
+            });
+        }
+
+        function getClientIdFromLabel_(label) {
+            if (!label) return '';
+            return clientIdMap.get(label) || '';
         }
 
         function formatDateForInput(v) {
@@ -1475,7 +1512,7 @@ const Sidebar = (() => {
             html += '<input class="form-check-input" type="checkbox" id="check-active-plans" checked>';
             html += '<label class="form-check-label small" for="check-active-plans">Solo vigentes</label>';
             html += '</div>';
-            html += '<button class="btn btn-primary btn-sm" id="btn-nuevo-plan">➕ Nuevo Plan</button>';
+            html += '<button class="btn btn-primary btn-sm" id="btn-nuevo-plan"><i class="bi bi-plus-lg me-1"></i>Nuevo Plan</button>';
             html += '</div>';
             html += '</div>';
 
@@ -1523,7 +1560,7 @@ const Sidebar = (() => {
                     // Guardar filas en caché para recuperación segura
                     planGroupsCache[key] = item.rows;
 
-                    html += `<button class="btn btn-sm btn-outline-primary me-1 btn-editar-plan" data-key="${HtmlHelpers.escapeHtml(key)}">✏️ Editar</button>`;
+                    html += `<button class="btn btn-sm btn-outline-primary me-1 btn-editar-plan" data-key="${HtmlHelpers.escapeHtml(key)}"><i class="bi bi-pencil-square me-1"></i>Editar</button>`;
                     html += '</td>';
                     html += '</tr>';
                 });
@@ -1612,7 +1649,7 @@ const Sidebar = (() => {
             if (panel) {
                 const backBtnDiv = document.createElement('div');
                 backBtnDiv.className = 'mb-3';
-                backBtnDiv.innerHTML = '<button class="btn btn-outline-secondary btn-sm">⬅ Volver al listado</button>';
+                backBtnDiv.innerHTML = '<button class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Volver al listado</button>';
                 backBtnDiv.querySelector('button').addEventListener('click', () => {
                     renderList(currentContainer, allRecordsCache);
                 });
@@ -1703,6 +1740,7 @@ const Sidebar = (() => {
             if (!clienteSelect) return;
 
             const cliente = clienteSelect.value;
+            const idCliente = getClientIdFromLabel_(cliente);
             if (!cliente) {
                 // Limpiar si no hay cliente
                 if (container) container.innerHTML = '';
@@ -1716,7 +1754,7 @@ const Sidebar = (() => {
                 "Cargando plan de <strong>" + HtmlHelpers.escapeHtml(cliente) + "</strong>..."
             );
 
-            ApiService.callLatest('weekly-plan-' + cliente, 'getWeeklyPlanForClient', cliente)
+            ApiService.callLatest('weekly-plan-' + cliente, 'getWeeklyPlanForClient', cliente, idCliente)
                 .then(function (rows) {
                     if (rows && rows.ignored) return;
                     const planRows = Array.isArray(rows) ? rows : [];
@@ -1785,11 +1823,11 @@ const Sidebar = (() => {
 
             // Header solo si estamos en fallback
             if (panel.id === "plan-semanal-panel") {
-                html += '<div class="mt-2 p-3 border rounded shadow-sm" style="background: linear-gradient(to bottom, #f8f9fa, #ffffff);">';
+                html += '<div class="mt-2 p-3 lt-surface lt-surface--subtle">';
                 html += '<div class="d-flex justify-content-between align-items-center mb-3">';
                 html += '<div>';
-                html += '<div class="fw-bold mb-1" style="font-size: 1.1rem; color: #2563eb;">📋 Plan semanal del cliente</div>';
-                html += '<div class="small mb-2">Cliente: <strong style="color: #1d4ed8;">' + HtmlHelpers.escapeHtml(cliente) + "</strong></div>";
+                html += '<div class="fw-bold mb-1 text-primary"><i class="bi bi-calendar-week me-1"></i>Plan semanal del cliente</div>';
+                html += '<div class="small mb-2">Cliente: <strong class="text-primary-emphasis">' + HtmlHelpers.escapeHtml(cliente) + "</strong></div>";
                 html += '</div>';
                 html += '</div>';
             }
@@ -1804,7 +1842,7 @@ const Sidebar = (() => {
                 const pushSiTieneHoras = (label, valor) => {
                     const num = Number(valor || 0);
                     if (num > 0) {
-                        partes.push('<span class="badge" style="background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 4px 8px; margin: 2px;">' + label + ': ' + num + ' hs</span>');
+                        partes.push('<span class="lt-chip lt-chip--success">' + label + ': ' + num + ' hs</span>');
                     }
                 };
 
@@ -1817,7 +1855,7 @@ const Sidebar = (() => {
                 pushSiTieneHoras('Do', infoHoras.domingo);
 
                 if (partes.length) {
-                    horasHtml += '<div class="p-2 rounded flex-grow-1" style="background-color: #f0fdf4; border-left: 3px solid #10b981;">';
+                    horasHtml += '<div class="lt-surface lt-surface--subtle p-2 flex-grow-1 border-start border-success border-3">';
                     horasHtml += '<div class="small fw-semibold text-muted mb-1">Horas contratadas por día</div>';
                     horasHtml += '<div class="d-flex flex-wrap gap-1">' + partes.join('') + '</div>';
                     horasHtml += '</div>';
@@ -1827,9 +1865,8 @@ const Sidebar = (() => {
             html += horasHtml;
 
             // Botón Agregar día (Movido arriba)
-            html += '<button type="button" class="btn btn-sm fw-semibold text-white shadow-sm" ';
-            html += 'style="background: linear-gradient(135deg, #6b7280, #4b5563); border: none; padding: 8px 16px; border-radius: 8px; height: fit-content;" ';
-            html += 'data-action="add-plan-row">+ Agregar día</button>';
+            html += '<button type="button" class="btn btn-sm btn-outline-secondary lt-btn-compact text-nowrap" data-action="add-plan-row">';
+            html += '<i class="bi bi-plus-lg me-1"></i>Agregar día</button>';
 
             html += '</div>'; // End top section
 
@@ -1855,15 +1892,14 @@ const Sidebar = (() => {
                 html += '<div class="card shadow-sm border-0">';
 
                 // Card Header
-                html += '<div class="card-header py-2 px-3 bg-white d-flex flex-wrap justify-content-between align-items-center gap-2" ';
-                html += 'style="cursor: pointer; background: linear-gradient(135deg, #f8fafc, #f1f5f9);" ';
+                html += '<div class="card-header py-2 px-3 bg-white d-flex flex-wrap justify-content-between align-items-center gap-2 lt-clickable" ';
                 html += 'data-bs-toggle="collapse" data-bs-target="#' + collapseId + '" ';
                 html += 'aria-expanded="' + isOpen + '" aria-controls="' + collapseId + '" role="button">';
 
                 html += '<div class="d-flex flex-wrap gap-2 align-items-center">';
-                html += '<span class="fw-semibold" style="color: #1e293b;">👤 ' + HtmlHelpers.escapeHtml(empleado) + '</span>';
+                html += '<span class="fw-semibold text-dark"><i class="bi bi-person-circle me-1"></i>' + HtmlHelpers.escapeHtml(empleado) + '</span>';
                 html += '<span class="badge bg-primary bg-opacity-75">' + diasLabel + '</span>';
-                html += '<span class="badge" style="background: linear-gradient(135deg, #10b981, #059669); color: white;">' + totalHoras.toFixed(1) + ' hs totales</span>';
+                html += '<span class="badge text-bg-success">' + totalHoras.toFixed(1) + ' hs totales</span>';
                 html += '</div>';
 
                 html += '<div class="d-flex gap-2 align-items-center">';
@@ -1884,7 +1920,7 @@ const Sidebar = (() => {
                     const empleadoOptions = HtmlHelpers.getEmpleadoOptionsHtml(r.empleado || "", referenceData.empleados);
                     const diaOptions = HtmlHelpers.getDiaOptionsHtml(r.diaSemana || "");
                     const horaFormatted = HtmlHelpers.formatHoraEntradaForInput(r.horaEntrada);
-                    html += '<div class="border rounded p-3 mb-2" style="background-color:#f8f9fa;">';
+                    html += '<div class="lt-surface lt-surface--subtle p-3 mb-2">';
 
                     // Header de día
                     html += '<div class="d-flex justify-content-between align-items-center mb-2">';
@@ -1895,7 +1931,7 @@ const Sidebar = (() => {
                         html += '<span class="text-muted">• ' + r.horasPlan + ' hs</span>';
                     }
                     html += '</div>';
-                    html += '<button type="button" class="btn btn-sm btn-outline-danger" data-action="delete-plan-row" data-idx="' + r.originalIdx + '">🗑️</button>';
+                    html += '<button type="button" class="btn btn-sm btn-outline-danger lt-btn-icon" data-action="delete-plan-row" data-idx="' + r.originalIdx + '"><i class="bi bi-trash"></i></button>';
                     html += '</div>';
 
                     // Campos del día
@@ -1941,9 +1977,8 @@ const Sidebar = (() => {
 
             // Botones de acción (Solo Guardar, Agregar se movió arriba)
             html += '<div class="d-flex justify-content-end align-items-center mt-3 pt-3 border-top">';
-            html += '<button type="button" class="btn btn-sm fw-semibold text-white shadow-sm" ';
-            html += 'style="background: linear-gradient(135deg, #10b981, #059669); border: none; padding: 8px 24px; border-radius: 8px;" ';
-            html += 'data-action="save-weekly-plan" id="btn-save-weekly">💾 Guardar plan del cliente</button>';
+            html += '<button type="button" class="btn btn-sm btn-success lt-btn-compact" ';
+            html += 'data-action="save-weekly-plan" id="btn-save-weekly"><i class="bi bi-save2 me-1"></i>Guardar plan del cliente</button>';
             html += "</div>";
 
             if (panel.id === "plan-semanal-panel") {
@@ -2129,6 +2164,7 @@ const Sidebar = (() => {
             if (!clienteSelect) return;
 
             const cliente = clienteSelect.value;
+            const idCliente = getClientIdFromLabel_(cliente);
             if (!cliente) {
                 if (Alerts) Alerts.showAlert("Seleccioná un cliente primero.", "warning");
                 return;
@@ -2185,7 +2221,7 @@ const Sidebar = (() => {
             UiState.setGlobalLoading(true, "Guardando plan semanal...");
 
             // Pasamos currentOriginalVigencia para que el backend sepa qué reemplazar
-            ApiService.call('saveWeeklyPlanForClient', cliente, items, currentOriginalVigencia)
+            ApiService.call('saveWeeklyPlanForClient', cliente, items, currentOriginalVigencia, idCliente)
                 .then(function () {
                     if (Alerts) Alerts.showAlert("✅ Plan semanal guardado correctamente.", "success");
                     // Recargar la lista completa desde el servidor
@@ -2208,7 +2244,7 @@ const Sidebar = (() => {
                 btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Guardando...';
             } else {
                 btn.disabled = false;
-                btn.innerHTML = '💾 Guardar plan del cliente';
+                btn.innerHTML = '<i class="bi bi-save2 me-1"></i>Guardar plan del cliente';
             }
         }
 
@@ -2290,22 +2326,22 @@ const Sidebar = (() => {
         function buildBaseLayout() {
             return `
                 <div id="attendance-daily-root" class="d-flex flex-column gap-3">
-                    <div class="d-flex align-items-center gap-2 flex-nowrap" style="overflow-x:auto; padding-bottom:4px;">
-                        <div class="d-flex align-items-center gap-2 flex-shrink-0">
-                            <label class="form-label small fw-semibold text-muted mb-0">Fecha</label>
-                            <input type="date" id="attendance-date" class="form-control form-control-sm" value="${state.fecha}" style="width: 130px;">
+                    <div class="lt-surface lt-surface--subtle p-2">
+                        <div class="lt-toolbar">
+                            <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                                <label class="form-label small fw-semibold text-muted mb-0">Fecha</label>
+                                <input type="date" id="attendance-date" class="form-control form-control-sm" value="${state.fecha}" style="width: 140px;">
+                            </div>
+                            <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                                <button type="button" id="attendance-add-extra" class="btn btn-sm btn-primary lt-btn-compact text-nowrap">
+                                    <i class="bi bi-plus-circle me-1"></i>Fuera de plan
+                                </button>
+                            </div>
+                            <div id="attendance-summary" class="d-flex flex-nowrap gap-2 flex-shrink-0"></div>
                         </div>
-                        <div class="d-flex align-items-center gap-2 flex-shrink-0">
-                            <button type="button" id="attendance-add-extra" class="btn btn-sm fw-semibold text-white"
-                                style="background: linear-gradient(135deg, #5b7bfa, #4f46e5); border: none; padding: 6px 10px; border-radius: 10px; white-space: nowrap;">
-                                + Agregar fuera de plan
-                            </button>
-                        </div>
-                        <div id="attendance-summary" class="d-flex flex-nowrap gap-2 flex-shrink-0" style="white-space: nowrap;"></div>
-                    </div>
                     </div>
 
-                    <div class="border rounded shadow-sm position-relative">
+                    <div class="lt-surface p-0 position-relative">
                         <div id="attendance-loading" class="position-absolute top-0 start-0 end-0 bottom-0 d-flex align-items-center justify-content-center bg-white bg-opacity-75 d-none">
                             <div class="text-center">
                                 <div class="spinner-border text-primary mb-2" role="status"></div>
@@ -2361,6 +2397,7 @@ const Sidebar = (() => {
                 horasReales: row && row.horasReales !== undefined && row.horasReales !== null ? row.horasReales : "",
                 observaciones: row && row.observaciones ? String(row.observaciones) : "",
                 asistenciaRowNumber: row && row.asistenciaRowNumber ? row.asistenciaRowNumber : null,
+                idAsistencia: row && (row.idAsistencia != null && row.idAsistencia !== "") ? row.idAsistencia : null,
                 fueraDePlan: !!extra || !!(row && row.fueraDePlan)
             };
         }
@@ -2484,7 +2521,7 @@ const Sidebar = (() => {
                             <span class="fw-semibold text-primary">${HtmlHelpers.escapeHtml(row.cliente || "Cliente")}</span>
                         </div>
                         <div class="d-flex gap-2 align-items-center">
-                            ${row.fueraDePlan ? '<span class="badge bg-secondary">Fuera de plan</span>' : '<span class="badge" style="background:#d8f5d0;color:#2f7a1f;">Plan</span>'}
+                            ${row.fueraDePlan ? '<span class="badge bg-secondary">Fuera de plan</span>' : '<span class="badge text-bg-success">Plan</span>'}
                             <span class="text-muted fw-semibold" data-role="collapse-arrow" aria-hidden="true">${arrow}</span>
                         </div>
                     </div>
@@ -2671,16 +2708,15 @@ const Sidebar = (() => {
                 }
             });
 
-            const chipStyle = "border-radius:999px;padding:3px 8px;font-size:12px;line-height:1.1;box-shadow:0 2px 6px rgba(0,0,0,0.08);display:inline-flex;align-items:center;gap:4px;";
             summaryEl.innerHTML = `
-                <span class="text-white fw-semibold" style="${chipStyle}background:linear-gradient(135deg,#2563eb,#1d4ed8);">
-                    <span style="opacity:0.9;">👥 Clientes:</span> <strong>${clientesAtendidos.size}</strong>
+                <span class="lt-chip lt-chip--primary">
+                    <span class="opacity-75">Clientes</span> <strong>${clientesAtendidos.size}</strong>
                 </span>
-                <span class="text-white fw-semibold" style="${chipStyle}background:linear-gradient(135deg,#16a34a,#15803d);">
-                    <span style="opacity:0.9;">⏱ Horas:</span> <strong>${totalHoras.toFixed(2)}</strong>
+                <span class="lt-chip lt-chip--success">
+                    <span class="opacity-75">Horas</span> <strong>${totalHoras.toFixed(2)}</strong>
                 </span>
-                <span class="fw-semibold text-white" style="${chipStyle}background:linear-gradient(135deg,#6b7280,#4b5563);">
-                    <span style="opacity:0.9;">✔ Asistencias:</span> <strong>${presentes}/${registros}</strong>
+                <span class="lt-chip lt-chip--muted">
+                    <span class="opacity-75">Asistencias</span> <strong>${presentes}/${registros}</strong>
                 </span>
             `;
         }
@@ -2882,7 +2918,8 @@ const Sidebar = (() => {
                 horasReales: r.horasReales !== undefined && r.horasReales !== null ? r.horasReales : "",
                 horasPlan: r.horasPlan !== undefined && r.horasPlan !== null ? r.horasPlan : "",
                 observaciones: r.observaciones || "",
-                asistenciaRowNumber: r.asistenciaRowNumber || null
+                asistenciaRowNumber: r.asistenciaRowNumber || null,
+                idAsistencia: r.idAsistencia || null
             }));
 
             ApiService.call("saveDailyAttendance", fecha, payload)
@@ -3048,12 +3085,13 @@ var InvoicePanel = (function () {
     const clientIdMap = new Map();
     let selectedInvoiceIds = new Set();
     let lastSavedInvoiceId = null;
+    let ivaPct = 0.21; // fracción, default 21%
     let invoicePage = 1;
     let generatorPage = 1;
 
-    function render() {
-        const container = document.getElementById(containerId);
-        if (!container) return;
+	    function render() {
+	        const container = document.getElementById(containerId);
+	        if (!container) return;
 
         container.innerHTML = `
             <div class="d-flex flex-column gap-3">
@@ -3114,14 +3152,14 @@ var InvoicePanel = (function () {
 
                     <div id="invoice-summary" class="row g-2 mb-3 d-none"></div>
 
-                    <div id="invoice-results" class="d-none">
-                        <div class="table-responsive border rounded">
-                            <table class="table table-hover table-sm align-middle mb-0" style="font-size: 0.85rem;">
-                                <thead class="bg-light">
-                                    <tr>
-                                        <th class="ps-3 py-2 text-muted font-weight-normal">
-                                            <input type="checkbox" id="invoice-select-all">
-                                        </th>
+	                    <div id="invoice-results" class="d-none">
+	                        <div class="table-responsive lt-table-wrap">
+	                            <table class="table table-hover table-sm align-middle mb-0">
+	                                <thead class="table-light">
+	                                    <tr>
+	                                        <th class="ps-3 py-2 text-muted font-weight-normal">
+	                                            <input type="checkbox" id="invoice-select-all">
+	                                        </th>
                                         <th class="py-2 text-muted font-weight-normal">Fecha</th>
                                         <th class="py-2 text-muted font-weight-normal">Periodo</th>
                                         <th class="py-2 text-muted font-weight-normal">Número</th>
@@ -3132,10 +3170,10 @@ var InvoicePanel = (function () {
                                     </tr>
                                 </thead>
                                 <tbody id="invoice-tbody"></tbody>
-                            </table>
-                        </div>
-                        <div id="invoice-pagination" class="d-flex justify-content-between align-items-center py-2"></div>
-                    </div>
+	                            </table>
+	                        </div>
+	                        <div id="invoice-pagination" class="d-flex justify-content-between align-items-center py-2"></div>
+	                    </div>
 
                     <div id="invoice-empty" class="text-center text-muted py-4">
                         <i class="bi bi-receipt" style="font-size: 1.5rem; opacity: 0.5;"></i>
@@ -3165,51 +3203,47 @@ var InvoicePanel = (function () {
                             <input type="date" id="invoice-gen-hasta" class="form-control form-control-sm">
                         </div>
                         <div class="col-md-2 d-grid">
-                            <button class="btn btn-secondary btn-sm" id="invoice-gen-search">
-                                <i class="bi bi-search me-1"></i>Buscar
-                            </button>
-                        </div>
-                    </div>
-                    <div class="row g-2 align-items-center">
-                        <div class="col-md-6 d-grid">
-                            <button class="btn btn-primary btn-sm" id="invoice-gen-open-modal">
-                                <i class="bi bi-save me-1"></i>Completar y guardar
-                            </button>
-                        </div>
-                        <div class="col-md-6 d-grid">
-                            <button class="btn btn-outline-danger btn-sm" id="invoice-download-last-btn" disabled>
-                                <i class="bi bi-file-earmark-pdf"></i> Descargar factura
-                            </button>
-                        </div>
-                    </div>
+	                            <button class="btn btn-outline-secondary btn-sm" id="invoice-gen-search">
+	                                <i class="bi bi-search me-1"></i>Buscar
+	                            </button>
+	                        </div>
+	                    </div>
+	                    <div class="row g-2 align-items-center">
+	                        <div class="col-md-6 d-grid">
+	                            <button class="btn btn-primary btn-sm" id="invoice-gen-open-modal">
+	                                <i class="bi bi-check2-circle me-1"></i>Completar y guardar
+	                            </button>
+	                        </div>
+	                        <div class="col-md-6 d-grid">
+	                            <button class="btn btn-danger btn-sm" id="invoice-download-last-btn" disabled>
+	                                <i class="bi bi-file-earmark-pdf-fill me-1"></i>PDF
+	                            </button>
+	                        </div>
+	                    </div>
 
                     <div id="invoice-gen-loading" class="text-center py-3 d-none">
                         <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
                         <p class="text-muted small mt-1 mb-0">Buscando asistencia del cliente...</p>
                     </div>
 
-                    <div id="invoice-gen-results" class="d-none mt-3">
-                        <div class="table-responsive border rounded">
-                            <table class="table table-hover table-sm align-middle mb-0" style="font-size: 0.85rem;">
-                                <thead class="bg-light">
-                                    <tr>
-                                        <th class="ps-3 py-2 text-muted font-weight-normal">Fecha</th>
-                                        <th class="py-2 text-muted font-weight-normal">Empleado</th>
-                                        <th class="py-2 text-muted font-weight-normal">Horas</th>
-                                        <th class="py-2 text-muted font-weight-normal">Observaciones</th>
-                                        <th class="text-center py-2 text-muted font-weight-normal">Acciones</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="invoice-gen-tbody"></tbody>
-                            </table>
-                        </div>
-                        <div id="invoice-gen-pagination" class="d-flex justify-content-between align-items-center py-2"></div>
-                        <div class="d-flex justify-content-end">
-                            <button class="btn btn-danger btn-sm" id="invoice-download-last-btn-bottom">
-                                <i class="bi bi-file-earmark-pdf"></i> Descargar PDF
-                            </button>
-                        </div>
-                    </div>
+	                    <div id="invoice-gen-results" class="d-none mt-3">
+	                        <div class="table-responsive lt-table-wrap">
+	                            <table class="table table-hover table-sm align-middle mb-0">
+	                                <thead class="table-light">
+	                                    <tr>
+	                                        <th class="ps-3 py-2 text-muted font-weight-normal">Fecha</th>
+	                                        <th class="py-2 text-muted font-weight-normal">Empleado</th>
+	                                        <th class="py-2 text-muted font-weight-normal">Asistencia</th>
+	                                        <th class="py-2 text-muted font-weight-normal">Horas</th>
+	                                        <th class="py-2 text-muted font-weight-normal">Observaciones</th>
+	                                        <th class="text-center py-2 text-muted font-weight-normal">Acciones</th>
+	                                    </tr>
+	                                </thead>
+	                                <tbody id="invoice-gen-tbody"></tbody>
+	                            </table>
+	                        </div>
+	                        <div id="invoice-gen-pagination" class="d-flex justify-content-between align-items-center py-2"></div>
+	                    </div>
 
                     <div id="invoice-gen-empty" class="text-center text-muted py-3">
                         <i class="bi bi-calendar4-week" style="font-size: 1.2rem; opacity: 0.5;"></i>
@@ -3377,9 +3411,10 @@ var InvoicePanel = (function () {
 
         attachEvents();
         loadClients();
+        loadIvaConfig();
     }
 
-    function attachEvents() {
+	    function attachEvents() {
         const newBtn = document.getElementById('invoice-new-btn');
         if (newBtn) newBtn.addEventListener('click', () => openModal());
 
@@ -3394,34 +3429,20 @@ var InvoicePanel = (function () {
         const saveBtn = document.getElementById('invoice-save-btn');
         if (saveBtn) saveBtn.addEventListener('click', handleSave);
 
-        const dlLastBtn = document.getElementById('invoice-download-last-btn');
-        if (dlLastBtn) dlLastBtn.addEventListener('click', () => {
-            if (lastSavedInvoiceId) downloadPdf(lastSavedInvoiceId);
-        });
-        const dlLastBtnBottom = document.getElementById('invoice-download-last-btn-bottom');
-        if (dlLastBtnBottom) dlLastBtnBottom.addEventListener('click', () => {
-            if (lastSavedInvoiceId) downloadPdf(lastSavedInvoiceId);
-        });
-        const dlSelectedBtn = document.getElementById('invoice-download-selected');
-        if (dlSelectedBtn) dlSelectedBtn.addEventListener('click', downloadSelectedPdfs);
+	        const dlLastBtn = document.getElementById('invoice-download-last-btn');
+	        if (dlLastBtn) dlLastBtn.addEventListener('click', () => {
+	            if (lastSavedInvoiceId) downloadPdf(lastSavedInvoiceId);
+	        });
+	        const dlSelectedBtn = document.getElementById('invoice-download-selected');
+	        if (dlSelectedBtn) dlSelectedBtn.addEventListener('click', downloadSelectedPdfs);
         const selectAll = document.getElementById('invoice-select-all');
         if (selectAll) selectAll.addEventListener('change', (e) => toggleSelectAll(e.target.checked));
 
-        // Auto-calcular importe cuando cambian horas o valor hora
+        // Auto-calcular importes cuando cambian horas o valor hora
         const horasInput = document.getElementById('invoice-horas');
         const valorHoraInput = document.getElementById('invoice-valor-hora');
-        const importeInput = document.getElementById('invoice-importe');
-
-        if (horasInput && valorHoraInput && importeInput) {
-            const calcularImporte = () => {
-                const horas = Number(horasInput.value) || 0;
-                const valorHora = Number(valorHoraInput.value) || 0;
-                importeInput.value = (horas * valorHora).toFixed(2);
-            };
-
-            horasInput.addEventListener('input', calcularImporte);
-            valorHoraInput.addEventListener('input', calcularImporte);
-        }
+        if (horasInput) horasInput.addEventListener('input', recalculateTotals_);
+        if (valorHoraInput) valorHoraInput.addEventListener('input', recalculateTotals_);
 
         // Auto-completar CUIT cuando se selecciona cliente
         const razonSocialInput = document.getElementById('invoice-razon-social');
@@ -3559,8 +3580,11 @@ var InvoicePanel = (function () {
     }
 
     function getFilters() {
+        const clientRaw = document.getElementById('invoice-filter-client')?.value || '';
+        const idCliente = getClientIdFromLabel(clientRaw);
         return {
-            cliente: document.getElementById('invoice-filter-client')?.value || '',
+            cliente: cleanClientValue(clientRaw),
+            idCliente: idCliente,
             periodo: document.getElementById('invoice-filter-period')?.value || '',
             estado: document.getElementById('invoice-filter-status')?.value || '',
             fechaDesde: document.getElementById('invoice-filter-from')?.value || '',
@@ -3594,7 +3618,7 @@ var InvoicePanel = (function () {
         summaryDiv.classList.add('d-none');
     }
 
-    function renderGeneratorResults(rows) {
+	    function renderGeneratorResults(rows) {
         const tbody = document.getElementById('invoice-gen-tbody');
         const results = document.getElementById('invoice-gen-results');
         const empty = document.getElementById('invoice-gen-empty');
@@ -3614,24 +3638,34 @@ var InvoicePanel = (function () {
         const start = (generatorPage - 1) * PAGE_SIZE;
         const pageItems = rows.slice(start, start + PAGE_SIZE);
 
-        pageItems.forEach(item => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td class="ps-3">${item.fecha || '-'}</td>
-                <td>${item.empleado || '-'}</td>
-                <td>${item.horas || 0}</td>
-                <td>${item.observaciones || ''}</td>
-                <td class="text-center">
-                    <button class="btn btn-sm btn-outline-secondary me-1" onclick="InvoicePanel.editAttendance(${item.id})" title="Editar">
-                        <i class="bi bi-pencil"></i>
-                    </button>
-                    <button class="btn btn-sm btn-outline-danger" onclick="InvoicePanel.deleteAttendance(${item.id})" title="Eliminar">
-                        <i class="bi bi-x-circle"></i>
-                    </button>
-                </td>
-            `;
-            tbody.appendChild(tr);
-        });
+	        pageItems.forEach(item => {
+	            const tr = document.createElement('tr');
+	            const asistencia = item && item.asistencia === false ? false : true;
+	            const badge = asistencia
+	                ? '<span class="badge text-bg-success">Sí</span>'
+	                : '<span class="badge text-bg-secondary">No</span>';
+	            const horasRegistradas = (item && item.horasRegistradas != null) ? item.horasRegistradas : (item ? item.horas : 0);
+	            const horasFact = (item && item.horasFacturables != null) ? item.horasFacturables : (item ? item.horas : 0);
+	            const horasCell = asistencia
+	                ? `<strong>${horasRegistradas || 0}</strong>`
+	                : `<span class="text-muted">${horasRegistradas || 0}</span><div class="small text-muted">Facturable: ${horasFact || 0}</div>`;
+	            tr.innerHTML = `
+	                <td class="ps-3">${item.fecha || '-'}</td>
+	                <td>${item.empleado || '-'}</td>
+	                <td>${badge}</td>
+	                <td>${horasCell}</td>
+	                <td>${item.observaciones || ''}</td>
+	                <td class="text-center">
+	                    <button class="btn btn-sm btn-outline-primary lt-btn-icon me-1" onclick="InvoicePanel.editAttendance(${item.id})" title="Editar">
+	                        <i class="bi bi-pencil-fill"></i>
+	                    </button>
+	                    <button class="btn btn-sm btn-outline-danger lt-btn-icon" onclick="InvoicePanel.deleteAttendance(${item.id})" title="Eliminar">
+	                        <i class="bi bi-trash"></i>
+	                    </button>
+	                </td>
+	            `;
+	            tbody.appendChild(tr);
+	        });
 
         results.classList.remove('d-none');
         empty.classList.add('d-none');
@@ -3639,7 +3673,7 @@ var InvoicePanel = (function () {
         renderGeneratorPagination(totalPages);
     }
 
-    function renderTable(invoices) {
+	    function renderTable(invoices) {
         const tbody = document.getElementById('invoice-tbody');
         const results = document.getElementById('invoice-results');
         const empty = document.getElementById('invoice-empty');
@@ -3666,7 +3700,7 @@ var InvoicePanel = (function () {
             const estado = inv['ESTADO'] || 'Pendiente';
             const estadoBadge = getEstadoBadge(estado);
 
-            tr.innerHTML = `
+	            tr.innerHTML = `
                 <td class="ps-3">
                     <input type="checkbox" class="invoice-select" data-id="${inv.ID}" ${selectedInvoiceIds.has(String(inv.ID)) ? 'checked' : ''} onclick="InvoicePanel.toggleInvoiceSelection('${inv.ID}', this.checked)">
                 </td>
@@ -3675,16 +3709,16 @@ var InvoicePanel = (function () {
                 <td><span class="badge bg-light text-dark border">${inv['NUMERO'] || 'S/N'}</span></td>
                 <td>${inv['RAZÓN SOCIAL'] || '-'}</td>
                 <td class="text-end fw-bold">${formatCurrency(inv['TOTAL'])}</td>
-                <td class="text-center">${estadoBadge}</td>
-                <td class="text-center">
-                    <button class="btn btn-sm btn-outline-primary me-1" onclick="InvoicePanel.editInvoice('${inv.ID}')" title="Editar">
-                        <i class="bi bi-pencil"></i>
-                    </button>
-                    <button class="btn btn-sm btn-outline-danger" onclick="InvoicePanel.deleteInvoice('${inv.ID}')" title="Anular">
-                        <i class="bi bi-x-circle"></i>
-                    </button>
-                </td>
-            `;
+	                <td class="text-center">${estadoBadge}</td>
+	                <td class="text-center">
+	                    <button class="btn btn-sm btn-outline-primary lt-btn-icon me-1" onclick="InvoicePanel.editInvoice('${inv.ID}')" title="Editar">
+	                        <i class="bi bi-pencil-fill"></i>
+	                    </button>
+	                    <button class="btn btn-sm btn-outline-danger lt-btn-icon" onclick="InvoicePanel.deleteInvoice('${inv.ID}')" title="Anular">
+	                        <i class="bi bi-x-circle-fill"></i>
+	                    </button>
+	                </td>
+	            `;
 
             tbody.appendChild(tr);
         });
@@ -3812,7 +3846,49 @@ var InvoicePanel = (function () {
 
         // Completar CUIT e ID si existe en referencias
         autocompleteCUIT();
+        if (!invoiceData || !invoiceData.ID) {
+            recalculateTotals_();
+        }
         modal.show();
+    }
+
+    function parseIvaPctFromConfig_(config) {
+        if (!config) return 0.21;
+        const raw = config['IVA_PORCENTAJE'] != null ? config['IVA_PORCENTAJE'] : config['IVA'];
+        if (raw == null || raw === '') return 0.21;
+        const cleaned = String(raw).replace('%', '').trim();
+        const n = Number(cleaned);
+        if (isNaN(n)) return 0.21;
+        return n > 1 ? n / 100 : n;
+    }
+
+    function loadIvaConfig() {
+        if (!ApiService || !ApiService.call) return;
+        ApiService.call('getConfig')
+            .then(cfg => {
+                ivaPct = parseIvaPctFromConfig_(cfg);
+                recalculateTotals_();
+            })
+            .catch(() => { /* usar default */ });
+    }
+
+    function recalculateTotals_() {
+        const horasInput = document.getElementById('invoice-horas');
+        const valorHoraInput = document.getElementById('invoice-valor-hora');
+        const importeInput = document.getElementById('invoice-importe');
+        const subtotalInput = document.getElementById('invoice-subtotal');
+        const totalInput = document.getElementById('invoice-total');
+        if (!horasInput || !valorHoraInput) return;
+
+        const horas = Number(horasInput.value) || 0;
+        const valorHora = Number(valorHoraInput.value) || 0;
+        const subtotal = horas * valorHora;
+        const subtotalFixed = (isNaN(subtotal) ? 0 : subtotal).toFixed(2);
+        const totalFixed = (subtotal * (1 + ivaPct)).toFixed(2);
+
+        if (importeInput) importeInput.value = subtotalFixed;
+        if (subtotalInput) subtotalInput.value = subtotalFixed;
+        if (totalInput) totalInput.value = totalFixed;
     }
 
     function handleSave() {
@@ -3907,8 +3983,10 @@ var InvoicePanel = (function () {
         const numInput = document.getElementById('invoice-att-numero');
         const obsInput = document.getElementById('invoice-att-obs');
 
-        const cliente = clienteInput ? clienteInput.value.trim() : '';
-        if (!cliente) {
+        const clienteRaw = clienteInput ? clienteInput.value.trim() : '';
+        const idCliente = getClientIdFromLabel(clienteRaw);
+        const cliente = cleanClientValue(clienteRaw);
+        if (!clienteRaw) {
             Alerts && Alerts.showAlert('Elegí un cliente', 'warning');
             return;
         }
@@ -3921,7 +3999,7 @@ var InvoicePanel = (function () {
             comprobante: compInput ? compInput.value : '',
             numero: numInput ? numInput.value : '',
             observaciones: obsInput ? obsInput.value : ''
-        })
+        }, idCliente)
             .then(() => {
                 Alerts && Alerts.showAlert('Factura generada desde asistencia.', 'success');
                 const modalEl = document.getElementById('invoice-att-modal');
@@ -3944,11 +4022,13 @@ var InvoicePanel = (function () {
         const desdeInput = document.getElementById('invoice-gen-desde');
         const hastaInput = document.getElementById('invoice-gen-hasta');
 
-        const cliente = clientInput ? clientInput.value.trim() : '';
+        const clienteRaw = clientInput ? clientInput.value.trim() : '';
+        const idCliente = getClientIdFromLabel(clienteRaw);
+        const cliente = cleanClientValue(clienteRaw);
         const fechaDesde = desdeInput && desdeInput.value ? desdeInput.value : '';
         const fechaHasta = hastaInput && hastaInput.value ? hastaInput.value : '';
 
-        if (!cliente) {
+        if (!clienteRaw) {
             Alerts && Alerts.showAlert('Elegí un cliente antes de generar.', 'warning');
             return;
         }
@@ -3958,7 +4038,7 @@ var InvoicePanel = (function () {
         }
 
         UiState && UiState.setGlobalLoading(true, 'Generando factura con filtros...');
-        ApiService.call('createInvoiceFromAttendance', cliente, fechaDesde, fechaHasta, {})
+        ApiService.call('createInvoiceFromAttendance', cliente, fechaDesde, fechaHasta, {}, idCliente)
             .then(() => {
                 Alerts && Alerts.showAlert('Factura generada.', 'success');
                 handleSearch();
@@ -4185,15 +4265,15 @@ var InvoicePanel = (function () {
             .finally(() => UiState && UiState.setGlobalLoading(false));
     }
 
-    function updateSelectionUi() {
-        const dlLast = document.getElementById('invoice-last-download');
-        if (dlLast) {
-            dlLast.classList.toggle('d-none', !lastSavedInvoiceId);
-        }
-        const dlSelected = document.getElementById('invoice-download-selected');
-        if (dlSelected) {
-            dlSelected.disabled = selectedInvoiceIds.size === 0;
-        }
+	    function updateSelectionUi() {
+	        const dlLastBtn = document.getElementById('invoice-download-last-btn');
+	        if (dlLastBtn) {
+	            dlLastBtn.disabled = !lastSavedInvoiceId;
+	        }
+	        const dlSelected = document.getElementById('invoice-download-selected');
+	        if (dlSelected) {
+	            dlSelected.disabled = selectedInvoiceIds.size === 0;
+	        }
         const selectAll = document.getElementById('invoice-select-all');
         if (selectAll) {
             const checkboxes = document.querySelectorAll('.invoice-select');
@@ -4268,7 +4348,8 @@ var InvoicePanel = (function () {
  * Panel de Detalle de Horas - Seguimiento por Empleado
  */
 var HoursDetailPanel = (function () {
-    let containerId = 'hours-detail-panel';
+	    let containerId = 'hours-detail-panel';
+	    let employeeIdMap = new Map();
 
     function render() {
         const container = document.getElementById(containerId);
@@ -4355,15 +4436,15 @@ var HoursDetailPanel = (function () {
                                 </div>
                             </div>
                         </div>
-                        <div class="col-6 col-md-2">
-                            <div class="card h-100 shadow-sm border-0 text-center" style="background: linear-gradient(135deg, #0f172a, #334155); color: #fff;">
-                                <div class="card-body py-2 px-2">
-                                    <div class="small text-white-50 text-uppercase" style="font-size: 0.7rem;">Total a pagar</div>
-                                    <div class="fs-6 fw-bold" id="hours-summary-total-net">$0</div>
-                                    <div class="small text-white-50" style="font-size: 0.65rem;" id="hours-summary-total-gross"></div>
-                                </div>
-                            </div>
-                        </div>
+	                        <div class="col-6 col-md-2">
+	                            <div class="lt-metric lt-metric--dark h-100 text-center">
+	                                <div class="card-body py-2 px-2">
+	                                    <div class="small lt-metric__k text-uppercase" style="font-size: 0.7rem;">Total a pagar</div>
+	                                    <div class="fs-6 fw-bold" id="hours-summary-total-net">$0</div>
+	                                    <div class="small lt-metric__k" style="font-size: 0.65rem;" id="hours-summary-total-gross"></div>
+	                                </div>
+	                            </div>
+	                        </div>
                     </div>
 
                     <!-- Tabla de Resultados -->
@@ -4442,29 +4523,59 @@ var HoursDetailPanel = (function () {
             });
     }
 
-    function populateEmployeeSelect(employees) {
-        const datalist = document.getElementById('hours-employee-list');
-        if (!datalist) return;
+	    function formatEmployeeLabel_(emp) {
+	        if (!emp) return '';
+	        if (typeof emp === 'string') return emp;
+	        return (emp.nombre || emp.displayName || emp.empleado || emp.label || emp.razonSocial || '').toString().trim();
+	    }
 
-        const list = Array.isArray(employees) ? employees.slice().sort() : [];
-        datalist.innerHTML = '';
+	    function getEmployeeIdFromLabel_(label) {
+	        if (!label) return '';
+	        return employeeIdMap.get(label) || '';
+	    }
 
-        list.forEach(employee => {
-            const option = document.createElement('option');
-            option.value = employee;
-            datalist.appendChild(option);
-        });
-    }
+	    function populateEmployeeSelect(employees) {
+	        const datalist = document.getElementById('hours-employee-list');
+	        if (!datalist) return;
+
+	        employeeIdMap = new Map();
+	        const list = Array.isArray(employees) ? employees.slice() : [];
+	        datalist.innerHTML = '';
+
+	        const labels = list.map(emp => {
+	            const label = formatEmployeeLabel_(emp);
+	            if (label && emp && typeof emp === 'object') {
+	                const id = emp.id || emp.ID || emp.ID_EMPLEADO;
+	                if (id) {
+	                    employeeIdMap.set(label, String(id));
+	                }
+	                const base = (emp.nombre || emp.displayName || emp.empleado || '').toString().trim();
+	                if (base && id) {
+	                    employeeIdMap.set(base, String(id));
+	                }
+	            }
+	            return label;
+	        }).filter(Boolean);
+
+	        labels.sort((a, b) => a.localeCompare(b, 'es'));
+	        labels.forEach(label => {
+	            const option = document.createElement('option');
+	            option.value = label;
+	            datalist.appendChild(option);
+	        });
+	    }
 
     function handleSearch() {
         const start = document.getElementById('hours-filter-start').value;
         const end = document.getElementById('hours-filter-end').value;
-        const employee = document.getElementById('hours-filter-employee').value;
+	        const employeeRaw = document.getElementById('hours-filter-employee').value;
+	        const idEmpleado = getEmployeeIdFromLabel_(employeeRaw);
+	        const employee = employeeRaw;
 
-        if (!employee) {
-            Alerts.showAlert("Por favor seleccione un empleado", "warning");
-            return;
-        }
+	        if (!employee) {
+	            Alerts.showAlert("Por favor seleccione un empleado", "warning");
+	            return;
+	        }
 
         // UI Loading
         document.getElementById('hours-results-container').classList.add('d-none');
@@ -4474,8 +4585,8 @@ var HoursDetailPanel = (function () {
         const summaryBox = document.getElementById('hours-summary');
         if (summaryBox) summaryBox.classList.add('d-none');
 
-        ApiService.call('getHoursByEmployee', start, end, employee)
-            .then(results => {
+	        ApiService.call('getHoursByEmployee', start, end, employee, idEmpleado)
+	            .then(results => {
                 const parsed = (typeof results === 'string')
                     ? (function () { try { return JSON.parse(results); } catch (e) { console.warn('No se pudo parsear resultados', e); return {}; } })()
                     : results || {};
@@ -4558,24 +4669,22 @@ var HoursDetailPanel = (function () {
             total += hours;
             const isAbsent = row.asistencia === false;
 
-            tr.innerHTML = `
-                <td>${row.cliente || '-'}</td>
-                <td>${row.fecha}</td>
-                <td class="text-center fw-bold">${hours}</td>
-                <td class="text-muted small">${row.observaciones || '-'}</td>
-                <td class="text-end">
-                    <div class="d-flex gap-2 justify-content-end">
-                        <button class="btn btn-sm text-white btn-edit-hour" data-id="${row.id}" title="Editar"
-                            style="background:#5b7bfa;border:none;border-radius:12px; padding:6px 12px;">
-                            <i class="bi bi-pencil-fill"></i>
-                        </button>
-                        <button class="btn btn-sm text-white btn-delete-hour" data-id="${row.id}" title="Eliminar"
-                            style="background:#e53e3e;border:none;border-radius:12px; padding:6px 12px;">
-                            <i class="bi bi-trash-fill"></i>
-                        </button>
-                    </div>
-                </td>
-            `;
+	            tr.innerHTML = `
+	                <td>${row.cliente || '-'}</td>
+	                <td>${row.fecha}</td>
+	                <td class="text-center fw-bold">${hours}</td>
+	                <td class="text-muted small">${row.observaciones || '-'}</td>
+	                <td class="text-end">
+	                    <div class="d-flex gap-2 justify-content-end">
+	                        <button class="btn btn-sm btn-outline-primary lt-btn-icon btn-edit-hour" data-id="${row.id}" title="Editar">
+	                            <i class="bi bi-pencil-fill"></i>
+	                        </button>
+	                        <button class="btn btn-sm btn-outline-danger lt-btn-icon btn-delete-hour" data-id="${row.id}" title="Eliminar">
+	                            <i class="bi bi-trash-fill"></i>
+	                        </button>
+	                    </div>
+	                </td>
+	            `;
             if (isAbsent) {
                 tr.classList.add('absence-row');
             }
@@ -5016,6 +5125,7 @@ var ClientMonthlySummaryPanel = (function () {
  */
 var ClientAccountPanel = (function () {
     const containerId = 'client-account-panel';
+    const clientIdMap = new Map();
 
     function render() {
         // Find or create container
@@ -5106,12 +5216,38 @@ var ClientAccountPanel = (function () {
             const refs = ReferenceService.get();
             const clients = refs && refs.clientes ? refs.clientes : [];
             datalist.innerHTML = '';
+            clientIdMap.clear();
             clients.forEach(c => {
+                const label = formatClientLabel(c);
+                const id = (c && typeof c === 'object' && c.id) ? c.id : '';
+                if (label && id) {
+                    clientIdMap.set(label, id);
+                    clientIdMap.set(cleanClientValue(label), id);
+                }
                 const opt = document.createElement('option');
-                opt.value = typeof c === 'string' ? c : (c.razonSocial || c.nombre);
+                opt.value = label;
                 datalist.appendChild(opt);
             });
         });
+    }
+
+    function formatClientLabel(cli) {
+        if (!cli) return '';
+        if (typeof cli === 'string') return cli;
+        const base = cli.razonSocial || cli.nombre || '';
+        const cuit = cli.cuit ? ` (${cli.cuit})` : '';
+        return (base + cuit).trim();
+    }
+
+    function cleanClientValue(raw) {
+        if (!raw) return '';
+        const idx = raw.indexOf('(');
+        return idx > 0 ? raw.slice(0, idx).trim() : raw.trim();
+    }
+
+    function getClientIdFromLabel(label) {
+        if (!label) return '';
+        return clientIdMap.get(label) || clientIdMap.get(cleanClientValue(label)) || '';
     }
 
     function attachEvents() {
@@ -5134,7 +5270,9 @@ var ClientAccountPanel = (function () {
     }
 
     function handleSearch() {
-        const client = document.getElementById('client-acc-input').value;
+        const clientRaw = document.getElementById('client-acc-input').value;
+        const client = cleanClientValue(clientRaw);
+        const idCliente = getClientIdFromLabel(clientRaw);
         const startDate = document.getElementById('client-acc-start').value;
         const endDate = document.getElementById('client-acc-end').value;
 
@@ -5149,7 +5287,7 @@ var ClientAccountPanel = (function () {
         }
 
         toggleLoading(true);
-        ApiService.call('getClientAccountStatement', client, startDate, endDate)
+        ApiService.call('getClientAccountStatement', client, startDate, endDate, idCliente)
             .then(renderTable)
             .catch(err => {
                 console.error(err);
@@ -5210,7 +5348,9 @@ var ClientAccountPanel = (function () {
     }
 
     function openPaymentModal() {
-        const client = document.getElementById('client-acc-input').value;
+        const clientRaw = document.getElementById('client-acc-input').value;
+        const client = cleanClientValue(clientRaw);
+        const idCliente = getClientIdFromLabel(clientRaw);
         if (!client) {
             Alerts && Alerts.showAlert('Seleccioná un cliente primero', 'warning');
             return;
@@ -5270,7 +5410,7 @@ var ClientAccountPanel = (function () {
         modal.show();
 
         // Cargar facturas del cliente
-        ApiService.call('getClientInvoices', client)
+        ApiService.call('getClientInvoices', client, idCliente)
             .then(list => {
                 const select = document.getElementById('cp-factura');
                 if (!select) return;
@@ -5311,6 +5451,7 @@ var ClientAccountPanel = (function () {
                 ApiService.call('recordClientPayment', {
                     fecha: fecha,
                     cliente: client,
+                    idCliente: idCliente,
                     monto: monto,
                     detalle: obs,
                     idFactura: facturaId || '',
@@ -5434,14 +5575,14 @@ var ClientReportPanel = (function () {
                                 </div>
                             </div>
                         </div>
-                        <div class="col-12 col-md-3">
-                            <div class="card h-100 shadow-sm border-0 text-center" style="background: linear-gradient(135deg, #0f172a, #334155); color:#fff;">
-                                <div class="card-body py-2 px-1">
-                                    <div class="small text-white-50 text-uppercase" style="font-size: 0.7rem;">Total a Facturar</div>
-                                    <div class="fs-5 fw-bold mb-0" id="client-summary-total">$0</div>
-                                </div>
-                            </div>
-                        </div>
+	                        <div class="col-12 col-md-3">
+	                            <div class="lt-metric lt-metric--dark h-100 text-center">
+	                                <div class="card-body py-2 px-1">
+	                                    <div class="small lt-metric__k text-uppercase" style="font-size: 0.7rem;">Total a Facturar</div>
+	                                    <div class="fs-5 fw-bold mb-0" id="client-summary-total">$0</div>
+	                                </div>
+	                            </div>
+	                        </div>
                     </div>
 
                     <div id="client-report-aggregate" class="card shadow-none border mb-3 d-none">
@@ -6282,6 +6423,10 @@ var BulkValuesPanel = (function () {
                             <label class="form-label small text-muted fw-semibold">Presentismo jornada completa</label>
                             <input type="number" step="0.01" class="form-control" id="bulk-pres-full" placeholder="Ej: 1500">
                         </div>
+                        <div class="col-md-3">
+                            <label class="form-label small text-muted fw-semibold">IVA (%)</label>
+                            <input type="number" step="0.01" class="form-control" id="bulk-iva" placeholder="Ej: 21">
+                        </div>
                     </div>
 
                     <div class="d-flex justify-content-end mt-4">
@@ -6305,7 +6450,8 @@ var BulkValuesPanel = (function () {
             valorHoraCliente: getInputValue('bulk-valor-hora-cli'),
             viaticos: getInputValue('bulk-viaticos'),
             presentismoMedia: getInputValue('bulk-pres-media'),
-            presentismoCompleta: getInputValue('bulk-pres-full')
+            presentismoCompleta: getInputValue('bulk-pres-full'),
+            ivaPorcentaje: getInputValue('bulk-iva')
         };
 
         UiState && UiState.setGlobalLoading(true, 'Aplicando valores...');

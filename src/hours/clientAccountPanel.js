@@ -3,6 +3,7 @@
  */
 var ClientAccountPanel = (function () {
     const containerId = 'client-account-panel';
+    const clientIdMap = new Map();
 
     function render() {
         // Find or create container
@@ -93,12 +94,38 @@ var ClientAccountPanel = (function () {
             const refs = ReferenceService.get();
             const clients = refs && refs.clientes ? refs.clientes : [];
             datalist.innerHTML = '';
+            clientIdMap.clear();
             clients.forEach(c => {
+                const label = formatClientLabel(c);
+                const id = (c && typeof c === 'object' && c.id) ? c.id : '';
+                if (label && id) {
+                    clientIdMap.set(label, id);
+                    clientIdMap.set(cleanClientValue(label), id);
+                }
                 const opt = document.createElement('option');
-                opt.value = typeof c === 'string' ? c : (c.razonSocial || c.nombre);
+                opt.value = label;
                 datalist.appendChild(opt);
             });
         });
+    }
+
+    function formatClientLabel(cli) {
+        if (!cli) return '';
+        if (typeof cli === 'string') return cli;
+        const base = cli.razonSocial || cli.nombre || '';
+        const cuit = cli.cuit ? ` (${cli.cuit})` : '';
+        return (base + cuit).trim();
+    }
+
+    function cleanClientValue(raw) {
+        if (!raw) return '';
+        const idx = raw.indexOf('(');
+        return idx > 0 ? raw.slice(0, idx).trim() : raw.trim();
+    }
+
+    function getClientIdFromLabel(label) {
+        if (!label) return '';
+        return clientIdMap.get(label) || clientIdMap.get(cleanClientValue(label)) || '';
     }
 
     function attachEvents() {
@@ -121,7 +148,9 @@ var ClientAccountPanel = (function () {
     }
 
     function handleSearch() {
-        const client = document.getElementById('client-acc-input').value;
+        const clientRaw = document.getElementById('client-acc-input').value;
+        const client = cleanClientValue(clientRaw);
+        const idCliente = getClientIdFromLabel(clientRaw);
         const startDate = document.getElementById('client-acc-start').value;
         const endDate = document.getElementById('client-acc-end').value;
 
@@ -136,7 +165,7 @@ var ClientAccountPanel = (function () {
         }
 
         toggleLoading(true);
-        ApiService.call('getClientAccountStatement', client, startDate, endDate)
+        ApiService.call('getClientAccountStatement', client, startDate, endDate, idCliente)
             .then(renderTable)
             .catch(err => {
                 console.error(err);
@@ -197,7 +226,9 @@ var ClientAccountPanel = (function () {
     }
 
     function openPaymentModal() {
-        const client = document.getElementById('client-acc-input').value;
+        const clientRaw = document.getElementById('client-acc-input').value;
+        const client = cleanClientValue(clientRaw);
+        const idCliente = getClientIdFromLabel(clientRaw);
         if (!client) {
             Alerts && Alerts.showAlert('Seleccioná un cliente primero', 'warning');
             return;
@@ -257,7 +288,7 @@ var ClientAccountPanel = (function () {
         modal.show();
 
         // Cargar facturas del cliente
-        ApiService.call('getClientInvoices', client)
+        ApiService.call('getClientInvoices', client, idCliente)
             .then(list => {
                 const select = document.getElementById('cp-factura');
                 if (!select) return;
@@ -298,6 +329,7 @@ var ClientAccountPanel = (function () {
                 ApiService.call('recordClientPayment', {
                     fecha: fecha,
                     cliente: client,
+                    idCliente: idCliente,
                     monto: monto,
                     detalle: obs,
                     idFactura: facturaId || '',

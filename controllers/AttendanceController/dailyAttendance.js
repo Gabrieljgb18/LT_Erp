@@ -100,7 +100,9 @@ const AttendanceDailyAttendance = (function () {
 
         const planMap = new Map();
         planRows.forEach(function (p) {
-            const key = p.cliente + '||' + p.empleado;
+            const cliKey = p.idCliente || p.cliente;
+            const empKey = p.idEmpleado || p.empleado;
+            const key = cliKey + '||' + empKey;
             planMap.set(key, p);
         });
 
@@ -109,6 +111,7 @@ const AttendanceDailyAttendance = (function () {
         if (lastRowAsis >= 2 && lastColAsis > 0) {
             const headersAsis = asisSheet.getRange(1, 1, 1, lastColAsis).getValues()[0];
 
+            const idxIdAsis = headersAsis.indexOf('ID');
             const idxIdEmpleadoAsis = headersAsis.indexOf('ID_EMPLEADO');
             const idxEmpleadoAsis = headersAsis.indexOf('EMPLEADO');
             const idxIdClienteAsis = headersAsis.indexOf('ID_CLIENTE');
@@ -136,12 +139,15 @@ const AttendanceDailyAttendance = (function () {
                     if (!clienteRow || !empleadoRow) return;
 
                     const asistio = idxAsist > -1 ? DataUtils.isTruthy(row[idxAsist]) : false;
-                    const key = clienteRow + '||' + empleadoRow;
+                    const cliKey = (idxIdClienteAsis > -1 && row[idxIdClienteAsis]) ? row[idxIdClienteAsis] : clienteRow;
+                    const empKey = (idxIdEmpleadoAsis > -1 && row[idxIdEmpleadoAsis]) ? row[idxIdEmpleadoAsis] : empleadoRow;
+                    const key = cliKey + '||' + empKey;
                     const planData = planMap.get(key);
 
                     attendanceRows.push({
                         cliente: clienteRow,
                         empleado: empleadoRow,
+                        idAsistencia: idxIdAsis > -1 ? row[idxIdAsis] : '',
                         idCliente: idxIdClienteAsis > -1 ? row[idxIdClienteAsis] : '',
                         idEmpleado: idxIdEmpleadoAsis > -1 ? row[idxIdEmpleadoAsis] : '',
                         horaPlan: planData ? planData.horaPlan : '',
@@ -177,6 +183,7 @@ const AttendanceDailyAttendance = (function () {
                 asistencia: false,
                 horasReales: '',
                 asistenciaRowNumber: null,
+                idAsistencia: null,
                 fueraDePlan: false,
                 idCliente: p.idCliente || '',
                 idEmpleado: p.idEmpleado || ''
@@ -199,6 +206,7 @@ const AttendanceDailyAttendance = (function () {
                 horasReales: row.horasReales != null && row.horasReales !== '' ? String(row.horasReales) : '',
                 observaciones: row.observaciones != null ? String(row.observaciones) : '',
                 asistenciaRowNumber: row.asistenciaRowNumber != null ? Number(row.asistenciaRowNumber) : null,
+                idAsistencia: row.idAsistencia != null && row.idAsistencia !== '' ? row.idAsistencia : null,
                 fueraDePlan: !!row.fueraDePlan,
                 idCliente: row.idCliente != null ? row.idCliente : '',
                 idEmpleado: row.idEmpleado != null ? row.idEmpleado : ''
@@ -262,8 +270,22 @@ const AttendanceDailyAttendance = (function () {
                 'OBSERVACIONES': item.observaciones != null ? item.observaciones : ''
             };
 
-            if (item.asistenciaRowNumber) {
-                RecordController.updateRecord('ASISTENCIA', item.asistenciaRowNumber, record);
+            const idAsistencia = item.idAsistencia || item.id || '';
+            if (idAsistencia) {
+                RecordController.updateRecord('ASISTENCIA', idAsistencia, record);
+            } else if (item.asistenciaRowNumber) {
+                // Fallback legacy: obtener ID desde rowNumber y actualizar por ID
+                try {
+                    const sheetAsis = DatabaseService.getDbSheetForFormat('ASISTENCIA');
+                    const existingId = sheetAsis.getRange(Number(item.asistenciaRowNumber), 1).getValue();
+                    if (existingId) {
+                        RecordController.updateRecord('ASISTENCIA', existingId, record);
+                    } else {
+                        RecordController.saveRecord('ASISTENCIA', record);
+                    }
+                } catch (e) {
+                    RecordController.saveRecord('ASISTENCIA', record);
+                }
             } else {
                 RecordController.saveRecord('ASISTENCIA', record);
             }

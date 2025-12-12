@@ -62,15 +62,15 @@ function getReferenceData() {
 /**
  * Obtiene la comparación entre plan y asistencia real
  */
-function getPlanVsAsistencia(fechaStr, cliente) {
-  return AttendancePlanVsReal.getPlanVsAsistencia(fechaStr, cliente);
+function getPlanVsAsistencia(fechaStr, cliente, idCliente) {
+  return AttendancePlanVsReal.getPlanVsAsistencia(fechaStr, cliente, idCliente);
 }
 
 /**
  * Guarda la asistencia real basada en el plan
  */
-function saveAsistenciaFromPlan(fechaStr, cliente, items) {
-  return AttendancePlanVsReal.saveAsistenciaFromPlan(fechaStr, cliente, items);
+function saveAsistenciaFromPlan(fechaStr, cliente, items, idCliente) {
+  return AttendancePlanVsReal.saveAsistenciaFromPlan(fechaStr, cliente, items, idCliente);
 }
 
 /**
@@ -97,8 +97,8 @@ function getClientDayCoverage(clienteLabel, dayName) {
 /**
  * Construye un template semanal desde las horas contratadas del cliente
  */
-function buildWeeklyTemplateFromClient(cliente) {
-  return AttendanceWeeklyPlan.buildWeeklyTemplateFromClient(cliente);
+function buildWeeklyTemplateFromClient(cliente, idCliente) {
+  return AttendanceWeeklyPlan.buildWeeklyTemplateFromClient(cliente, idCliente);
 }
 
 /**
@@ -111,15 +111,15 @@ function getClientWeeklyRequestedHours(clienteLabel) {
 /**
  * Obtiene el plan semanal completo para un cliente
  */
-function getWeeklyPlanForClient(cliente) {
-  return AttendanceWeeklyPlan.getWeeklyPlanForClient(cliente);
+function getWeeklyPlanForClient(cliente, idCliente) {
+  return AttendanceWeeklyPlan.getWeeklyPlanForClient(cliente, idCliente);
 }
 
 /**
  * Guarda el plan semanal completo para un cliente
  */
-function saveWeeklyPlanForClient(cliente, items, originalVigencia) {
-  return AttendanceWeeklyPlan.saveWeeklyPlanForClient(cliente, items, originalVigencia);
+function saveWeeklyPlanForClient(cliente, items, originalVigencia, idCliente) {
+  return AttendanceWeeklyPlan.saveWeeklyPlanForClient(cliente, items, originalVigencia, idCliente);
 }
 
 /**
@@ -128,11 +128,19 @@ function saveWeeklyPlanForClient(cliente, items, originalVigencia) {
 function applyMassValues(payload) {
   return BulkValuesController.applyMassValues(payload);
 }
+
+/**
+ * Devuelve configuración general (CONFIG_DB)
+ */
+function getConfig() {
+  return DatabaseService.getConfig ? DatabaseService.getConfig() : {};
+}
+
 /**
  * Obtiene el detalle de horas filtrado
  */
-function getHoursDetail(startDate, endDate, client) {
-  return HoursController.getHoursDetail(startDate, endDate, client);
+function getHoursDetail(startDate, endDate, client, idCliente) {
+  return HoursController.getHoursDetail(startDate, endDate, client, idCliente);
 }
 
 /**
@@ -145,8 +153,8 @@ function getHoursByClient(startDate, endDate, client, idCliente) {
 /**
  * Obtiene el detalle de horas filtrado por empleado
  */
-function getHoursByEmployee(startDate, endDate, employee) {
-  return HoursController.getHoursByEmployee(startDate, endDate, employee);
+function getHoursByEmployee(startDate, endDate, employee, idEmpleado) {
+  return HoursController.getHoursByEmployee(startDate, endDate, employee, idEmpleado);
 }
 
 /**
@@ -159,15 +167,15 @@ function getMonthlySummary(year, month) {
 /**
  * Obtiene la cuenta corriente de un cliente
  */
-function getClientAccountStatement(clientName, startDate, endDate) {
-  return AccountController.getClientAccountStatement(clientName, startDate, endDate);
+function getClientAccountStatement(clientName, startDate, endDate, idCliente) {
+  return AccountController.getClientAccountStatement(clientName, startDate, endDate, idCliente);
 }
 
 /**
  * Lista facturas de un cliente
  */
-function getClientInvoices(clientName) {
-  return AccountController.getClientInvoices(clientName);
+function getClientInvoices(clientName, idCliente) {
+  return AccountController.getClientInvoices(clientName, idCliente);
 }
 
 /**
@@ -244,8 +252,8 @@ function createInvoice(data) {
 /**
  * Crea factura a partir de asistencia (cliente + rango)
  */
-function createInvoiceFromAttendance(cliente, fechaDesde, fechaHasta, extra) {
-  return InvoiceController.createInvoiceFromAttendance(cliente, fechaDesde, fechaHasta, extra);
+function createInvoiceFromAttendance(cliente, fechaDesde, fechaHasta, extra, idCliente) {
+  return InvoiceController.createInvoiceFromAttendance(cliente, fechaDesde, fechaHasta, extra, idCliente);
 }
 
 function updateInvoice(id, data) {
