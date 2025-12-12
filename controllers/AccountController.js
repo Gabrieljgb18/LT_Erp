@@ -220,28 +220,11 @@ var AccountController = (function () {
         const saldoInicial = getClientBalanceBeforeDate(filter, startDate);
 
         // 2. Obtener movimientos dentro del período
-        let debitos = getClientDebits(filter, startDate, endDate);
+        const debitos = getClientDebits(filter, startDate, endDate);
         const creditos = getClientPayments(filter, startDate, endDate);
 
-        // Fallback: si por alguna razón los débitos salen vacíos, recalcular desde getInvoices (mismo motor que Facturación UI)
-        if ((!debitos || !debitos.length) && (typeof InvoiceController !== 'undefined' && InvoiceController.getInvoices)) {
-            try {
-                const invs = InvoiceController.getInvoices({
-                    cliente: filter.clientName,
-                    idCliente: filter.idCliente,
-                    fechaDesde: startDateStr,
-                    fechaHasta: endDateStr
-                }) || [];
-                if (invs.length) {
-                    debitos = invs.map(inv => mapInvoiceToDebit_(inv)).filter(Boolean);
-                }
-            } catch (e) {
-                // ignore
-            }
-        }
-
         // 3. Unificar y ordenar
-        const movimientos = [...debitos, ...creditos].sort((a, b) => a.fecha - b.fecha);
+        const movimientos = [...(debitos || []), ...(creditos || [])].sort(compareMovimientos_);
 
         // 4. Calcular saldo acumulado partiendo del saldo inicial
         let saldo = saldoInicial;
@@ -333,27 +316,23 @@ var AccountController = (function () {
         return { clientName: clientName || '', idCliente: resolvedId || '' };
     }
 
-    function getClientDebits(clientName, startDate, endDate, idCliente) {
-        const filter = normalizeClientFilter_(clientName, idCliente);
-        if (!filter.clientName && !filter.idCliente) return [];
+    function getInvoicesForClient_(filter, startDate, endDate) {
+        if (typeof InvoiceController === 'undefined' || !InvoiceController.getInvoices) return [];
+        const base = { cliente: filter.clientName, idCliente: filter.idCliente };
+        const invoices = InvoiceController.getInvoices({
+            ...base,
+            fechaDesde: startDate || '',
+            fechaHasta: endDate || ''
+        }) || [];
 
-        const from = toStartOfDay_(startDate);
-        const to = toEndOfDay_(endDate);
+        if (invoices.length) return invoices;
 
-        // Reutilizar el filtro/normalización de InvoiceController para consistencia con el módulo Facturación
-        let invoices = (typeof InvoiceController !== 'undefined' && InvoiceController.getInvoices)
-            ? InvoiceController.getInvoices({
-                cliente: filter.clientName,
-                idCliente: filter.idCliente,
-                fechaDesde: from,
-                fechaHasta: to
-            })
-            : [];
-
-        // Fallback: si el rango no devuelve nada (por parsing de fechas), traer todo y filtrar acá.
-        if ((!invoices || !invoices.length) && (from || to) && (typeof InvoiceController !== 'undefined' && InvoiceController.getInvoices)) {
-            const all = InvoiceController.getInvoices({ cliente: filter.clientName, idCliente: filter.idCliente }) || [];
-            invoices = all.filter(inv => {
+        // Fallback: traer todo y filtrar localmente por fechas (evita edge cases de parsing/timezone)
+        if (startDate || endDate) {
+            const from = toStartOfDay_(parseDateFlexible_(startDate));
+            const to = toEndOfDay_(parseDateFlexible_(endDate));
+            const all = InvoiceController.getInvoices(base) || [];
+            return all.filter(inv => {
                 const f = parseDateFlexible_(inv && inv['FECHA']);
                 if (!f || isNaN(f.getTime())) return false;
                 if (from && f < from) return false;
@@ -362,35 +341,32 @@ var AccountController = (function () {
             });
         }
 
-        return (invoices || []).map(inv => {
-            const estado = String(inv['ESTADO'] || '').trim();
-            if (estado && estado.toLowerCase() === 'anulada') return null;
+        return [];
+    }
 
-            const fecha = parseDateFlexible_(inv['FECHA']);
-            const periodo = inv['PERIODO'] || '';
-            const numero = inv['NUMERO'] || '';
-            const comp = inv['COMPROBANTE'] || '';
+    function compareMovimientos_(a, b) {
+        const da = parseDateFlexible_(a && a.fecha);
+        const db = parseDateFlexible_(b && b.fecha);
+        const ta = da && !isNaN(da.getTime()) ? da.getTime() : 0;
+        const tb = db && !isNaN(db.getTime()) ? db.getTime() : 0;
+        if (ta !== tb) return ta - tb;
 
-            const partes = [];
-            if (comp) partes.push(comp);
-            if (numero) partes.push(numero);
-            if (periodo) partes.push(periodo);
+        const order = { FACTURA: 0, PAGO: 1 };
+        const oa = a && a.tipo && order[a.tipo] !== undefined ? order[a.tipo] : 9;
+        const ob = b && b.tipo && order[b.tipo] !== undefined ? order[b.tipo] : 9;
+        if (oa !== ob) return oa - ob;
 
-            const monto = toNumber_(inv['TOTAL'] || inv['SUBTOTAL'] || inv['IMPORTE'] || 0);
-            const invId = inv.ID != null ? inv.ID : (inv['ID'] || '');
+        const ida = a && a.idFactura != null ? String(a.idFactura) : '';
+        const idb = b && b.idFactura != null ? String(b.idFactura) : '';
+        return ida.localeCompare(idb, 'es', { numeric: true, sensitivity: 'base' });
+    }
 
-            return {
-                fecha: fecha || null,
-                concepto: partes.length ? ('Factura ' + partes.join(' - ')) : 'Factura',
-                debe: monto,
-                haber: 0,
-                tipo: 'FACTURA',
-                idFactura: invId,
-                facturaNumero: numero || '',
-                periodo: periodo || '',
-                estado: estado || ''
-            };
-        }).filter(Boolean);
+    function getClientDebits(clientName, startDate, endDate, idCliente) {
+        const filter = normalizeClientFilter_(clientName, idCliente);
+        if (!filter.clientName && !filter.idCliente) return [];
+
+        const invoices = getInvoicesForClient_(filter, startDate, endDate);
+        return (invoices || []).map(inv => mapInvoiceToDebit_(inv)).filter(Boolean);
     }
 
     function normalizeClientName_(name) {
@@ -441,7 +417,7 @@ var AccountController = (function () {
 
             let matches = false;
             if (targetId && idxIdCliente > -1) {
-                matches = String(row[idxIdCliente]) === String(targetId);
+                matches = normalizeIdString_(row[idxIdCliente]) === targetId;
             }
             if (!matches && idxCliente > -1 && targetClient) {
                 const rowClient = normalizeClientName_(row[idxCliente]);
@@ -479,11 +455,14 @@ var AccountController = (function () {
     function recordClientPayment(payload) {
         // payload: { fecha, cliente, idCliente, monto, detalle, numeroComprobante, medioPago, cuit, razonSocial, idFactura, facturaNumero }
         if (!payload) throw new Error('Faltan datos de pago');
-        const fecha = payload.fecha || payload.FECHA;
-        const clienteName = payload.cliente || payload.CLIENTE || '';
-        const idCliente = payload.idCliente || payload.ID_CLIENTE || getClientId_(clienteName);
-        const monto = payload.monto || payload.MONTO;
-        if (!fecha || !monto || (!clienteName && !idCliente)) {
+        const fechaRaw = payload.fecha || payload.FECHA;
+        const clienteNameRaw = payload.cliente || payload.CLIENTE || '';
+        const filter = normalizeClientFilter_(clienteNameRaw, payload.idCliente || payload.ID_CLIENTE);
+        const idCliente = filter.idCliente || '';
+        const clienteName = (payload.razonSocial || filter.clientName || clienteNameRaw || '').toString().trim();
+        const fecha = parseDateFlexible_(fechaRaw);
+        const monto = toNumber_(payload.monto || payload.MONTO);
+        if (!fecha || isNaN(fecha.getTime()) || monto <= 0 || (!clienteName && !idCliente)) {
             throw new Error('Datos incompletos para registrar pago');
         }
 
@@ -508,13 +487,13 @@ var AccountController = (function () {
         const row = [
             id,
             idCliente || '',
-            new Date(fecha),
-            payload.razonSocial || clienteName,
+            fecha,
+            clienteName,
             payload.cuit || '',
             payload.detalle || '',
             payload['N° COMPROBANTE'] || payload.nroComprobante || '',
             payload.medioPago || payload['MEDIO DE PAGO'] || '',
-            Number(monto) || 0,
+            monto,
             payload.idFactura || payload.ID_FACTURA || '',
             payload.facturaNumero || payload.FACTURA_NUMERO || ''
         ];

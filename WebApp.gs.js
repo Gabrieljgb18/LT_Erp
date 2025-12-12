@@ -4,6 +4,10 @@ function doGet(e) {
   if (e && e.parameter && e.parameter.api === 'db') {
     return handleDbApi_(e);
   }
+  // Endpoint de diagnóstico/lectura de cuenta corriente (api=cc, key en query).
+  if (e && e.parameter && e.parameter.api === 'cc') {
+    return handleClientAccountApi_(e);
+  }
 
   return HtmlService.createTemplateFromFile('FrontedErp')
     .evaluate()
@@ -13,6 +17,9 @@ function doGet(e) {
 function doPost(e) {
   if (e && e.parameter && e.parameter.api === 'db') {
     return handleDbApi_(e);
+  }
+  if (e && e.parameter && e.parameter.api === 'cc') {
+    return handleClientAccountApi_(e);
   }
   return doGet(e);
 }
@@ -86,4 +93,33 @@ function getFormatData_(formatId) {
   });
 
   return { format: formatId, headers: headers, rows: rows };
+}
+
+// ==== API JSON (Cuenta Corriente Clientes) ====
+
+function handleClientAccountApi_(e) {
+  const isAuthorized = authorizeApi_(e);
+  if (!isAuthorized) {
+    return jsonResponse_({ error: 'unauthorized' });
+  }
+
+  const params = e && e.parameter ? e.parameter : {};
+  const client = (params.client || params.cliente || '').toString().trim();
+  const idCliente = (params.idCliente || params.id || '').toString().trim();
+  const start = (params.from || params.start || params.fechaDesde || params.desde || '').toString().trim();
+  const end = (params.to || params.end || params.fechaHasta || params.hasta || '').toString().trim();
+
+  try {
+    const res = AccountController.getClientAccountStatement(client, start, end, idCliente);
+    return jsonResponse_({
+      client: client,
+      idCliente: idCliente,
+      start: start,
+      end: end,
+      saldoInicial: res && typeof res.saldoInicial === 'number' ? res.saldoInicial : 0,
+      movimientos: res && res.movimientos ? res.movimientos : []
+    });
+  } catch (err) {
+    return jsonResponse_({ error: err && err.message ? err.message : String(err) });
+  }
 }
