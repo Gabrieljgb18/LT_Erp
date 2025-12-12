@@ -63,9 +63,11 @@ var ClientAccountPanel = (function () {
                         <p class="small mt-2 mb-0">Seleccioná un cliente para ver su cuenta corriente.</p>
                     </div>
 
-                    <div class="table-responsive border rounded d-none" id="client-acc-table-wrapper">
+                    <div id="client-acc-summary" class="row g-2 mb-2 d-none"></div>
+
+                    <div class="table-responsive lt-table-wrap d-none" id="client-acc-table-wrapper">
                         <table class="table table-hover table-sm align-middle mb-0" style="font-size: 0.85rem;">
-                            <thead class="bg-light">
+                            <thead class="table-light">
                                 <tr>
                                     <th class="ps-3 py-2 text-muted font-weight-normal">Fecha</th>
                                     <th class="py-2 text-muted font-weight-normal">Concepto</th>
@@ -178,6 +180,7 @@ var ClientAccountPanel = (function () {
         const tbody = document.getElementById('client-acc-tbody');
         const wrapper = document.getElementById('client-acc-table-wrapper');
         const empty = document.getElementById('client-acc-empty');
+        const summaryEl = document.getElementById('client-acc-summary');
 
         if (!tbody || !wrapper || !empty) return;
 
@@ -188,9 +191,53 @@ var ClientAccountPanel = (function () {
 
         if (rows.length === 0 && saldoInicial === 0) {
             wrapper.classList.add('d-none');
+            if (summaryEl) summaryEl.classList.add('d-none');
             empty.classList.remove('d-none');
             empty.innerHTML = '<i class="bi bi-info-circle" style="font-size: 1.5rem; opacity: 0.5;"></i><p class="small mt-2 mb-0">No hay movimientos registrados en este período.</p>';
             return;
+        }
+
+        // Summary del período
+        const totalDebe = rows.reduce((acc, r) => acc + (Number(r.debe) || 0), 0);
+        const totalHaber = rows.reduce((acc, r) => acc + (Number(r.haber) || 0), 0);
+        const saldoFinal = rows.length ? (Number(rows[rows.length - 1].saldo) || saldoInicial) : saldoInicial;
+        if (summaryEl) {
+            const saldoClass = saldoFinal > 0 ? 'text-danger' : (saldoFinal < 0 ? 'text-success' : 'text-muted');
+            summaryEl.innerHTML = `
+                <div class="col-md-3">
+                    <div class="card border-0 bg-light">
+                        <div class="card-body py-2">
+                            <div class="text-muted small fw-bold">Saldo anterior</div>
+                            <div class="fw-bold">${formatCurrency(saldoInicial)}</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card border-0 bg-light">
+                        <div class="card-body py-2">
+                            <div class="text-muted small fw-bold">Facturado</div>
+                            <div class="fw-bold text-danger">${formatCurrency(totalDebe)}</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card border-0 bg-light">
+                        <div class="card-body py-2">
+                            <div class="text-muted small fw-bold">Cobrado</div>
+                            <div class="fw-bold text-success">${formatCurrency(totalHaber)}</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card border-0 bg-light">
+                        <div class="card-body py-2">
+                            <div class="text-muted small fw-bold">Saldo final</div>
+                            <div class="fw-bold ${saldoClass}">${formatCurrency(saldoFinal)}</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            summaryEl.classList.remove('d-none');
         }
 
         // Fila de saldo inicial

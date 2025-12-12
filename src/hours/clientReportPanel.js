@@ -4,6 +4,7 @@
 var ClientReportPanel = (function () {
     const containerId = 'client-report-panel';
     let lastRows = [];
+    const clientIdMap = new Map();
 
     function render() {
         const container = document.getElementById(containerId);
@@ -98,9 +99,9 @@ var ClientReportPanel = (function () {
                             </div>
                         </div>
                         <div class="card-body p-0">
-                            <div class="table-responsive">
+                            <div class="table-responsive lt-table-wrap">
                                 <table class="table table-sm mb-0 align-middle table-striped" style="font-size: 0.85rem;">
-                                    <thead class="bg-light text-muted">
+                                    <thead class="table-light text-muted">
                                         <tr>
                                             <th class="ps-3 border-0 font-weight-normal">Empleado</th>
                                             <th class="text-center border-0 font-weight-normal">Horas</th>
@@ -115,9 +116,9 @@ var ClientReportPanel = (function () {
                     </div>
 
                     <div id="client-report-results" class="d-none">
-                        <div class="table-responsive border rounded">
+                        <div class="table-responsive lt-table-wrap">
                             <table class="table table-hover table-sm align-middle mb-0" style="font-size: 0.85rem;">
-                                <thead class="bg-light">
+                                <thead class="table-light">
                                     <tr>
                                         <th class="ps-3 py-2 text-muted font-weight-normal">Fecha</th>
                                         <th class="py-2 text-muted font-weight-normal">Empleado</th>
@@ -174,6 +175,7 @@ var ClientReportPanel = (function () {
 
         datalist.innerHTML = '';
         input.value = '';
+        clientIdMap.clear();
 
         if (typeof ReferenceService === 'undefined' || !ReferenceService.load) {
             console.warn('ReferenceService no disponible');
@@ -212,10 +214,29 @@ var ClientReportPanel = (function () {
             .filter(item => item.label)
             .sort((a, b) => a.label.localeCompare(b.label, 'es'))
             .forEach(item => {
+                const raw = item.raw;
+                const id = raw && typeof raw === 'object' && raw.id != null ? String(raw.id) : '';
+                if (id) {
+                    clientIdMap.set(item.label, id);
+                    clientIdMap.set(cleanClientValue(item.label), id);
+                    if (raw.razonSocial) clientIdMap.set(String(raw.razonSocial).trim(), id);
+                    if (raw.nombre) clientIdMap.set(String(raw.nombre).trim(), id);
+                }
                 const opt = document.createElement('option');
                 opt.value = item.label;
                 datalist.appendChild(opt);
             });
+    }
+
+    function cleanClientValue(raw) {
+        if (!raw) return '';
+        const idx = raw.indexOf('(');
+        return idx > 0 ? raw.slice(0, idx).trim() : raw.trim();
+    }
+
+    function getClientIdFromLabel(label) {
+        if (!label) return '';
+        return clientIdMap.get(label) || clientIdMap.get(cleanClientValue(label)) || '';
     }
 
     function getFilters() {
@@ -238,7 +259,10 @@ var ClientReportPanel = (function () {
         }
 
         toggleLoading(true);
-        ApiService.call('getHoursByClient', filters.start, filters.end, filters.client)
+        const clientRaw = filters.client;
+        const idCliente = getClientIdFromLabel(clientRaw);
+        const clientClean = cleanClientValue(clientRaw);
+        ApiService.call('getHoursByClient', filters.start, filters.end, clientClean, idCliente)
             .then(res => {
                 const rows = res && res.rows ? res.rows : [];
                 const summary = res && res.summary ? res.summary : {};
@@ -273,7 +297,7 @@ var ClientReportPanel = (function () {
         }
 
         UiState && UiState.setGlobalLoading(true, 'Generando PDF...');
-        ApiService.call('generateClientHoursPdf', filters.start, filters.end, filters.client)
+        ApiService.call('generateClientHoursPdf', filters.start, filters.end, cleanClientValue(filters.client))
             .then(res => {
                 if (!res || !res.base64) throw new Error('No se pudo generar PDF');
                 const link = document.createElement('a');

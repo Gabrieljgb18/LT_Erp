@@ -3,6 +3,53 @@
  */
 var AccountController = (function () {
 
+    function normalizeHeaderKey_(val) {
+        return String(val || '')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toUpperCase()
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    function getIdx_(colMap, keys) {
+        for (let i = 0; i < keys.length; i++) {
+            const k = normalizeHeaderKey_(keys[i]);
+            if (colMap[k] !== undefined) return colMap[k];
+        }
+        return -1;
+    }
+
+    function toStartOfDay_(d) {
+        if (!d) return null;
+        const dt = new Date(d);
+        if (isNaN(dt.getTime())) return null;
+        dt.setHours(0, 0, 0, 0);
+        return dt;
+    }
+
+    function toEndOfDay_(d) {
+        if (!d) return null;
+        const dt = new Date(d);
+        if (isNaN(dt.getTime())) return null;
+        dt.setHours(23, 59, 59, 999);
+        return dt;
+    }
+
+    function toNumber_(val) {
+        if (val == null || val === '') return 0;
+        if (typeof val === 'number') return isNaN(val) ? 0 : val;
+        const s = String(val).trim();
+        if (!s) return 0;
+        const cleaned = s
+            .replace(/\s/g, '')
+            .replace(/[^\d.,-]/g, '')
+            .replace(/\./g, '')
+            .replace(',', '.');
+        const n = Number(cleaned);
+        return isNaN(n) ? 0 : n;
+    }
+
     function logToSheet(msg) {
         try {
             const ss = DatabaseService.getDbSpreadsheet();
@@ -175,10 +222,13 @@ var AccountController = (function () {
         const filter = normalizeClientFilter_(clientName, idCliente);
         if (!filter.clientName && !filter.idCliente) return { saldoInicial: 0, movimientos: [] };
 
-        const startDate = parseDateFlexible_(startDateStr);
-        const endDate = parseDateFlexible_(endDateStr);
+        const startDate = toStartOfDay_(parseDateFlexible_(startDateStr));
+        const endDate = toEndOfDay_(parseDateFlexible_(endDateStr));
 
         if (!startDate || !endDate) {
+            return { saldoInicial: 0, movimientos: [] };
+        }
+        if (endDate < startDate) {
             return { saldoInicial: 0, movimientos: [] };
         }
 
@@ -212,12 +262,17 @@ var AccountController = (function () {
         const filter = normalizeClientFilter_(clientName, idCliente);
         if ((!filter.clientName && !filter.idCliente) || !beforeDate) return 0;
 
+        // End exclusive: el saldo inicial debe ser estrictamente "antes" del inicio del período
+        const beforeStart = toStartOfDay_(parseDateFlexible_(beforeDate));
+        if (!beforeStart) return 0;
+        const endExclusive = new Date(beforeStart.getTime() - 1);
+
         // Calcular débitos (facturas) antes de la fecha
-        const debitosAnteriores = getClientDebits(filter, null, beforeDate);
+        const debitosAnteriores = getClientDebits(filter, null, endExclusive);
         const totalDebitos = debitosAnteriores.reduce((sum, item) => sum + item.debe, 0);
 
         // Calcular créditos (pagos) antes de la fecha
-        const creditosAnteriores = getClientPayments(filter, null, beforeDate);
+        const creditosAnteriores = getClientPayments(filter, null, endExclusive);
         const totalCreditos = creditosAnteriores.reduce((sum, item) => sum + item.haber, 0);
 
         return totalDebitos - totalCreditos;
@@ -252,35 +307,37 @@ var AccountController = (function () {
             return [];
         }
 
-        const headers = data[0].map(h => String(h || '').trim().toUpperCase());
+        const headers = data[0];
         const rows = data.slice(1);
 
-        const idxIdCliente = headers.indexOf('ID_CLIENTE');
-        const idxCliente = headers.indexOf('RAZÓN SOCIAL');
-        const idxFecha = headers.indexOf('FECHA');
-        const idxPeriodo = headers.indexOf('PERIODO');
-        const idxNum = headers.indexOf('NUMERO');
-        const idxComp = headers.indexOf('COMPROBANTE');
-        const idxTotal = headers.indexOf('TOTAL');
-        const idxImporte = headers.indexOf('IMPORTE');
-        const idxSubtotal = headers.indexOf('SUBTOTAL');
-        const idxId = headers.indexOf('ID');
+        const colMap = {};
+        headers.forEach((h, i) => { colMap[normalizeHeaderKey_(h)] = i; });
+
+        const idxIdCliente = getIdx_(colMap, ['ID_CLIENTE', 'ID CLIENTE']);
+        const idxCliente = getIdx_(colMap, ['RAZÓN SOCIAL', 'RAZON SOCIAL', 'CLIENTE']);
+        const idxFecha = getIdx_(colMap, ['FECHA']);
+        const idxPeriodo = getIdx_(colMap, ['PERIODO']);
+        const idxNum = getIdx_(colMap, ['NUMERO', 'NÚMERO']);
+        const idxComp = getIdx_(colMap, ['COMPROBANTE']);
+        const idxTotal = getIdx_(colMap, ['TOTAL']);
+        const idxImporte = getIdx_(colMap, ['IMPORTE']);
+        const idxSubtotal = getIdx_(colMap, ['SUBTOTAL']);
+        const idxId = getIdx_(colMap, ['ID']);
+        const idxEstado = getIdx_(colMap, ['ESTADO']);
 
         if (idxFecha === -1) return [];
 
         const targetId = filter.idCliente || getClientId_(filter.clientName);
         const targetClient = normalizeClientName_(filter.clientName);
-        const adjustedEndDate = endDate ? new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 23, 59, 59) : null;
+        const from = toStartOfDay_(startDate);
+        const to = toEndOfDay_(endDate);
 
         return rows.map(row => {
             const fecha = parseDateFlexible_(row[idxFecha]);
             if (!fecha || isNaN(fecha.getTime())) return null;
 
-            if (startDate && adjustedEndDate) {
-                if (fecha < startDate || fecha > adjustedEndDate) return null;
-            } else if (adjustedEndDate && !startDate) {
-                if (fecha >= adjustedEndDate) return null;
-            }
+            if (from && fecha < from) return null;
+            if (to && fecha > to) return null;
 
             let matches = false;
             if (targetId && idxIdCliente > -1) {
@@ -294,9 +351,12 @@ var AccountController = (function () {
             }
             if (!matches) return null;
 
-            const monto = idxTotal > -1 ? Number(row[idxTotal]) || 0
-                : idxImporte > -1 ? Number(row[idxImporte]) || 0
-                    : idxSubtotal > -1 ? Number(row[idxSubtotal]) || 0
+            const estado = idxEstado > -1 ? String(row[idxEstado] || '').trim() : '';
+            if (estado && String(estado).toLowerCase() === 'anulada') return null;
+
+            const monto = idxTotal > -1 ? toNumber_(row[idxTotal])
+                : idxImporte > -1 ? toNumber_(row[idxImporte])
+                    : idxSubtotal > -1 ? toNumber_(row[idxSubtotal])
                         : 0;
 
             const periodo = idxPeriodo > -1 ? row[idxPeriodo] : '';
@@ -316,7 +376,8 @@ var AccountController = (function () {
                 tipo: 'FACTURA',
                 idFactura: idxId > -1 ? row[idxId] : '',
                 facturaNumero: numero || '',
-                periodo: periodo || ''
+                periodo: periodo || '',
+                estado: estado || ''
             };
         }).filter(Boolean);
     }
@@ -341,13 +402,15 @@ var AccountController = (function () {
         if (lastRow < 2) return [];
 
         const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-        const idxFecha = headers.indexOf('FECHA');
-        const idxCliente = headers.indexOf('RAZÓN SOCIAL');
-        const idxIdCliente = headers.indexOf('ID_CLIENTE');
-        const idxMonto = headers.indexOf('MONTO');
-        const idxDet = headers.indexOf('DETALLE');
-        const idxFactura = headers.indexOf('ID_FACTURA');
-        const idxFacturaNum = headers.indexOf('FACTURA_NUMERO');
+        const colMap = {};
+        headers.forEach((h, i) => { colMap[normalizeHeaderKey_(h)] = i; });
+        const idxFecha = getIdx_(colMap, ['FECHA']);
+        const idxCliente = getIdx_(colMap, ['RAZÓN SOCIAL', 'RAZON SOCIAL', 'CLIENTE']);
+        const idxIdCliente = getIdx_(colMap, ['ID_CLIENTE', 'ID CLIENTE']);
+        const idxMonto = getIdx_(colMap, ['MONTO']);
+        const idxDet = getIdx_(colMap, ['DETALLE', 'OBSERVACIONES']);
+        const idxFactura = getIdx_(colMap, ['ID_FACTURA', 'ID FACTURA']);
+        const idxFacturaNum = getIdx_(colMap, ['FACTURA_NUMERO', 'FACTURA NÚMERO']);
 
         if (idxFecha === -1 || idxMonto === -1) return [];
 
@@ -355,17 +418,15 @@ var AccountController = (function () {
         const targetClient = normalizeClientName_(filter.clientName);
         const targetId = filter.idCliente || getClientId_(filter.clientName);
 
-        const adjustedEndDate = endDate ? new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 23, 59, 59) : null;
+        const from = toStartOfDay_(startDate);
+        const to = toEndOfDay_(endDate);
 
         return data.map(row => {
             const fecha = parseDateFlexible_(row[idxFecha]);
             if (!fecha || isNaN(fecha.getTime())) return null;
 
-            if (startDate && adjustedEndDate) {
-                if (fecha < startDate || fecha > adjustedEndDate) return null;
-            } else if (adjustedEndDate && !startDate) {
-                if (fecha >= adjustedEndDate) return null;
-            }
+            if (from && fecha < from) return null;
+            if (to && fecha > to) return null;
 
             let matches = false;
             if (targetId && idxIdCliente > -1) {
@@ -379,7 +440,7 @@ var AccountController = (function () {
             }
             if (!matches) return null;
 
-            const monto = Number(row[idxMonto]) || 0;
+            const monto = toNumber_(row[idxMonto]);
             const idFactura = idxFactura > -1 ? row[idxFactura] : '';
             const facturaNum = idxFacturaNum > -1 ? row[idxFacturaNum] : '';
             const det = idxDet > -1 ? row[idxDet] : '';
@@ -466,6 +527,15 @@ var AccountController = (function () {
                 const d = Number(m[1]);
                 const mo = Number(m[2]) - 1;
                 const y = Number(m[3]);
+                const dt = new Date(y, mo, d);
+                if (!isNaN(dt.getTime())) return dt;
+            }
+            // Soportar yyyy-mm-dd (input date)
+            const m2 = val.match(/^(\d{4})-(\d{2})-(\d{2})/);
+            if (m2) {
+                const y = Number(m2[1]);
+                const mo = Number(m2[2]) - 1;
+                const d = Number(m2[3]);
                 const dt = new Date(y, mo, d);
                 if (!isNaN(dt.getTime())) return dt;
             }

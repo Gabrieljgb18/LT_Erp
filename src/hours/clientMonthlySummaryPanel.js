@@ -36,9 +36,9 @@ var ClientMonthlySummaryPanel = (function () {
                         <i class="bi bi-calendar-x" style="font-size: 1.5rem; opacity: 0.5;"></i>
                         <p class="small mt-2 mb-0">Sin datos para el mes seleccionado.</p>
                     </div>
-                    <div class="table-responsive border rounded d-none" id="cms-table-wrapper">
+                    <div class="table-responsive lt-table-wrap d-none" id="cms-table-wrapper">
                         <table class="table table-hover table-sm align-middle mb-0" style="font-size: 0.85rem;">
-                            <thead class="bg-light">
+                            <thead class="table-light">
                                 <tr>
                                     <th class="ps-3 py-2 text-muted font-weight-normal">Cliente</th>
                                     <th class="text-center py-2 text-muted font-weight-normal">Horas</th>
