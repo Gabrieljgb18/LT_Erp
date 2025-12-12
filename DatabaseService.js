@@ -209,8 +209,16 @@ var DatabaseService = (function () {
    */
   function getClientHourlyRate(clientName) {
     if (!clientName) return 0;
-    const ss = getDbSpreadsheet();
-    const sheet = ss.getSheetByName('CLIENTES');
+    let sheet = null;
+    try {
+      sheet = getDbSheetForFormat('CLIENTES'); // CLIENTES_DB
+    } catch (e) {
+      sheet = null;
+    }
+    if (!sheet) {
+      const ss = getDbSpreadsheet();
+      sheet = ss.getSheetByName('CLIENTES_DB') || ss.getSheetByName('CLIENTES');
+    }
     if (!sheet) return 0;
 
     const lastRow = sheet.getLastRow();

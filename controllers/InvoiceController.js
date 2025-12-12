@@ -9,9 +9,6 @@ var InvoiceController = (function () {
     /**
      * Obtiene facturas filtradas
      */
-    /**
-     * Obtiene facturas filtradas
-     */
     function getInvoices(filters) {
         filters = filters || {};
         const sheet = DatabaseService.getDbSheetForFormat(FORMAT_ID);
@@ -111,6 +108,8 @@ var InvoiceController = (function () {
      * Crea una nueva factura
      */
     function createInvoice(data) {
+        data = data || {};
+        applyTotals_(data);
         return RecordController.saveRecord(FORMAT_ID, data);
     }
 
@@ -118,6 +117,8 @@ var InvoiceController = (function () {
      * Actualiza una factura
      */
     function updateInvoice(id, data) {
+        data = data || {};
+        applyTotals_(data);
         return RecordController.updateRecord(FORMAT_ID, id, data);
     }
 
@@ -172,6 +173,7 @@ var InvoiceController = (function () {
             'OBSERVACIONES': (extra && extra.observaciones) || ''
         };
 
+        applyTotals_(record);
         const id = RecordController.saveRecord(FORMAT_ID, record);
         return { id: id, record: record };
     }
@@ -276,6 +278,88 @@ var InvoiceController = (function () {
             .trim();
     }
 
+    function round2_(n) {
+        const num = Number(n);
+        if (isNaN(num)) return 0;
+        return Math.round(num * 100) / 100;
+    }
+
+    /**
+     * Lee el IVA desde CONFIG_DB. Se acepta 21 o 0.21.
+     * @returns {number} IVA en formato fracción (ej 0.21)
+     */
+    function getIvaPct_() {
+        const config = DatabaseService.getConfig ? DatabaseService.getConfig() : {};
+        const raw = config['IVA_PORCENTAJE'] != null ? config['IVA_PORCENTAJE'] : config['IVA'];
+        if (raw == null || raw === '') return 0.21;
+        const cleaned = String(raw).replace('%', '').trim();
+        const n = Number(cleaned);
+        if (isNaN(n)) return 0.21;
+        return n > 1 ? n / 100 : n;
+    }
+
+    /**
+     * Calcula IMPORTE, SUBTOTAL y TOTAL según HORAS, VALOR HORA e IVA.
+     */
+    function applyTotals_(record) {
+        if (!record) return;
+        const horasRaw = record['HORAS'];
+        const valorHoraRaw = record['VALOR HORA'];
+        const horas = Number(horasRaw);
+        const valorHora = Number(valorHoraRaw);
+        let subtotal = null;
+
+        const hasHoras = horasRaw !== undefined && horasRaw !== null && horasRaw !== '';
+        const hasValorHora = valorHoraRaw !== undefined && valorHoraRaw !== null && valorHoraRaw !== '';
+
+        if (hasHoras && hasValorHora && !isNaN(horas) && !isNaN(valorHora)) {
+            subtotal = horas * valorHora;
+        } else {
+            const impRaw = record['IMPORTE'];
+            if (impRaw !== undefined && impRaw !== null && impRaw !== '') {
+                const imp = Number(impRaw);
+                if (!isNaN(imp)) subtotal = imp;
+            }
+        }
+
+        if (subtotal == null) return;
+        subtotal = round2_(subtotal);
+        const ivaPct = getIvaPct_();
+        const total = round2_(subtotal * (1 + ivaPct));
+
+        record['IMPORTE'] = subtotal;
+        record['SUBTOTAL'] = subtotal;
+        record['TOTAL'] = total;
+    }
+
+    function sameDate_(a, b) {
+        if (!a || !b) return false;
+        return a.getFullYear() === b.getFullYear() &&
+            a.getMonth() === b.getMonth() &&
+            a.getDate() === b.getDate();
+    }
+
+    /**
+     * Construye etiqueta de período.
+     * - Si cubre el mes completo: yyyy-MM
+     * - Si no: yyyy-MM-dd a yyyy-MM-dd
+     */
+    function buildPeriodoLabel_(start, end) {
+        if (!start || !end) return '';
+        const tz = Session.getScriptTimeZone();
+        const sameMonth = start.getFullYear() === end.getFullYear() && start.getMonth() === end.getMonth();
+        if (sameMonth) {
+            const firstDay = new Date(start.getFullYear(), start.getMonth(), 1);
+            const lastDay = new Date(start.getFullYear(), start.getMonth() + 1, 0);
+            if (sameDate_(start, firstDay) && sameDate_(end, lastDay)) {
+                return Utilities.formatDate(start, tz, 'yyyy-MM');
+            }
+        }
+        const s = Utilities.formatDate(start, tz, 'yyyy-MM-dd');
+        const e = Utilities.formatDate(end, tz, 'yyyy-MM-dd');
+        return s === e ? s : (s + ' a ' + e);
+    }
+
     function existsInvoiceForPeriod_(clienteData, periodoLabel) {
         const sheet = DatabaseService.getDbSheetForFormat(FORMAT_ID);
         const lastRow = sheet.getLastRow();
@@ -312,15 +396,22 @@ var InvoiceController = (function () {
      * En este caso usamos borrar físico, pero podría ser cambio de estado
      */
     function deleteInvoice(id) {
-        // Opción: Borrar físico
-        return RecordController.deleteRecord(FORMAT_ID, id);
+        const sheet = DatabaseService.getDbSheetForFormat(FORMAT_ID);
+        const rowNumber = DatabaseService.findRowById(sheet, id);
+        if (!rowNumber) {
+            throw new Error('Registro con ID ' + id + ' no encontrado');
+        }
 
-        // Opción: Marcar como anulada (comentado)
-        // const record = getInvoiceById(id);
-        // if (record) {
-        //     record['ESTADO'] = 'Anulada';
-        //     return updateInvoice(id, record);
-        // }
+        const lastCol = sheet.getLastColumn();
+        const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+        const idxEstado = headers.indexOf('ESTADO');
+        if (idxEstado === -1) {
+            // fallback a borrado físico si no hay estado
+            return RecordController.deleteRecord(FORMAT_ID, id);
+        }
+
+        sheet.getRange(rowNumber, idxEstado + 1).setValue('Anulada');
+        return true;
     }
 
     function generateInvoicePdf(id) {
@@ -358,6 +449,9 @@ var InvoiceController = (function () {
             asistencia = [];
         }
 
+        const ivaPct = getIvaPct_();
+        const ivaLabel = (ivaPct * 100).toFixed(2).replace(/\.00$/, '') + '%';
+
         const style = `
             <style>
                 body { font-family: 'Inter', sans-serif; color: #0f172a; padding: 32px; }
@@ -392,6 +486,7 @@ var InvoiceController = (function () {
                     <div><strong>Fecha:</strong> ${inv['FECHA'] || '-'}</div>
                     <div><strong>Periodo:</strong> ${inv['PERIODO'] || '-'}</div>
                     <div><strong>Comprobante:</strong> ${inv['COMPROBANTE'] || '-'}</div>
+                    <div><strong>IVA:</strong> ${ivaLabel}</div>
                     <div><strong>Estado:</strong> <span class="badge">${inv['ESTADO'] || '-'}</span></div>
                 </div>
                 <table>

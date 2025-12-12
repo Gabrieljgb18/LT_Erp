@@ -128,6 +128,14 @@ function saveWeeklyPlanForClient(cliente, items, originalVigencia) {
 function applyMassValues(payload) {
   return BulkValuesController.applyMassValues(payload);
 }
+
+/**
+ * Devuelve configuración general (CONFIG_DB)
+ */
+function getConfig() {
+  return DatabaseService.getConfig ? DatabaseService.getConfig() : {};
+}
+
 /**
  * Obtiene el detalle de horas filtrado
  */

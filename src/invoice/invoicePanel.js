@@ -11,6 +11,7 @@ var InvoicePanel = (function () {
     const clientIdMap = new Map();
     let selectedInvoiceIds = new Set();
     let lastSavedInvoiceId = null;
+    let ivaPct = 0.21; // fracción, default 21%
     let invoicePage = 1;
     let generatorPage = 1;
 
@@ -340,6 +341,7 @@ var InvoicePanel = (function () {
 
         attachEvents();
         loadClients();
+        loadIvaConfig();
     }
 
     function attachEvents() {
@@ -370,21 +372,11 @@ var InvoicePanel = (function () {
         const selectAll = document.getElementById('invoice-select-all');
         if (selectAll) selectAll.addEventListener('change', (e) => toggleSelectAll(e.target.checked));
 
-        // Auto-calcular importe cuando cambian horas o valor hora
+        // Auto-calcular importes cuando cambian horas o valor hora
         const horasInput = document.getElementById('invoice-horas');
         const valorHoraInput = document.getElementById('invoice-valor-hora');
-        const importeInput = document.getElementById('invoice-importe');
-
-        if (horasInput && valorHoraInput && importeInput) {
-            const calcularImporte = () => {
-                const horas = Number(horasInput.value) || 0;
-                const valorHora = Number(valorHoraInput.value) || 0;
-                importeInput.value = (horas * valorHora).toFixed(2);
-            };
-
-            horasInput.addEventListener('input', calcularImporte);
-            valorHoraInput.addEventListener('input', calcularImporte);
-        }
+        if (horasInput) horasInput.addEventListener('input', recalculateTotals_);
+        if (valorHoraInput) valorHoraInput.addEventListener('input', recalculateTotals_);
 
         // Auto-completar CUIT cuando se selecciona cliente
         const razonSocialInput = document.getElementById('invoice-razon-social');
@@ -775,7 +767,49 @@ var InvoicePanel = (function () {
 
         // Completar CUIT e ID si existe en referencias
         autocompleteCUIT();
+        if (!invoiceData || !invoiceData.ID) {
+            recalculateTotals_();
+        }
         modal.show();
+    }
+
+    function parseIvaPctFromConfig_(config) {
+        if (!config) return 0.21;
+        const raw = config['IVA_PORCENTAJE'] != null ? config['IVA_PORCENTAJE'] : config['IVA'];
+        if (raw == null || raw === '') return 0.21;
+        const cleaned = String(raw).replace('%', '').trim();
+        const n = Number(cleaned);
+        if (isNaN(n)) return 0.21;
+        return n > 1 ? n / 100 : n;
+    }
+
+    function loadIvaConfig() {
+        if (!ApiService || !ApiService.call) return;
+        ApiService.call('getConfig')
+            .then(cfg => {
+                ivaPct = parseIvaPctFromConfig_(cfg);
+                recalculateTotals_();
+            })
+            .catch(() => { /* usar default */ });
+    }
+
+    function recalculateTotals_() {
+        const horasInput = document.getElementById('invoice-horas');
+        const valorHoraInput = document.getElementById('invoice-valor-hora');
+        const importeInput = document.getElementById('invoice-importe');
+        const subtotalInput = document.getElementById('invoice-subtotal');
+        const totalInput = document.getElementById('invoice-total');
+        if (!horasInput || !valorHoraInput) return;
+
+        const horas = Number(horasInput.value) || 0;
+        const valorHora = Number(valorHoraInput.value) || 0;
+        const subtotal = horas * valorHora;
+        const subtotalFixed = (isNaN(subtotal) ? 0 : subtotal).toFixed(2);
+        const totalFixed = (subtotal * (1 + ivaPct)).toFixed(2);
+
+        if (importeInput) importeInput.value = subtotalFixed;
+        if (subtotalInput) subtotalInput.value = subtotalFixed;
+        if (totalInput) totalInput.value = totalFixed;
     }
 
     function handleSave() {

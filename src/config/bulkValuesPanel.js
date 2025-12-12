@@ -38,6 +38,10 @@ var BulkValuesPanel = (function () {
                             <label class="form-label small text-muted fw-semibold">Presentismo jornada completa</label>
                             <input type="number" step="0.01" class="form-control" id="bulk-pres-full" placeholder="Ej: 1500">
                         </div>
+                        <div class="col-md-3">
+                            <label class="form-label small text-muted fw-semibold">IVA (%)</label>
+                            <input type="number" step="0.01" class="form-control" id="bulk-iva" placeholder="Ej: 21">
+                        </div>
                     </div>
 
                     <div class="d-flex justify-content-end mt-4">
@@ -61,7 +65,8 @@ var BulkValuesPanel = (function () {
             valorHoraCliente: getInputValue('bulk-valor-hora-cli'),
             viaticos: getInputValue('bulk-viaticos'),
             presentismoMedia: getInputValue('bulk-pres-media'),
-            presentismoCompleta: getInputValue('bulk-pres-full')
+            presentismoCompleta: getInputValue('bulk-pres-full'),
+            ivaPorcentaje: getInputValue('bulk-iva')
         };
 
         UiState && UiState.setGlobalLoading(true, 'Aplicando valores...');
