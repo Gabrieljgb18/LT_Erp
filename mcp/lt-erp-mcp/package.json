@@ -1,0 +1,20 @@
+{
+  "name": "lt-erp-mcp",
+  "version": "1.0.0",
+  "description": "Servidor MCP para exponer recursos y herramientas del proyecto LT_ERP.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test.js"
+  },
+  "keywords": [
+    "mcp",
+    "lt_erp",
+    "apps-script"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.23.0"
+  }
+}
