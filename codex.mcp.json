@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "lt-erp": {
+      "command": "node",
+      "args": ["server.js"],
+      "cwd": "./mcp/lt-erp-mcp"
+    }
+  }
+}
