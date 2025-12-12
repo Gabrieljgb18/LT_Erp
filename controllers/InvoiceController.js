@@ -53,9 +53,15 @@ var InvoiceController = (function () {
 
             // 1. Filter Logic (on RAW values)
 
-            // Client (ID-first)
+            // Client (ID-first, con fallback por nombre si la fila no tiene ID_CLIENTE)
             if (searchIdCliente && idxIdCliente > -1) {
-                if (String(row[idxIdCliente] || '').trim() !== searchIdCliente) continue;
+                const rowIdCliente = String(row[idxIdCliente] || '').trim();
+                if (rowIdCliente !== searchIdCliente) {
+                    // Facturas legacy pueden no tener ID_CLIENTE: si hay cliente, matchear por nombre.
+                    if (!(rowIdCliente === '' && searchClient && idxCliente > -1)) continue;
+                    const cliNorm = normalizeClientSearch_(row[idxCliente] || '');
+                    if (cliNorm.indexOf(searchClient) === -1) continue;
+                }
             } else if (searchClient && idxCliente > -1) {
                 const cliNorm = normalizeClientSearch_(row[idxCliente] || '');
                 if (cliNorm.indexOf(searchClient) === -1) continue;
