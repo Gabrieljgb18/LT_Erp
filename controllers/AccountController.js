@@ -291,7 +291,7 @@ var AccountController = (function () {
         const to = toEndOfDay_(endDate);
 
         // Reutilizar el filtro/normalización de InvoiceController para consistencia con el módulo Facturación
-        const invoices = (typeof InvoiceController !== 'undefined' && InvoiceController.getInvoices)
+        let invoices = (typeof InvoiceController !== 'undefined' && InvoiceController.getInvoices)
             ? InvoiceController.getInvoices({
                 cliente: filter.clientName,
                 idCliente: filter.idCliente,
@@ -299,6 +299,18 @@ var AccountController = (function () {
                 fechaHasta: to
             })
             : [];
+
+        // Fallback: si el rango no devuelve nada (por parsing de fechas), traer todo y filtrar acá.
+        if ((!invoices || !invoices.length) && (from || to) && (typeof InvoiceController !== 'undefined' && InvoiceController.getInvoices)) {
+            const all = InvoiceController.getInvoices({ cliente: filter.clientName, idCliente: filter.idCliente }) || [];
+            invoices = all.filter(inv => {
+                const f = parseDateFlexible_(inv && inv['FECHA']);
+                if (!f || isNaN(f.getTime())) return false;
+                if (from && f < from) return false;
+                if (to && f > to) return false;
+                return true;
+            });
+        }
 
         return (invoices || []).map(inv => {
             const estado = String(inv['ESTADO'] || '').trim();
