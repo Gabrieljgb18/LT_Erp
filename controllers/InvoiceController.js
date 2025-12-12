@@ -389,6 +389,15 @@ var InvoiceController = (function () {
         return Math.round(num * 100) / 100;
     }
 
+    function escapeHtml_(val) {
+        return String(val == null ? '' : val)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
     /**
      * Lee el IVA desde CONFIG_DB. Se acepta 21 o 0.21.
      * @returns {number} IVA en formato fracción (ej 0.21)
@@ -573,10 +582,10 @@ var InvoiceController = (function () {
 
         const asistenciaRows = asistencia.map(r => `
             <tr>
-                <td>${r.fecha || ''}</td>
-                <td>${r.empleado || ''}</td>
-                <td>${r.horas || ''}</td>
-                <td>${r.observaciones || ''}</td>
+                <td>${escapeHtml_(r.fecha || '')}</td>
+                <td>${escapeHtml_(r.empleado || '')}</td>
+                <td>${escapeHtml_(r.horas || '')}</td>
+                <td>${escapeHtml_(r.observaciones || '')}</td>
             </tr>
         `).join('');
 
@@ -584,15 +593,15 @@ var InvoiceController = (function () {
             <!DOCTYPE html>
             <html><head>${style}</head>
             <body>
-                <h1>Factura ${inv['NUMERO'] || ''}</h1>
+                <h1>Factura ${escapeHtml_(inv['NUMERO'] || '')}</h1>
                 <div class="meta">
-                    <div><strong>Cliente:</strong> ${inv['RAZÓN SOCIAL'] || '-'}</div>
-                    <div><strong>CUIT:</strong> ${inv['CUIT'] || '-'}</div>
-                    <div><strong>Fecha:</strong> ${inv['FECHA'] || '-'}</div>
-                    <div><strong>Periodo:</strong> ${inv['PERIODO'] || '-'}</div>
-                    <div><strong>Comprobante:</strong> ${inv['COMPROBANTE'] || '-'}</div>
-                    <div><strong>IVA:</strong> ${ivaLabel}</div>
-                    <div><strong>Estado:</strong> <span class="badge">${inv['ESTADO'] || '-'}</span></div>
+                    <div><strong>Cliente:</strong> ${escapeHtml_(inv['RAZÓN SOCIAL'] || '-')}</div>
+                    <div><strong>CUIT:</strong> ${escapeHtml_(inv['CUIT'] || '-')}</div>
+                    <div><strong>Fecha:</strong> ${escapeHtml_(inv['FECHA'] || '-')}</div>
+                    <div><strong>Periodo:</strong> ${escapeHtml_(inv['PERIODO'] || '-')}</div>
+                    <div><strong>Comprobante:</strong> ${escapeHtml_(inv['COMPROBANTE'] || '-')}</div>
+                    <div><strong>IVA:</strong> ${escapeHtml_(ivaLabel)}</div>
+                    <div><strong>Estado:</strong> <span class="badge">${escapeHtml_(inv['ESTADO'] || '-')}</span></div>
                 </div>
                 <table>
                     <thead>
@@ -607,17 +616,17 @@ var InvoiceController = (function () {
                     </thead>
                     <tbody>
                         <tr>
-                            <td>${inv['CONCEPTO'] || 'Servicios profesionales'}</td>
-                            <td>${inv['HORAS'] || '-'}</td>
-                            <td>${inv['VALOR HORA'] || '-'}</td>
-                            <td>${inv['IMPORTE'] || '-'}</td>
-                            <td>${inv['SUBTOTAL'] || '-'}</td>
-                            <td>${inv['TOTAL'] || '-'}</td>
-                        </tr>
-                    </tbody>
-                </table>
-                <div class="total">Total: $ ${inv['TOTAL'] || '0'}</div>
-                <div style="margin-top:20px; color:#64748b;">Observaciones: ${inv['OBSERVACIONES'] || 'N/A'}</div>
+	                            <td>${escapeHtml_(inv['CONCEPTO'] || 'Servicios profesionales')}</td>
+	                            <td>${escapeHtml_(inv['HORAS'] || '-')}</td>
+	                            <td>${escapeHtml_(inv['VALOR HORA'] || '-')}</td>
+	                            <td>${escapeHtml_(inv['IMPORTE'] || '-')}</td>
+	                            <td>${escapeHtml_(inv['SUBTOTAL'] || '-')}</td>
+	                            <td>${escapeHtml_(inv['TOTAL'] || '-')}</td>
+	                        </tr>
+	                    </tbody>
+	                </table>
+	                <div class="total">Total: $ ${escapeHtml_(inv['TOTAL'] || '0')}</div>
+	                <div style="margin-top:20px; color:#64748b;">Observaciones: ${escapeHtml_(inv['OBSERVACIONES'] || 'N/A')}</div>
                 <h3 style="margin-top:32px;">Detalle de asistencia</h3>
                 <table>
                     <thead>
