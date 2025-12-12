@@ -30,7 +30,7 @@ var InvoiceController = (function () {
         // Prepare search terms
         const searchIdClienteRaw = filters.idCliente || filters.ID_CLIENTE || null;
         const searchIdCliente = (searchIdClienteRaw != null && String(searchIdClienteRaw).trim() !== '')
-            ? String(searchIdClienteRaw).trim()
+            ? normalizeIdString_(searchIdClienteRaw)
             : null;
         const searchClient = filters.cliente ? normalizeClientSearch_(filters.cliente) : null;
         const searchPeriod = filters.periodo || null;
@@ -55,7 +55,7 @@ var InvoiceController = (function () {
 
             // Client (ID-first, con fallback por nombre si la fila no tiene ID_CLIENTE)
             if (searchIdCliente && idxIdCliente > -1) {
-                const rowIdCliente = String(row[idxIdCliente] || '').trim();
+                const rowIdCliente = normalizeIdString_(row[idxIdCliente]);
                 if (rowIdCliente !== searchIdCliente) {
                     // Facturas legacy pueden no tener ID_CLIENTE: si hay cliente, matchear por nombre.
                     if (!(rowIdCliente === '' && searchClient && idxCliente > -1)) continue;
@@ -280,7 +280,7 @@ var InvoiceController = (function () {
         const data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
         let totalHoras = 0;
         let totalImporte = 0;
-        const targetId = clienteData.id ? String(clienteData.id) : '';
+        const targetId = normalizeIdString_(clienteData.id);
         const targetNorm = normalize_(clienteData.razonSocial || '');
         const resolveRateAtDate = buildClientRateResolver_(clienteData.razonSocial || '');
 
@@ -290,7 +290,7 @@ var InvoiceController = (function () {
 
             let matches = false;
             if (targetId && idxIdCliente > -1) {
-                matches = String(row[idxIdCliente]) === targetId;
+                matches = normalizeIdString_(row[idxIdCliente]) === targetId;
             }
             if (!matches) {
                 const cliNorm = normalize_(row[idxCliente] || '');
@@ -416,6 +416,14 @@ var InvoiceController = (function () {
             .toLowerCase()
             .replace(/\s+/g, ' ')
             .trim();
+    }
+
+    function normalizeIdString_(val) {
+        if (val == null) return '';
+        const s = String(val).trim();
+        if (!s) return '';
+        if (/^\d+$/.test(s)) return String(Number(s));
+        return s;
     }
 
     function round2_(n) {
@@ -915,7 +923,7 @@ var InvoiceController = (function () {
             const horas = isNaN(horasNum) ? 0 : horasNum;
             if (horas <= 0) return;
 
-            const idCliente = idxIdCliente > -1 ? String(row[idxIdCliente] || '').trim() : '';
+            const idCliente = idxIdCliente > -1 ? normalizeIdString_(row[idxIdCliente]) : '';
             const clienteRaw = String(row[idxCliente] || '').trim();
             const key = idCliente ? ('id:' + idCliente) : ('name:' + normalize_(clienteRaw));
             if (!key || key === 'name:') return;
@@ -975,7 +983,7 @@ var InvoiceController = (function () {
         data.forEach(row => {
             if (!invoiceMatchesMonth_(period, idxPeriodo > -1 ? row[idxPeriodo] : null, idxFecha > -1 ? row[idxFecha] : null)) return;
 
-            const idCliente = idxIdCliente > -1 ? String(row[idxIdCliente] || '').trim() : '';
+            const idCliente = idxIdCliente > -1 ? normalizeIdString_(row[idxIdCliente]) : '';
             const clienteRaw = idxCliente > -1 ? String(row[idxCliente] || '').trim() : '';
             const key = idCliente ? ('id:' + idCliente) : ('name:' + normalize_(clienteRaw));
             if (!key || key === 'name:') return;

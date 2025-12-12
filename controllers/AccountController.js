@@ -12,6 +12,14 @@ var AccountController = (function () {
             .trim();
     }
 
+    function normalizeIdString_(val) {
+        if (val == null) return '';
+        const s = String(val).trim();
+        if (!s) return '';
+        if (/^\d+$/.test(s)) return String(Number(s));
+        return s;
+    }
+
     function getIdx_(colMap, keys) {
         for (let i = 0; i < keys.length; i++) {
             const k = normalizeHeaderKey_(keys[i]);
@@ -256,7 +264,7 @@ var AccountController = (function () {
 
     function getClientId_(clientName) {
         const found = DatabaseService.findClienteByNombreORazon(clientName);
-        return found && found.id ? found.id : '';
+        return found && found.id ? normalizeIdString_(found.id) : '';
     }
 
     function normalizeClientFilter_(clientName, idCliente) {
@@ -264,7 +272,7 @@ var AccountController = (function () {
             idCliente = clientName.idCliente || clientName.ID_CLIENTE || idCliente;
             clientName = clientName.cliente || clientName.clientName || clientName.label || '';
         }
-        const targetId = idCliente != null && idCliente !== '' ? String(idCliente) : '';
+        const targetId = (idCliente != null && idCliente !== '') ? normalizeIdString_(idCliente) : '';
         if (!clientName && targetId && DatabaseService.findClienteById) {
             const cli = DatabaseService.findClienteById(targetId);
             if (cli && (cli.razonSocial || cli.nombre)) {
@@ -357,7 +365,7 @@ var AccountController = (function () {
 
         const data = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
         const targetClient = normalizeClientName_(filter.clientName);
-        const targetId = filter.idCliente || getClientId_(filter.clientName);
+        const targetId = normalizeIdString_(filter.idCliente || getClientId_(filter.clientName));
 
         const from = toStartOfDay_(startDate);
         const to = toEndOfDay_(endDate);
