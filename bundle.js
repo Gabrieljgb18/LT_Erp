@@ -3111,6 +3111,9 @@ var InvoicePanel = (function () {
                 <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
                     <h6 class="mb-0 text-primary fw-bold"><i class="bi bi-receipt me-2"></i>Facturación</h6>
                     <div class="d-flex gap-2">
+                        <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="collapse" data-bs-target="#invoice-history-collapse" aria-expanded="false" aria-controls="invoice-history-collapse">
+                            <i class="bi bi-clock-history me-1"></i>Historial
+                        </button>
                         <button class="btn btn-danger btn-sm" id="invoice-download-selected" disabled>
                             <span id="invoice-download-selected-spinner" class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
                             <span>Descargar PDF</span>
@@ -3120,6 +3123,7 @@ var InvoicePanel = (function () {
                         </button>
                     </div>
                 </div>
+                <div id="invoice-history-collapse" class="collapse">
                 <div class="card-body p-3">
                     <!-- Filtros búsqueda -->
                     <div class="row g-2 mb-3 align-items-end">
@@ -3191,6 +3195,7 @@ var InvoicePanel = (function () {
                         <i class="bi bi-receipt" style="font-size: 1.5rem; opacity: 0.5;"></i>
                         <p class="small mt-2 mb-0">No hay facturas para mostrar. Usá los filtros o creá una nueva factura.</p>
                     </div>
+                </div>
                 </div>
             </div>
 
