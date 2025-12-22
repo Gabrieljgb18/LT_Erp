@@ -5783,11 +5783,11 @@ var ClientAccountPanel = (function () {
                 const select = document.getElementById('cp-factura');
                 if (!select) return;
                 const items = Array.isArray(list) ? list : [];
-                if (!items.length) {
-                    const help = modalEl.querySelector('.form-text');
-                    if (help) {
-                        help.textContent = 'No hay facturas pendientes para vincular. Podés registrar el pago sin factura.';
-                    }
+                const help = modalEl.querySelector('.form-text');
+                if (help) {
+                    help.textContent = items.length
+                        ? (`Facturas pendientes encontradas: ${items.length}.`)
+                        : 'No hay facturas pendientes para vincular. Podés registrar el pago sin factura.';
                 }
                 items.forEach(inv => {
                     const opt = document.createElement('option');
@@ -5809,7 +5809,13 @@ var ClientAccountPanel = (function () {
                     select.appendChild(opt);
                 });
             })
-            .catch(err => console.error('No se pudieron cargar facturas del cliente:', err));
+            .catch(err => {
+                console.error('No se pudieron cargar facturas del cliente:', err);
+                const help = modalEl.querySelector('.form-text');
+                if (help) {
+                    help.textContent = 'Error cargando facturas pendientes: ' + (err && err.message ? err.message : String(err));
+                }
+            });
 
         const saveBtn = document.getElementById('cp-save');
         if (saveBtn) {
