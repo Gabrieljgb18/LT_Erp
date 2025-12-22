@@ -5777,21 +5777,32 @@ var ClientAccountPanel = (function () {
         const modal = new bootstrap.Modal(modalEl);
         modal.show();
 
-        // Cargar facturas del cliente
-        ApiService.call('getClientInvoices', client, idCliente)
+        // Cargar facturas pendientes del cliente (para vincular el pago)
+        ApiService.call('getClientInvoicesForPayment', client, idCliente)
             .then(list => {
                 const select = document.getElementById('cp-factura');
                 if (!select) return;
                 const items = Array.isArray(list) ? list : [];
+                if (!items.length) {
+                    const help = modalEl.querySelector('.form-text');
+                    if (help) {
+                        help.textContent = 'No hay facturas pendientes para vincular. Podés registrar el pago sin factura.';
+                    }
+                }
                 items.forEach(inv => {
                     const opt = document.createElement('option');
                     opt.value = inv.id || '';
-                    const fechaStr = inv.fecha ? new Date(inv.fecha).toLocaleDateString('es-AR') : '';
+                    const fechaStr = inv.fecha ? formatDateDisplay(inv.fecha) : '';
+                    const pendiente = inv.saldo != null ? Number(inv.saldo) : null;
+                    const pendienteStr = (pendiente != null && !isNaN(pendiente) && pendiente > 0)
+                        ? `Pendiente ${formatCurrency(pendiente)}`
+                        : '';
                     const labelParts = [
-                        inv.numero || inv.comprobante || '',
+                        inv.comprobante || 'Factura',
+                        inv.numero || 'S/N',
                         inv.periodo || '',
                         fechaStr,
-                        inv.total ? `Total ${formatCurrency(inv.total)}` : ''
+                        pendienteStr
                     ].filter(Boolean);
                     opt.textContent = labelParts.join(' - ');
                     opt.dataset.numero = inv.numero || '';

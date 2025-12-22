@@ -179,6 +179,13 @@ function getClientInvoices(clientName, idCliente) {
 }
 
 /**
+ * Lista facturas pendientes de cobro (para registrar pago)
+ */
+function getClientInvoicesForPayment(clientName, idCliente) {
+  return AccountController.getClientInvoicesForPayment(clientName, idCliente);
+}
+
+/**
  * Registra un cobro de cliente
  */
 function recordClientPayment(payload) {

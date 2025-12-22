@@ -180,26 +180,90 @@ var AccountController = (function () {
             ? InvoiceController.getInvoices({ cliente: filter.clientName, idCliente: filter.idCliente })
             : [];
 
+        const tz = 'GMT';
         const list = (invoices || []).map(inv => {
             const estado = String(inv['ESTADO'] || '').trim();
             if (estado && estado.toLowerCase() === 'anulada') return null;
             const fecha = parseDateFlexible_(inv['FECHA']);
             return {
-                id: inv.ID != null ? inv.ID : (inv['ID'] || ''),
+                id: inv.ID != null ? String(inv.ID) : String(inv['ID'] || ''),
                 idCliente: inv['ID_CLIENTE'] || '',
-                fecha: fecha || '',
+                fecha: (fecha && !isNaN(fecha.getTime())) ? Utilities.formatDate(fecha, tz, 'yyyy-MM-dd') : '',
                 periodo: inv['PERIODO'] || '',
                 numero: inv['NUMERO'] || '',
                 comprobante: inv['COMPROBANTE'] || '',
-                total: toNumber_(inv['TOTAL'] || inv['SUBTOTAL'] || inv['IMPORTE'] || 0)
+                total: toNumber_(inv['TOTAL'] || inv['SUBTOTAL'] || inv['IMPORTE'] || 0),
+                estado: estado || ''
             };
         }).filter(Boolean);
 
         return list.sort((a, b) => {
-            const fa = a.fecha instanceof Date ? a.fecha.getTime() : 0;
-            const fb = b.fecha instanceof Date ? b.fecha.getTime() : 0;
-            return fb - fa;
+            return String(b.fecha || '').localeCompare(String(a.fecha || ''));
         });
+    }
+
+    function getClientInvoicesForPayment(clientName, idCliente) {
+        const filter = normalizeClientFilter_(clientName, idCliente);
+        if (!filter.clientName && !filter.idCliente) return [];
+
+        const invoices = getInvoicesForClient_(filter, null, null);
+        const payments = getClientPayments(filter, null, null);
+
+        const paidByInvoiceId = new Map();
+        const paidByInvoiceNumber = new Map();
+
+        (payments || []).forEach(p => {
+            const amount = toNumber_(p && p.haber);
+            if (amount <= 0) return;
+
+            const pid = normalizeIdString_(p && p.idFactura);
+            if (pid) {
+                paidByInvoiceId.set(pid, (paidByInvoiceId.get(pid) || 0) + amount);
+            }
+
+            const pnum = String((p && p.facturaNumero) || '').trim();
+            if (pnum) {
+                paidByInvoiceNumber.set(pnum, (paidByInvoiceNumber.get(pnum) || 0) + amount);
+            }
+        });
+
+        const tz = 'GMT';
+        const list = (invoices || []).map(inv => {
+            if (!inv) return null;
+            const estado = String(inv['ESTADO'] || '').trim();
+            if (estado && estado.toLowerCase() === 'anulada') return null;
+            if (estado && estado.toLowerCase() === 'pagada') return null;
+
+            const invId = inv.ID != null ? String(inv.ID) : String(inv['ID'] || '');
+            const invIdNorm = normalizeIdString_(invId);
+            const numero = String(inv['NUMERO'] || '').trim();
+
+            const total = toNumber_(inv['TOTAL'] || inv['SUBTOTAL'] || inv['IMPORTE'] || 0);
+            const paid = (invIdNorm && paidByInvoiceId.get(invIdNorm)) ||
+                (numero && paidByInvoiceNumber.get(numero)) ||
+                0;
+            const saldo = total - paid;
+
+            const fecha = parseDateFlexible_(inv['FECHA']);
+            const fechaStr = (fecha && !isNaN(fecha.getTime())) ? Utilities.formatDate(fecha, tz, 'yyyy-MM-dd') : '';
+
+            return {
+                id: invIdNorm || invId,
+                idCliente: inv['ID_CLIENTE'] || '',
+                fecha: fechaStr,
+                periodo: inv['PERIODO'] || '',
+                numero: numero,
+                comprobante: inv['COMPROBANTE'] || '',
+                total: total,
+                pagado: paid,
+                saldo: saldo,
+                estado: estado || ''
+            };
+        }).filter(Boolean);
+
+        return list
+            .filter(i => (Number(i.saldo) || 0) > 0.009)
+            .sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
     }
 
     function getClientAccountStatement(clientName, startDateStr, endDateStr, idCliente) {
@@ -526,7 +590,72 @@ var AccountController = (function () {
         ];
 
         sheet.appendRow(row);
+
+        // Si el pago está vinculado a una factura, actualizar estado de la factura si quedó saldada.
+        const invoiceId = normalizeIdString_(payload.idFactura || payload.ID_FACTURA || '');
+        if (invoiceId) {
+            tryUpdateInvoiceStatusIfPaid_(invoiceId);
+        }
         return { success: true, id };
+    }
+
+    function tryUpdateInvoiceStatusIfPaid_(invoiceId) {
+        if (!invoiceId) return;
+        const invId = normalizeIdString_(invoiceId);
+        if (!invId) return;
+
+        const invSheet = DatabaseService.getDbSheetForFormat('FACTURACION');
+        const invRowNumber = DatabaseService.findRowById(invSheet, invId);
+        if (!invRowNumber) return;
+
+        const invLastCol = invSheet.getLastColumn();
+        if (!invLastCol) return;
+        const invHeaders = invSheet.getRange(1, 1, 1, invLastCol).getValues()[0];
+        const invColMap = {};
+        invHeaders.forEach((h, i) => { invColMap[normalizeHeaderKey_(h)] = i; });
+        const idxEstado = getIdx_(invColMap, ['ESTADO']);
+        const idxTotal = getIdx_(invColMap, ['TOTAL']);
+        const idxSubtotal = getIdx_(invColMap, ['SUBTOTAL']);
+        const idxImporte = getIdx_(invColMap, ['IMPORTE']);
+        if (idxEstado === -1 || (idxTotal === -1 && idxSubtotal === -1 && idxImporte === -1)) return;
+
+        const invRow = invSheet.getRange(invRowNumber, 1, 1, invLastCol).getValues()[0];
+        const estadoActual = String(invRow[idxEstado] || '').trim();
+        if (estadoActual && estadoActual.toLowerCase() === 'anulada') return;
+        if (estadoActual && estadoActual.toLowerCase() === 'pagada') return;
+
+        const total = (
+            (idxTotal > -1 ? toNumber_(invRow[idxTotal]) : 0) ||
+            (idxSubtotal > -1 ? toNumber_(invRow[idxSubtotal]) : 0) ||
+            (idxImporte > -1 ? toNumber_(invRow[idxImporte]) : 0)
+        );
+        if (total <= 0) return;
+
+        const paySheet = DatabaseService.getDbSheetForFormat('PAGOS_CLIENTES');
+        const payLastRow = paySheet.getLastRow();
+        const payLastCol = paySheet.getLastColumn();
+        if (payLastRow < 2 || payLastCol === 0) return;
+
+        const payHeaders = paySheet.getRange(1, 1, 1, payLastCol).getValues()[0];
+        const payColMap = {};
+        payHeaders.forEach((h, i) => { payColMap[normalizeHeaderKey_(h)] = i; });
+        const idxPayInv = getIdx_(payColMap, ['ID_FACTURA', 'ID FACTURA']);
+        const idxPayMonto = getIdx_(payColMap, ['MONTO']);
+        if (idxPayInv === -1 || idxPayMonto === -1) return;
+
+        const payData = paySheet.getRange(2, 1, payLastRow - 1, payLastCol).getValues();
+        let paid = 0;
+        for (let i = 0; i < payData.length; i++) {
+            const row = payData[i];
+            const pid = normalizeIdString_(row[idxPayInv]);
+            if (pid && pid === invId) {
+                paid += toNumber_(row[idxPayMonto]);
+            }
+        }
+
+        if (paid >= total - 0.01) {
+            invSheet.getRange(invRowNumber, idxEstado + 1).setValue('Pagada');
+        }
     }
 
     function getMonthName(monthIndex) {
@@ -565,6 +694,7 @@ var AccountController = (function () {
         getEmployeeAccountStatement: getEmployeeAccountStatement,
         getClientAccountStatement: getClientAccountStatement,
         recordClientPayment: recordClientPayment,
-        getClientInvoices: getClientInvoices
+        getClientInvoices: getClientInvoices,
+        getClientInvoicesForPayment: getClientInvoicesForPayment
     };
 })();
