@@ -5458,6 +5458,11 @@ var ClientAccountPanel = (function () {
                             <tbody id="client-acc-tbody"></tbody>
                         </table>
                     </div>
+
+                    <details class="mt-2 d-none" id="client-acc-debug">
+                        <summary class="small text-muted">Diagnóstico</summary>
+                        <pre class="small mb-0 mt-2 p-2 bg-light border rounded" id="client-acc-debug-pre" style="white-space: pre-wrap;"></pre>
+                    </details>
                 </div>
             </div>
         `;
@@ -5554,6 +5559,7 @@ var ClientAccountPanel = (function () {
         ApiService.call('getClientAccountStatement', client, startDate, endDate, idCliente)
             .then((data) => {
                 renderTable(data);
+                setDebug({ query: lastQuery, response: data }, false);
                 // Si viene vacío, mostrar diagnóstico mínimo (cuántas facturas encuentra el buscador)
                 const rows = data && data.movimientos ? data.movimientos : [];
                 const saldoInicial = data && typeof data.saldoInicial === 'number' ? data.saldoInicial : 0;
@@ -5566,6 +5572,9 @@ var ClientAccountPanel = (function () {
                                 empty.innerHTML = '<i class="bi bi-info-circle" style="font-size: 1.5rem; opacity: 0.5;"></i>' +
                                     '<p class="small mt-2 mb-1">No hay movimientos registrados en este período.</p>' +
                                     '<div class="small text-muted">Facturas encontradas para este cliente y rango: <strong>' + count + '</strong></div>';
+                            }
+                            if (count > 0) {
+                                setDebug({ query: lastQuery, response: data, invoicesFound: count }, true);
                             }
                         })
                         .catch(() => { /* ignore diagnóstico */ });
@@ -5630,7 +5639,13 @@ var ClientAccountPanel = (function () {
         // Summary del período
         const totalDebe = rows.reduce((acc, r) => acc + (Number(r.debe) || 0), 0);
         const totalHaber = rows.reduce((acc, r) => acc + (Number(r.haber) || 0), 0);
-        const saldoFinal = rows.length ? (Number(rows[rows.length - 1].saldo) || saldoInicial) : saldoInicial;
+
+        let saldoFinal = saldoInicial;
+        if (rows.length > 0) {
+            const lastRowSaldo = rows[rows.length - 1].saldo;
+            saldoFinal = (lastRowSaldo !== undefined && lastRowSaldo !== null) ? Number(lastRowSaldo) : saldoInicial;
+        }
+
         if (summaryEl) {
             const saldoClass = saldoFinal > 0 ? 'text-danger' : (saldoFinal < 0 ? 'text-success' : 'text-muted');
             summaryEl.innerHTML = `
@@ -5685,8 +5700,7 @@ var ClientAccountPanel = (function () {
         rows.forEach(r => {
             const tr = document.createElement('tr');
             const saldoClass = r.saldo > 0 ? 'text-danger' : (r.saldo < 0 ? 'text-success' : 'text-muted');
-            const d = new Date(r.fecha);
-            const dateStr = d.toLocaleDateString('es-AR');
+            const dateStr = formatDateDisplay(r.fecha);
 
             tr.innerHTML = `
                 <td class="ps-3">${dateStr}</td>
@@ -5842,6 +5856,50 @@ var ClientAccountPanel = (function () {
 
     function formatCurrency(v) {
         return Number(v).toLocaleString('es-AR', { style: 'currency', currency: 'ARS' });
+    }
+
+    function formatDateDisplay(v) {
+        if (!v) return '';
+        if (typeof v === 'string') {
+            // yyyy-MM-dd -> dd/MM/yyyy (sin timezone issues)
+            const m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+            const d = new Date(v);
+            return isNaN(d.getTime()) ? v : d.toLocaleDateString('es-AR');
+        }
+        if (v instanceof Date) {
+            return v.toLocaleDateString('es-AR');
+        }
+        const d = new Date(v);
+        return isNaN(d.getTime()) ? String(v) : d.toLocaleDateString('es-AR');
+    }
+
+    function setDebug(payload, show) {
+        const details = document.getElementById('client-acc-debug');
+        const pre = document.getElementById('client-acc-debug-pre');
+        if (!details || !pre) return;
+
+        if (!show) {
+            details.classList.add('d-none');
+            details.open = false;
+            return;
+        }
+
+        let text = '';
+        try {
+            text = JSON.stringify(payload, null, 2);
+        } catch (e) {
+            text = String(payload);
+        }
+
+        // limitar tamaño para no romper la UI
+        if (text.length > 12000) {
+            text = text.slice(0, 12000) + '\n... (truncado)';
+        }
+
+        pre.textContent = text;
+        details.classList.remove('d-none');
+        details.open = true;
     }
 
     return { render };

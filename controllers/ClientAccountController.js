@@ -113,7 +113,9 @@ var ClientAccountController = (function () {
     function buildKey_(idCliente, label) {
         const id = idCliente ? String(idCliente) : '';
         const l = String(label || '');
-        const k = id ? ('id:' + id) : ('name:' + l.toLowerCase().trim());
+        // Normalización consistente con remoción de acentos
+        const normLabel = l.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+        const k = id ? ('id:' + id) : ('name:' + normLabel);
         return { k: k, idCliente: id, label: l };
     }
 

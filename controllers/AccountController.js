@@ -5,7 +5,7 @@ var AccountController = (function () {
 
     function normalizeHeaderKey_(val) {
         return String(val || '')
-            .normalize('NFD')
+            .normalize('NFD') // Remover acentos
             .replace(/[\u0300-\u036f]/g, '')
             .toUpperCase()
             .replace(/\s+/g, ' ')
@@ -236,9 +236,32 @@ var AccountController = (function () {
             };
         });
 
+        // Normalizar salida para el cliente (google.script.run es sensible a tipos no-serializables)
+        // - fecha: yyyy-MM-dd (string)
+        // - montos: number
+        const tz = Session.getScriptTimeZone ? Session.getScriptTimeZone() : 'GMT';
+        const movimientosOut = movimientosConSaldo.map(m => {
+            const fecha = parseDateFlexible_(m && m.fecha);
+            const fechaStr = fecha && !isNaN(fecha.getTime())
+                ? Utilities.formatDate(fecha, tz, 'yyyy-MM-dd')
+                : '';
+            return {
+                fecha: fechaStr,
+                concepto: (m && m.concepto != null) ? String(m.concepto) : '',
+                debe: toNumber_(m && m.debe),
+                haber: toNumber_(m && m.haber),
+                saldo: toNumber_(m && m.saldo),
+                tipo: (m && m.tipo) ? String(m.tipo) : '',
+                idFactura: (m && m.idFactura != null) ? String(m.idFactura) : '',
+                facturaNumero: (m && m.facturaNumero != null) ? String(m.facturaNumero) : '',
+                periodo: (m && m.periodo != null) ? String(m.periodo) : '',
+                estado: (m && m.estado != null) ? String(m.estado) : ''
+            };
+        });
+
         return {
-            saldoInicial: saldoInicial,
-            movimientos: movimientosConSaldo
+            saldoInicial: toNumber_(saldoInicial),
+            movimientos: movimientosOut
         };
     }
 
@@ -372,6 +395,8 @@ var AccountController = (function () {
     function normalizeClientName_(name) {
         if (!name) return '';
         return String(name)
+            .normalize('NFD') // Remover acentos
+            .replace(/[\u0300-\u036f]/g, '')
             .toLowerCase()
             .replace(/\s+/g, ' ')
             .replace(/\./g, '')
