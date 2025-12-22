@@ -8,6 +8,10 @@ function doGet(e) {
   if (e && e.parameter && e.parameter.api === 'cc') {
     return handleClientAccountApi_(e);
   }
+  // Endpoint de diagnóstico: facturas pendientes para pago (api=invoices-for-payment, key en query).
+  if (e && e.parameter && e.parameter.api === 'invoices-for-payment') {
+    return handleClientInvoicesForPaymentApi_(e);
+  }
 
   return HtmlService.createTemplateFromFile('FrontedErp')
     .evaluate()
@@ -20,6 +24,9 @@ function doPost(e) {
   }
   if (e && e.parameter && e.parameter.api === 'cc') {
     return handleClientAccountApi_(e);
+  }
+  if (e && e.parameter && e.parameter.api === 'invoices-for-payment') {
+    return handleClientInvoicesForPaymentApi_(e);
   }
   return doGet(e);
 }
@@ -118,6 +125,29 @@ function handleClientAccountApi_(e) {
       end: end,
       saldoInicial: res && typeof res.saldoInicial === 'number' ? res.saldoInicial : 0,
       movimientos: res && res.movimientos ? res.movimientos : []
+    });
+  } catch (err) {
+    return jsonResponse_({ error: err && err.message ? err.message : String(err) });
+  }
+}
+
+function handleClientInvoicesForPaymentApi_(e) {
+  const isAuthorized = authorizeApi_(e);
+  if (!isAuthorized) {
+    return jsonResponse_({ error: 'unauthorized' });
+  }
+
+  const params = e && e.parameter ? e.parameter : {};
+  const client = (params.client || params.cliente || '').toString().trim();
+  const idCliente = (params.idCliente || params.id || '').toString().trim();
+
+  try {
+    const list = AccountController.getClientInvoicesForPayment(client, idCliente) || [];
+    return jsonResponse_({
+      client: client,
+      idCliente: idCliente,
+      count: list.length,
+      invoices: list
     });
   } catch (err) {
     return jsonResponse_({ error: err && err.message ? err.message : String(err) });
