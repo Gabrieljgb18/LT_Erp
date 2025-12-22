@@ -239,7 +239,9 @@ var AccountController = (function () {
         // Normalizar salida para el cliente (google.script.run es sensible a tipos no-serializables)
         // - fecha: yyyy-MM-dd (string)
         // - montos: number
-        const tz = Session.getScriptTimeZone ? Session.getScriptTimeZone() : 'GMT';
+        // Importante: usamos GMT/UTC para evitar corrimientos de fecha cuando la hoja/ejecución
+        // tiene zona horaria distinta a la del usuario.
+        const tz = 'GMT';
         const movimientosOut = movimientosConSaldo.map(m => {
             const fecha = parseDateFlexible_(m && m.fecha);
             const fechaStr = fecha && !isNaN(fecha.getTime())
