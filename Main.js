@@ -59,6 +59,20 @@ function getReferenceData() {
   return RecordController.getReferenceData();
 }
 
+// ===================== Media Clientes (Drive) =====================
+
+function getClientMedia(clientId) {
+  return ClientMediaController.getClientMedia(clientId);
+}
+
+function uploadClientMedia(payload) {
+  return ClientMediaController.uploadClientMedia(payload);
+}
+
+function deleteClientMedia(clientId, kind) {
+  return ClientMediaController.deleteClientMedia(clientId, kind);
+}
+
 /**
  * Obtiene la comparación entre plan y asistencia real
  */

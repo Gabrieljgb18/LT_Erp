@@ -151,6 +151,15 @@
                 setupCuitAutocomplete();
             }
 
+            // Fotos para CLIENTES (fachada / llave)
+            if (tipoFormato === "CLIENTES" && typeof ClientMediaPanel !== "undefined" && ClientMediaPanel && typeof ClientMediaPanel.render === "function") {
+                try {
+                    ClientMediaPanel.render(container);
+                } catch (e) {
+                    console.warn("No se pudo renderizar panel de fotos:", e);
+                }
+            }
+
             // Actualizar visibilidad del footer
             if (global.FooterManager) {
                 global.FooterManager.updateVisibility();

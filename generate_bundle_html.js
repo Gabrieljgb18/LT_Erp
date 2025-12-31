@@ -19,6 +19,7 @@ if (typeof require === "undefined") {
     path.join(root, "src", "ui", "footer.js"),
     path.join(root, "src", "ui", "sidebar.js"),
     path.join(root, "src", "ui", "gridManager.js"),
+    path.join(root, "src", "clients", "clientMediaPanel.js"),
     path.join(root, "src", "search", "searchManager.js"),
     path.join(root, "src", "attendance", "weeklyPlanPanel.js"),
     path.join(root, "src", "attendance", "dailyAttendanceUi.js"),
