@@ -134,6 +134,14 @@ var AccountController = (function () {
     }
 
     function getAdelantosForMonth(year, month) {
+        if (DatabaseService && typeof DatabaseService.repairAdelantosLegacyRows === 'function') {
+            try {
+                DatabaseService.repairAdelantosLegacyRows();
+            } catch (e) {
+                // ignore
+            }
+        }
+
         const sheet = DatabaseService.getDbSheetForFormat('ADELANTOS');
         const lastRow = sheet.getLastRow();
         const lastCol = sheet.getLastColumn();

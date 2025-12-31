@@ -80,6 +80,14 @@ function getFormatData_(formatId) {
     throw new Error('Formato no encontrado: ' + formatId);
   }
 
+  if (formatId === 'ADELANTOS' && DatabaseService && typeof DatabaseService.repairAdelantosLegacyRows === 'function') {
+    try {
+      DatabaseService.repairAdelantosLegacyRows();
+    } catch (e) {
+      // ignore
+    }
+  }
+
   const sheet = DatabaseService.getDbSheetForFormat(formatId);
   const lastRow = sheet.getLastRow();
   const lastCol = sheet.getLastColumn();

@@ -234,6 +234,14 @@ var HoursController = (function () {
     function getEmployeeAdvancesTotal(employeeName, startDate, endDate) {
         if (!employeeName) return 0;
 
+        if (DatabaseService && typeof DatabaseService.repairAdelantosLegacyRows === 'function') {
+            try {
+                DatabaseService.repairAdelantosLegacyRows();
+            } catch (e) {
+                // ignore
+            }
+        }
+
         const sheet = DatabaseService.getDbSheetForFormat('ADELANTOS');
         const lastRow = sheet.getLastRow();
         const lastCol = sheet.getLastColumn();

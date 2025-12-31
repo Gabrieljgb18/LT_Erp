@@ -502,6 +502,88 @@ var DatabaseService = (function () {
     };
   }
 
+  /**
+   * Repara filas antiguas de ADELANTOS que quedaron corridas de columna
+   * por tener headers con ID_EMPLEADO en la DB y plantillas viejas en el CRUD.
+   *
+   * Patrón detectado (legacy):
+   * - ID_EMPLEADO contiene una Date
+   * - FECHA contiene el nombre del empleado
+   * - EMPLEADO contiene el monto
+   * - MONTO está vacío
+   *
+   * @returns {{ scanned: number, fixed: number }}
+   */
+  function repairAdelantosLegacyRows() {
+    const sheet = getDbSheetForFormat('ADELANTOS');
+    const lastRow = sheet.getLastRow();
+    const lastCol = sheet.getLastColumn();
+    if (lastRow < 2 || lastCol === 0) return { scanned: 0, fixed: 0 };
+
+    const headersRaw = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    const headers = headersRaw.map(h => String(h || '').trim().toUpperCase());
+    const idxIdEmp = headers.indexOf('ID_EMPLEADO');
+    const idxFecha = headers.indexOf('FECHA');
+    const idxEmpleado = headers.indexOf('EMPLEADO');
+    const idxMonto = headers.indexOf('MONTO');
+    if (idxIdEmp === -1 || idxFecha === -1 || idxEmpleado === -1 || idxMonto === -1) {
+      return { scanned: lastRow - 1, fixed: 0 };
+    }
+
+    const range = sheet.getRange(2, 1, lastRow - 1, lastCol);
+    const data = range.getValues();
+
+    let fixed = 0;
+
+    for (let i = 0; i < data.length; i++) {
+      const row = data[i];
+      const legacyIdEmpVal = row[idxIdEmp];
+      const legacyFechaVal = row[idxFecha];
+      const legacyEmpleadoVal = row[idxEmpleado];
+      const legacyMontoVal = row[idxMonto];
+
+      if (!(legacyIdEmpVal instanceof Date) || isNaN(legacyIdEmpVal.getTime())) continue;
+
+      // Si FECHA ya es Date o un string tipo yyyy-mm-dd, asumimos que está bien.
+      if (legacyFechaVal instanceof Date) continue;
+      const fechaStr = String(legacyFechaVal || '').trim();
+      if (!fechaStr) continue;
+      if (/^\d{4}-\d{2}-\d{2}/.test(fechaStr) || /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(fechaStr)) continue;
+
+      const empleadoIsNumber =
+        (typeof legacyEmpleadoVal === 'number' && !isNaN(legacyEmpleadoVal)) ||
+        (/^\s*-?\d+([.,]\d+)?\s*$/.test(String(legacyEmpleadoVal || '')));
+      if (!empleadoIsNumber) continue;
+
+      // En legacy, MONTO queda vacío (porque se corrió 1 columna).
+      const montoEmpty = legacyMontoVal === '' || legacyMontoVal == null;
+      if (!montoEmpty) continue;
+
+      // Re-mapear a columnas correctas
+      const correctFecha = legacyIdEmpVal;
+      const correctEmpleadoName = fechaStr;
+      const correctMonto = legacyEmpleadoVal;
+
+      let correctIdEmpleado = '';
+      const emp = findEmpleadoByNombre(correctEmpleadoName);
+      if (emp && emp.id) correctIdEmpleado = emp.id;
+
+      row[idxIdEmp] = correctIdEmpleado;
+      row[idxFecha] = correctFecha;
+      row[idxEmpleado] = correctEmpleadoName;
+      row[idxMonto] = correctMonto;
+
+      data[i] = row;
+      fixed++;
+    }
+
+    if (fixed > 0) {
+      range.setValues(data);
+    }
+
+    return { scanned: data.length, fixed: fixed };
+  }
+
   // ====== REFERENCIAS PARA LA UI ======
 
   function getReferenceData() {
@@ -524,6 +606,7 @@ var DatabaseService = (function () {
     findClienteById: findClienteById,
     findEmpleadoByNombre: findEmpleadoByNombre,
     findEmpleadoById: findEmpleadoById,
+    repairAdelantosLegacyRows: repairAdelantosLegacyRows,
     appendHoraLogCliente: appendHoraLogCliente,
     appendHoraLogEmpleado: appendHoraLogEmpleado,
     getNextId: getNextId,

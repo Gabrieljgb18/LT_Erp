@@ -9,6 +9,45 @@
         let allRecords = [];
         let currentEditingRecord = null;
 
+        function formatDateForGrid(value) {
+            if (!value) return '';
+
+            if (Object.prototype.toString.call(value) === '[object Date]') {
+                const d0 = value;
+                if (!isNaN(d0.getTime())) {
+                    return d0.toLocaleDateString('es-ES');
+                }
+            }
+
+            const s = String(value).trim();
+            if (!s) return '';
+
+            let d = null;
+
+            // YYYY-MM-DD (evitar corrimiento por timezone interpretándolo como fecha local)
+            const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (iso) {
+                d = new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+            } else {
+                // DD/MM/YYYY
+                const dmySlash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+                if (dmySlash) {
+                    d = new Date(Number(dmySlash[3]), Number(dmySlash[2]) - 1, Number(dmySlash[1]));
+                } else {
+                    // DD-MM-YYYY
+                    const dmyDash = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+                    if (dmyDash) {
+                        d = new Date(Number(dmyDash[3]), Number(dmyDash[2]) - 1, Number(dmyDash[1]));
+                    } else {
+                        d = new Date(s);
+                    }
+                }
+            }
+
+            if (!d || isNaN(d.getTime())) return s;
+            return d.toLocaleDateString('es-ES');
+        }
+
         /**
          * Renderiza la grilla con los registros del formato actual
          */
@@ -101,11 +140,7 @@
                     if (field.type === 'boolean') {
                         value = value ? '✅ Activo' : '❌ Inactivo';
                     } else if (field.type === 'date' && value) {
-                        try {
-                            value = new Date(value).toLocaleDateString('es-ES');
-                        } catch (e) {
-                            // Mantener el valor original si no se puede convertir
-                        }
+                        value = formatDateForGrid(value);
                     } else if (field.type === 'number' && value) {
                         value = Number(value).toLocaleString('es-ES');
                     }

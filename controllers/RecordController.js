@@ -22,6 +22,15 @@ var RecordController = (function () {
     function searchRecords(tipoFormato, query) {
         const sheet = DatabaseService.getDbSheetForFormat(tipoFormato);
 
+        // Reparación automática de datos legacy para ADELANTOS (corrimiento de columnas)
+        if (tipoFormato === 'ADELANTOS' && DatabaseService && typeof DatabaseService.repairAdelantosLegacyRows === 'function') {
+            try {
+                DatabaseService.repairAdelantosLegacyRows();
+            } catch (e) {
+                // ignore
+            }
+        }
+
         const lastRow = sheet.getLastRow();
         const lastCol = sheet.getLastColumn();
 
@@ -90,6 +99,12 @@ var RecordController = (function () {
         if (emp && emp.id) record['ID_EMPLEADO'] = emp.id;
       }
     }
+    if (tipoFormato === 'ADELANTOS') {
+      if (!record['ID_EMPLEADO'] && record['EMPLEADO']) {
+        const emp = DatabaseService.findEmpleadoByNombre(record['EMPLEADO']);
+        if (emp && emp.id) record['ID_EMPLEADO'] = emp.id;
+      }
+    }
   }
 
     /**
@@ -101,7 +116,17 @@ var RecordController = (function () {
     function saveRecord(tipoFormato, record) {
         const sheet = DatabaseService.getDbSheetForFormat(tipoFormato);
         const template = Formats.getFormatTemplate(tipoFormato);
-        const headers = template.headers || [];
+        const templateHeaders = (template && template.headers) ? template.headers : [];
+
+        // Preferimos usar headers reales de la hoja si ya existen para evitar desalineaciones
+        let headers = [];
+        const existingLastRow = sheet.getLastRow();
+        const existingLastCol = sheet.getLastColumn();
+        if (existingLastRow >= 1 && existingLastCol > 0) {
+            headers = sheet.getRange(1, 1, 1, existingLastCol).getValues()[0];
+        } else {
+            headers = templateHeaders;
+        }
 
         enrichAttendanceIds(tipoFormato, record);
 
@@ -125,8 +150,11 @@ var RecordController = (function () {
 
             const row = buildRowValues(headers, record);
 
-            // Ensure ID is in first position
-            if (row[0] != newId) {
+            // Ensure ID is set in correct position
+            const idxId = headers.indexOf('ID');
+            if (idxId > -1) {
+                row[idxId] = newId;
+            } else if (row[0] != newId) {
                 row[0] = newId;
             }
 
@@ -171,11 +199,6 @@ var RecordController = (function () {
             throw new Error('Formato no encontrado: ' + tipoFormato);
         }
 
-        const headers = template.headers || [];
-        if (!headers.length) {
-            throw new Error('El formato no tiene headers definidos: ' + tipoFormato);
-        }
-
         // Find row by ID
         const rowNumber = DatabaseService.findRowById(sheet, id);
         if (!rowNumber) {
@@ -183,7 +206,11 @@ var RecordController = (function () {
         }
 
         const lastCol = sheet.getLastColumn();
-        const headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+        const headerRow = lastCol > 0 ? sheet.getRange(1, 1, 1, lastCol).getValues()[0] : [];
+        const headers = headerRow || [];
+        if (!headers.length) {
+            throw new Error('No se pudieron leer headers de la hoja para: ' + tipoFormato);
+        }
 
         // Get current values for comparison
         const currentRowValues = sheet.getRange(rowNumber, 1, 1, lastCol).getValues()[0];
@@ -207,8 +234,11 @@ var RecordController = (function () {
         // Build new row values with ID in correct position
         const newRowValues = buildRowValues(headers, newRecord);
 
-        // Verify ID is in first position (safety check)
-        if (newRowValues[0] != id) {
+        // Verify ID is in correct position (safety check)
+        const idxId = headers.indexOf('ID');
+        if (idxId > -1) {
+            newRowValues[idxId] = id;
+        } else if (newRowValues[0] != id) {
             newRowValues[0] = id;
         }
 

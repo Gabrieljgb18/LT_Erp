@@ -161,12 +161,13 @@ var Formats = (function () {
       displayName: 'Adelantos de sueldo',
       headers: [
         'ID',
+        'ID_EMPLEADO',
         'FECHA',
         'EMPLEADO',
         'MONTO',
         'OBSERVACION'
       ],
-      columnWidths: [60, 100, 200, 120, 250],
+      columnWidths: [60, 90, 100, 200, 120, 250],
       freezeRows: 1
     }
 
