@@ -693,17 +693,10 @@ var PdfController = (function () {
             return `<div class="photo-group"><div class="photo-title">${label}</div><div class="photo-row">${photos}</div></div>`;
         };
 
-        const daysHtml = (data.dias || []).map(dia => {
+        const diasConTrabajo = (data.dias || []).filter(dia => dia && Array.isArray(dia.clientes) && dia.clientes.length > 0);
+
+        const daysHtml = (diasConTrabajo.length ? diasConTrabajo : []).map(dia => {
             const dayHeader = `${escapeHtml_(dia.diaDisplay || '')} · ${escapeHtml_(dia.fechaDisplay || '')}`;
-            if (!dia.clientes || dia.clientes.length === 0) {
-                return `
-                <div class="day-section">
-                    <div class="day-header">${dayHeader}</div>
-                    <div class="visit-card">
-                        <div class="day-empty">Sin asignaciones</div>
-                    </div>
-                </div>`;
-            }
 
             const visits = dia.clientes.map(c => {
                 const media = mediaMap && c.idCliente ? mediaMap[String(c.idCliente)] : null;
@@ -738,9 +731,16 @@ var PdfController = (function () {
                 </div>`;
         }).join('');
 
+        const daysOutput = daysHtml || `
+            <div class="day-section">
+                <div class="visit-card">
+                    <div class="day-empty">Sin asignaciones en la semana.</div>
+                </div>
+            </div>`;
+
         const footer = `<div class="footer">Generado automáticamente por LT ERP</div>`;
 
-        return `<html><head>${style}</head><body>${header}${summary}${daysHtml}${footer}</body></html>`;
+        return `<html><head>${style}</head><body>${header}${summary}${daysOutput}${footer}</body></html>`;
     }
 
     return {

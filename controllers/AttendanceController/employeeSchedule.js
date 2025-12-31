@@ -88,7 +88,7 @@ const AttendanceEmployeeSchedule = (function () {
             const diaNombre = DIAS_SEMANA[fecha.getDay()];
             const diaDisplay = DIAS_DISPLAY[fecha.getDay()];
             map[diaNombre] = {
-                dateObj: fecha,
+                dateObj: new Date(fecha),
                 fecha: formatDate(fecha),
                 fechaDisplay: formatDateShort(fecha),
                 diaSemana: diaNombre,
@@ -97,6 +97,19 @@ const AttendanceEmployeeSchedule = (function () {
             };
         }
         return map;
+    }
+
+    function sanitizeDays_(diasMap) {
+        return ORDEN_DIAS.map(dia => {
+            const entry = diasMap[dia];
+            return {
+                fecha: entry ? entry.fecha : '',
+                fechaDisplay: entry ? entry.fechaDisplay : '',
+                diaSemana: entry ? entry.diaSemana : dia,
+                diaDisplay: entry ? entry.diaDisplay : '',
+                clientes: entry && Array.isArray(entry.clientes) ? entry.clientes : []
+            };
+        });
     }
 
     function formatHoraEntrada_(value) {
@@ -222,6 +235,7 @@ const AttendanceEmployeeSchedule = (function () {
         const dataPlan = sheetPlan.getDataRange().getValues();
 
         if (dataPlan.length < 2) {
+            const diasOut = sanitizeDays_(diasMap);
             return {
                 empleado: empleado,
                 idEmpleado: idEmpleado,
@@ -230,7 +244,7 @@ const AttendanceEmployeeSchedule = (function () {
                     end: formatDate(weekEnd),
                     label: `${formatDateShort(weekStart)} - ${formatDateShort(weekEnd)}`
                 },
-                dias: ORDEN_DIAS.map(d => diasMap[d]),
+                dias: diasOut,
                 resumen: { totalHoras: 0, totalClientes: 0, diasTrabajo: 0 }
             };
         }
@@ -304,6 +318,7 @@ const AttendanceEmployeeSchedule = (function () {
         });
 
         const diasArray = ORDEN_DIAS.map(dia => diasMap[dia]);
+        const diasOut = sanitizeDays_(diasMap);
         const diasTrabajo = diasArray.filter(d => d.clientes.length > 0).length;
 
         return {
@@ -314,7 +329,7 @@ const AttendanceEmployeeSchedule = (function () {
                 end: formatDate(weekEnd),
                 label: `${formatDateShort(weekStart)} - ${formatDateShort(weekEnd)}`
             },
-            dias: diasArray,
+            dias: diasOut,
             resumen: {
                 totalHoras: totalHoras,
                 totalClientes: clientesSet.size,
@@ -341,13 +356,14 @@ const AttendanceEmployeeSchedule = (function () {
         const sheetPlan = DatabaseService.getDbSheetForFormat('ASISTENCIA_PLAN');
         const dataPlan = sheetPlan.getDataRange().getValues();
         if (dataPlan.length < 2) {
+            const diasOut = sanitizeDays_(diasMap);
             return {
                 semana: {
                     start: formatDate(weekStart),
                     end: formatDate(weekEnd),
                     label: `${formatDateShort(weekStart)} - ${formatDateShort(weekEnd)}`
                 },
-                dias: ORDEN_DIAS.map(d => diasMap[d]),
+                dias: diasOut,
                 resumen: { totalHoras: 0, totalClientes: 0, diasTrabajo: 0 }
             };
         }
@@ -433,6 +449,7 @@ const AttendanceEmployeeSchedule = (function () {
         });
 
         const diasArray = ORDEN_DIAS.map(dia => diasMap[dia]);
+        const diasOut = sanitizeDays_(diasMap);
         const diasTrabajo = diasArray.filter(d => d.clientes.length > 0).length;
 
         return {
@@ -441,7 +458,7 @@ const AttendanceEmployeeSchedule = (function () {
                 end: formatDate(weekEnd),
                 label: `${formatDateShort(weekStart)} - ${formatDateShort(weekEnd)}`
             },
-            dias: diasArray,
+            dias: diasOut,
             resumen: {
                 totalHoras: totalHoras,
                 totalClientes: clientesSet.size,
