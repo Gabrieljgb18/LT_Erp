@@ -1,9 +1,19 @@
 /**
- * Panel de fotos para Clientes (Fachada / Llave)
- * Se renderiza dentro del modal de edición de CLIENTES.
+ * Panel de fotos para Clientes (Fachadas / Llaves)
+ * - Soporta múltiples fotos por tipo
+ * - Se renderiza dentro del modal de edición de CLIENTES
  */
 var ClientMediaPanel = (function () {
     const SECTION_ID = 'client-media-section';
+    const NOTICE_ID = 'client-media-notice';
+    const REPLACE_INPUT_ID = 'client-media-replace-input';
+
+    let state = {
+        clientId: '',
+        fachada: [],
+        llave: [],
+        pendingReplace: null // { kind, fileId }
+    };
 
     function escapeHtml_(val) {
         if (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.escapeHtml === 'function') {
@@ -34,51 +44,57 @@ var ClientMediaPanel = (function () {
         return String(rec.ID || rec.Id || rec.id || '').trim();
     }
 
-    function getClientDisplayNameFromRecord_(rec) {
-        if (!rec) return '';
-        return String(rec['RAZON SOCIAL'] || rec['NOMBRE'] || '').trim();
+    function showNotice_(type, message) {
+        const el = document.getElementById(NOTICE_ID);
+        if (!el) return;
+        if (!message) {
+            el.innerHTML = '';
+            return;
+        }
+        const safeType = type || 'info';
+        el.innerHTML = `
+            <div class="alert alert-${escapeHtml_(safeType)} py-2 px-3 mb-0 d-flex align-items-start gap-2">
+                <i class="bi ${safeType === 'danger' ? 'bi-exclamation-triangle-fill' : safeType === 'success' ? 'bi-check-circle-fill' : 'bi-info-circle-fill'}"></i>
+                <div class="small">${escapeHtml_(message)}</div>
+            </div>
+        `;
     }
 
-    function buildCardHtml_(kind, title, icon, iconClass) {
+    function buildKindCardHtml_(kind) {
         const key = kind.toLowerCase();
+        const meta = kind === 'FACHADA'
+            ? { title: 'Fachadas', icon: 'bi-building', iconClass: 'text-primary' }
+            : { title: 'Llaves', icon: 'bi-key-fill', iconClass: 'text-warning' };
+
         return `
             <div class="col-12 col-md-6">
                 <div class="lt-surface p-3 h-100">
-                    <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+                    <div class="d-flex align-items-start justify-content-between gap-2">
                         <div class="d-flex align-items-center gap-2">
-                            <i class="bi ${escapeHtml_(icon)} ${escapeHtml_(iconClass)}"></i>
-                            <div class="fw-semibold">${escapeHtml_(title)}</div>
+                            <i class="bi ${escapeHtml_(meta.icon)} ${escapeHtml_(meta.iconClass)}"></i>
+                            <div>
+                                <div class="fw-semibold">${escapeHtml_(meta.title)}</div>
+                                <div class="small text-muted" id="client-media-${key}-count">0 fotos</div>
+                            </div>
                         </div>
-                        <span class="badge text-bg-light border text-muted">${escapeHtml_(kind)}</span>
+                        <button type="button"
+                            class="btn btn-sm btn-outline-primary lt-btn-compact d-flex align-items-center gap-1"
+                            data-cm-action="add"
+                            data-cm-kind="${escapeHtml_(kind)}">
+                            <i class="bi bi-plus-lg"></i><span>Agregar</span>
+                        </button>
                     </div>
 
-                    <div class="border rounded-3 bg-white overflow-hidden d-flex align-items-center justify-content-center"
-                        style="height: 170px;">
-                        <div id="client-media-${key}-placeholder" class="text-center text-muted px-3">
+                    <div class="mt-3">
+                        <div class="row g-2" id="client-media-${key}-grid"></div>
+                        <div class="text-center text-muted small py-4 d-none" id="client-media-${key}-empty">
                             <i class="bi bi-image" style="font-size: 1.6rem; opacity: 0.35;"></i>
-                            <div class="small mt-1">Sin foto</div>
+                            <div class="mt-1">Sin fotos</div>
                         </div>
-                        <img id="client-media-${key}-img" class="w-100 h-100 d-none" style="object-fit: cover;" alt="${escapeHtml_(title)}">
                     </div>
 
-                    <div class="d-flex flex-wrap gap-2 mt-2">
-                        <button type="button" class="btn btn-sm btn-outline-primary lt-btn-compact"
-                            data-client-media-action="upload" data-client-media-kind="${escapeHtml_(kind)}">
-                            <i class="bi bi-upload me-1"></i><span id="client-media-${key}-upload-label">Subir</span>
-                        </button>
-                        <button type="button" class="btn btn-sm btn-outline-secondary lt-btn-compact"
-                            data-client-media-action="view" data-client-media-kind="${escapeHtml_(kind)}" disabled>
-                            <i class="bi bi-eye me-1"></i>Ver
-                        </button>
-                        <button type="button" class="btn btn-sm btn-outline-danger lt-btn-compact"
-                            data-client-media-action="delete" data-client-media-kind="${escapeHtml_(kind)}" disabled>
-                            <i class="bi bi-trash3 me-1"></i>Eliminar
-                        </button>
-                        <input type="file" class="d-none" accept="image/*"
-                            id="client-media-${key}-input" data-client-media-input="${escapeHtml_(kind)}">
-                    </div>
-
-                    <div class="small text-muted mt-2" id="client-media-${key}-meta"></div>
+                    <input type="file" class="d-none" accept="image/*" multiple
+                        id="client-media-${key}-add-input" data-cm-input-kind="${escapeHtml_(kind)}">
                 </div>
             </div>
         `;
@@ -92,14 +108,20 @@ var ClientMediaPanel = (function () {
 
         const rec = getEditingClient_();
         const clientId = getClientIdFromRecord_(rec);
-        const displayName = getClientDisplayNameFromRecord_(rec);
+
+        state = {
+            clientId: clientId,
+            fachada: [],
+            llave: [],
+            pendingReplace: null
+        };
 
         const section = document.createElement('div');
         section.className = 'col-12';
         section.id = SECTION_ID;
         section.innerHTML = `
             <div class="lt-surface lt-surface--subtle p-3">
-                <div class="d-flex align-items-start justify-content-between flex-wrap gap-2 mb-3">
+                <div class="d-flex align-items-start justify-content-between flex-wrap gap-2 mb-2">
                     <div class="d-flex align-items-center gap-3">
                         <div class="rounded-circle d-flex align-items-center justify-content-center"
                             style="width: 40px; height: 40px; background: rgba(99,102,241,0.12);">
@@ -107,7 +129,7 @@ var ClientMediaPanel = (function () {
                         </div>
                         <div>
                             <div class="fw-semibold">Fotos del cliente</div>
-                            <div class="small text-muted">Fachada y llaves asociadas al cliente.</div>
+                            <div class="small text-muted">Guardá y consultá fotos de fachada y llaves.</div>
                         </div>
                     </div>
                     <span class="lt-chip lt-chip--muted">
@@ -116,13 +138,18 @@ var ClientMediaPanel = (function () {
                     </span>
                 </div>
 
+                <div id="${NOTICE_ID}" class="mb-2"></div>
+
                 <div class="row g-2">
-                    ${buildCardHtml_('FACHADA', 'Fachada', 'bi-building', 'text-primary')}
-                    ${buildCardHtml_('LLAVE', 'Llave', 'bi-key-fill', 'text-warning')}
+                    ${buildKindCardHtml_('FACHADA')}
+                    ${buildKindCardHtml_('LLAVE')}
                 </div>
 
                 <div class="small text-muted mt-2" id="client-media-hint"></div>
             </div>
+
+            <input type="file" class="d-none" accept="image/*"
+                id="${REPLACE_INPUT_ID}">
         `;
 
         containerEl.appendChild(section);
@@ -130,142 +157,176 @@ var ClientMediaPanel = (function () {
         const hint = document.getElementById('client-media-hint');
         if (hint) {
             hint.innerHTML = clientId
-                ? `Los archivos se guardan en Drive y se renombran como <span class="text-body-secondary fw-semibold">CLIENTE_${escapeHtml_(clientId)}__NOMBRE__TIPO</span>.`
+                ? `Se guardan en Drive y se renombran como <span class="text-body-secondary fw-semibold">CLIENTE_${escapeHtml_(clientId)}__NOMBRE__TIPO__timestamp</span>.`
                 : 'Guardá el cliente para poder cargar fotos (necesitamos el ID).';
         }
 
-        attachEvents(clientId, displayName);
+        attachEvents_(section);
 
         if (clientId) {
-            refresh(clientId);
+            refresh_(clientId);
         } else {
-            // Si no hay ID, deshabilitar acciones
-            disableAllActions_(true);
+            showNotice_('warning', 'Guardá el cliente para habilitar la carga de fotos.');
         }
     }
 
-    function disableAllActions_(disabled) {
-        document.querySelectorAll('[data-client-media-action]').forEach(btn => {
-            btn.disabled = !!disabled;
+    function setKindCount_(kind, count) {
+        const key = kind.toLowerCase();
+        const el = document.getElementById(`client-media-${key}-count`);
+        if (!el) return;
+        el.textContent = count === 1 ? '1 foto' : `${count} fotos`;
+    }
+
+    function renderKindGrid_(kind, items) {
+        const key = kind.toLowerCase();
+        const grid = document.getElementById(`client-media-${key}-grid`);
+        const empty = document.getElementById(`client-media-${key}-empty`);
+        if (!grid || !empty) return;
+
+        const list = Array.isArray(items) ? items : [];
+        setKindCount_(kind, list.length);
+
+        grid.innerHTML = '';
+
+        if (!list.length) {
+            empty.classList.remove('d-none');
+            return;
+        }
+        empty.classList.add('d-none');
+
+        list.forEach((it) => {
+            const thumb = it && it.thumbnailBase64 ? it.thumbnailBase64 : '';
+            const mime = it && it.mimeType ? it.mimeType : 'image/jpeg';
+            const fileId = it && it.fileId ? String(it.fileId) : '';
+            const name = it && it.name ? String(it.name) : '';
+
+            const col = document.createElement('div');
+            col.className = 'col-6 col-lg-4';
+
+            const dataUrl = thumb ? `data:${mime};base64,${thumb}` : '';
+
+            col.innerHTML = `
+                <div class="lt-surface p-2 h-100">
+                    <div class="ratio ratio-4x3 bg-white border rounded-3 overflow-hidden">
+                        ${dataUrl
+                    ? `<img src="${dataUrl}" alt="${escapeHtml_(name || kind)}" style="object-fit: cover; width: 100%; height: 100%; cursor: zoom-in;"
+                                data-cm-action="view" data-cm-kind="${escapeHtml_(kind)}" data-cm-file-id="${escapeHtml_(fileId)}">`
+                    : `<div class="d-flex align-items-center justify-content-center text-muted small">Sin preview</div>`
+                }
+                    </div>
+                    <div class="d-flex align-items-center justify-content-between gap-2 mt-2">
+                        <div class="small text-muted text-truncate" title="${escapeHtml_(name)}">
+                            <i class="bi bi-image me-1"></i>${escapeHtml_(name || '')}
+                        </div>
+                        <div class="btn-group btn-group-sm">
+                            <button type="button" class="btn btn-outline-secondary"
+                                data-cm-action="view" data-cm-kind="${escapeHtml_(kind)}" data-cm-file-id="${escapeHtml_(fileId)}"
+                                title="Ver">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                            <button type="button" class="btn btn-outline-primary"
+                                data-cm-action="replace" data-cm-kind="${escapeHtml_(kind)}" data-cm-file-id="${escapeHtml_(fileId)}"
+                                title="Reemplazar">
+                                <i class="bi bi-arrow-repeat"></i>
+                            </button>
+                            <button type="button" class="btn btn-outline-danger"
+                                data-cm-action="delete" data-cm-kind="${escapeHtml_(kind)}" data-cm-file-id="${escapeHtml_(fileId)}"
+                                title="Eliminar">
+                                <i class="bi bi-trash3"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            grid.appendChild(col);
         });
     }
 
-    function setCardState_(kind, state) {
-        const key = kind.toLowerCase();
-        const img = document.getElementById(`client-media-${key}-img`);
-        const placeholder = document.getElementById(`client-media-${key}-placeholder`);
-        const meta = document.getElementById(`client-media-${key}-meta`);
-        const uploadLabel = document.getElementById(`client-media-${key}-upload-label`);
-        const viewBtn = document.querySelector(`[data-client-media-action="view"][data-client-media-kind="${kind}"]`);
-        const deleteBtn = document.querySelector(`[data-client-media-action="delete"][data-client-media-kind="${kind}"]`);
-
-        if (!img || !placeholder) return;
-
-        if (state && state.exists) {
-            const dataUrl = `data:${state.mimeType || 'image/jpeg'};base64,${state.previewBase64 || ''}`;
-            img.src = dataUrl;
-            img.classList.remove('d-none');
-            placeholder.classList.add('d-none');
-            if (uploadLabel) uploadLabel.textContent = 'Reemplazar';
-            if (viewBtn) viewBtn.disabled = false;
-            if (deleteBtn) deleteBtn.disabled = false;
-            if (meta) {
-                const name = state.name ? escapeHtml_(state.name) : '';
-                meta.innerHTML = name ? `<i class="bi bi-file-earmark-image me-1"></i>${name}` : '';
-            }
-            img.style.cursor = 'zoom-in';
-        } else {
-            img.src = '';
-            img.classList.add('d-none');
-            placeholder.classList.remove('d-none');
-            if (uploadLabel) uploadLabel.textContent = 'Subir';
-            if (viewBtn) viewBtn.disabled = true;
-            if (deleteBtn) deleteBtn.disabled = true;
-            if (meta) meta.textContent = '';
-            img.style.cursor = 'default';
-        }
-    }
-
-    function refresh(clientId) {
-        if (!clientId) return;
-
-        // estado "cargando" ligero
-        setCardState_('FACHADA', null);
-        setCardState_('LLAVE', null);
-
-        ApiService.call('getClientMedia', clientId)
+    function refresh_(clientId) {
+        showNotice_('', '');
+        ApiService.call('listClientMedia', clientId)
             .then((res) => {
-                const fachada = res && res.fachada ? res.fachada : null;
-                const llave = res && res.llave ? res.llave : null;
-                setCardState_('FACHADA', fachada);
-                setCardState_('LLAVE', llave);
-                // Guardar estado en el DOM para view
-                sectionState_.fachada = fachada;
-                sectionState_.llave = llave;
+                state.fachada = (res && res.fachada) ? res.fachada : [];
+                state.llave = (res && res.llave) ? res.llave : [];
+                renderKindGrid_('FACHADA', state.fachada);
+                renderKindGrid_('LLAVE', state.llave);
             })
             .catch((err) => {
                 console.error(err);
-                Alerts && Alerts.showAlert('No se pudieron cargar las fotos del cliente: ' + err.message, 'warning');
+                showNotice_('danger', 'No se pudieron cargar las fotos. ' + (err && err.message ? err.message : err));
             });
     }
 
-    const sectionState_ = { fachada: null, llave: null };
+    function attachEvents_(sectionEl) {
+        if (!sectionEl) return;
 
-    function attachEvents(clientId) {
-        // Upload buttons -> file input
-        document.querySelectorAll('[data-client-media-action="upload"]').forEach(btn => {
-            btn.addEventListener('click', function () {
-                const kind = this.getAttribute('data-client-media-kind');
-                const key = String(kind || '').toLowerCase();
-                const input = document.getElementById(`client-media-${key}-input`);
+        // Delegación de clicks
+        sectionEl.addEventListener('click', function (e) {
+            const target = e.target && e.target.closest ? e.target.closest('[data-cm-action]') : null;
+            if (!target) return;
+
+            const action = target.getAttribute('data-cm-action');
+            const kind = String(target.getAttribute('data-cm-kind') || '').trim().toUpperCase();
+            const fileId = String(target.getAttribute('data-cm-file-id') || '').trim();
+
+            if (!state.clientId) {
+                showNotice_('warning', 'Guardá el cliente para habilitar las fotos.');
+                return;
+            }
+
+            if (action === 'add') {
+                const input = document.getElementById(`client-media-${kind.toLowerCase()}-add-input`);
                 if (input) input.click();
+                return;
+            }
+
+            if (action === 'view') {
+                if (!fileId) return;
+                openImageModalFromServer_(fileId);
+                return;
+            }
+
+            if (action === 'replace') {
+                if (!fileId) return;
+                state.pendingReplace = { kind: kind, fileId: fileId };
+                const input = document.getElementById(REPLACE_INPUT_ID);
+                if (input) input.click();
+                return;
+            }
+
+            if (action === 'delete') {
+                if (!fileId) return;
+                confirmDeleteFile_(fileId);
+                return;
+            }
+        });
+
+        // Inputs: agregar
+        ['FACHADA', 'LLAVE'].forEach((kind) => {
+            const input = document.getElementById(`client-media-${kind.toLowerCase()}-add-input`);
+            if (!input) return;
+            input.addEventListener('change', function () {
+                const files = this.files ? Array.from(this.files) : [];
+                this.value = '';
+                if (!files.length) return;
+                uploadFiles_(state.clientId, kind, files, '');
             });
         });
 
-        // Inputs -> upload
-        document.querySelectorAll('[data-client-media-input]').forEach(input => {
-            input.addEventListener('change', function () {
-                const kind = this.getAttribute('data-client-media-input');
+        // Input: reemplazar
+        const replaceInput = document.getElementById(REPLACE_INPUT_ID);
+        if (replaceInput) {
+            replaceInput.addEventListener('change', function () {
                 const file = this.files && this.files[0] ? this.files[0] : null;
                 this.value = '';
-                if (!clientId) {
-                    Alerts && Alerts.showAlert('Guardá el cliente antes de subir fotos.', 'warning');
-                    return;
-                }
                 if (!file) return;
-                uploadFile_(clientId, kind, file);
+                if (!state.pendingReplace) return;
+                const { kind, fileId } = state.pendingReplace;
+                state.pendingReplace = null;
+                uploadFiles_(state.clientId, kind, [file], fileId);
             });
-        });
-
-        // Delete
-        document.querySelectorAll('[data-client-media-action="delete"]').forEach(btn => {
-            btn.addEventListener('click', function () {
-                const kind = this.getAttribute('data-client-media-kind');
-                if (!clientId) return;
-                confirmDelete_(clientId, kind);
-            });
-        });
-
-        // View
-        document.querySelectorAll('[data-client-media-action="view"]').forEach(btn => {
-            btn.addEventListener('click', function () {
-                const kind = this.getAttribute('data-client-media-kind');
-                const st = kind === 'FACHADA' ? sectionState_.fachada : sectionState_.llave;
-                if (!st || !st.exists) return;
-                openImageModal_(kind === 'FACHADA' ? 'Fachada' : 'Llave', st);
-            });
-        });
-
-        // Click on image opens modal too
-        ['fachada', 'llave'].forEach(key => {
-            const img = document.getElementById(`client-media-${key}-img`);
-            if (!img) return;
-            img.addEventListener('click', function () {
-                const st = key === 'fachada' ? sectionState_.fachada : sectionState_.llave;
-                if (!st || !st.exists) return;
-                openImageModal_(key === 'fachada' ? 'Fachada' : 'Llave', st);
-            });
-        });
+        }
     }
 
     function resizeImageToJpegBase64_(file, maxDimPx = 1600, quality = 0.85) {
@@ -291,7 +352,6 @@ var ClientMediaPanel = (function () {
                     const ctx = canvas.getContext('2d');
                     if (!ctx) return reject(new Error('No se pudo preparar canvas.'));
 
-                    // Fondo blanco (por si viene PNG con transparencia)
                     ctx.fillStyle = '#ffffff';
                     ctx.fillRect(0, 0, nw, nh);
                     ctx.drawImage(img, 0, 0, nw, nh);
@@ -308,37 +368,49 @@ var ClientMediaPanel = (function () {
         });
     }
 
-    function uploadFile_(clientId, kind, file) {
-        UiState && UiState.setGlobalLoading(true, 'Subiendo foto...');
+    async function uploadFiles_(clientId, kind, files, replaceFileId) {
+        const list = Array.isArray(files) ? files.filter(Boolean) : [];
+        if (!list.length) return;
 
-        resizeImageToJpegBase64_(file, 1600, 0.85)
-            .then(({ base64, mimeType }) => {
-                return ApiService.call('uploadClientMedia', { clientId: clientId, kind: kind, base64: base64, mimeType: mimeType });
-            })
-            .then(() => {
-                Alerts && Alerts.showAlert('Foto actualizada.', 'success');
-                refresh(clientId);
-            })
-            .catch((err) => {
-                console.error(err);
-                Alerts && Alerts.showAlert('Error al subir foto: ' + err.message, 'danger');
-            })
-            .finally(() => {
-                UiState && UiState.setGlobalLoading(false);
-            });
+        showNotice_('', '');
+
+        try {
+            UiState && UiState.setGlobalLoading(true, `Subiendo ${list.length} foto(s)...`);
+            for (let i = 0; i < list.length; i++) {
+                const label = replaceFileId ? 'Reemplazando foto...' : `Subiendo foto ${i + 1}/${list.length}...`;
+                UiState && UiState.setGlobalLoading(true, label);
+                const { base64, mimeType } = await resizeImageToJpegBase64_(list[i], 1600, 0.85);
+                await ApiService.call('uploadClientMedia', {
+                    clientId: clientId,
+                    kind: kind,
+                    base64: base64,
+                    mimeType: mimeType,
+                    replaceFileId: replaceFileId || ''
+                });
+                // Solo reemplazamos una vez si fue replace
+                if (replaceFileId) break;
+            }
+            showNotice_('success', 'Fotos actualizadas.');
+            refresh_(clientId);
+        } catch (err) {
+            console.error(err);
+            showNotice_('danger', 'Error al subir foto: ' + (err && err.message ? err.message : err));
+        } finally {
+            UiState && UiState.setGlobalLoading(false);
+        }
     }
 
-    function confirmDelete_(clientId, kind) {
+    function confirmDeleteFile_(fileId) {
         const doDelete = () => {
             UiState && UiState.setGlobalLoading(true, 'Eliminando foto...');
-            ApiService.call('deleteClientMedia', clientId, kind)
+            ApiService.call('deleteClientMediaFile', fileId)
                 .then(() => {
-                    Alerts && Alerts.showAlert('Foto eliminada.', 'success');
-                    refresh(clientId);
+                    showNotice_('success', 'Foto eliminada.');
+                    refresh_(state.clientId);
                 })
                 .catch((err) => {
                     console.error(err);
-                    Alerts && Alerts.showAlert('Error al eliminar foto: ' + err.message, 'danger');
+                    showNotice_('danger', 'Error al eliminar foto: ' + (err && err.message ? err.message : err));
                 })
                 .finally(() => UiState && UiState.setGlobalLoading(false));
         };
@@ -359,8 +431,25 @@ var ClientMediaPanel = (function () {
         if (confirm('¿Seguro que querés eliminar esta foto?')) doDelete();
     }
 
+    function openImageModalFromServer_(fileId) {
+        UiState && UiState.setGlobalLoading(true, 'Cargando foto...');
+        ApiService.call('getClientMediaImage', fileId, 1600)
+            .then((res) => {
+                if (!res || !res.base64) {
+                    showNotice_('warning', 'No se pudo cargar la imagen.');
+                    return;
+                }
+                openImageModal_('Foto', res);
+            })
+            .catch((err) => {
+                console.error(err);
+                showNotice_('danger', 'Error al cargar foto: ' + (err && err.message ? err.message : err));
+            })
+            .finally(() => UiState && UiState.setGlobalLoading(false));
+    }
+
     function openImageModal_(title, state) {
-        if (!state || !state.exists) return;
+        if (!state || !state.base64) return;
         if (typeof bootstrap === 'undefined' || !bootstrap.Modal) {
             window.open(state.url || '#', '_blank');
             return;
@@ -369,7 +458,7 @@ var ClientMediaPanel = (function () {
         const modalId = 'client-media-preview-' + Date.now() + '-' + Math.random().toString(16).slice(2);
         const titleId = modalId + '-title';
 
-        const dataUrl = `data:${state.mimeType || 'image/jpeg'};base64,${state.previewBase64 || ''}`;
+        const dataUrl = `data:${state.mimeType || 'image/jpeg'};base64,${state.base64 || ''}`;
 
         const wrapper = document.createElement('div');
         wrapper.innerHTML = `
@@ -407,3 +496,4 @@ var ClientMediaPanel = (function () {
         render: render
     };
 })();
+

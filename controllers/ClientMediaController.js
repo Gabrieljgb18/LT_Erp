@@ -14,15 +14,6 @@ var ClientMediaController = (function () {
     LLAVE: 'LLAVE'
   };
 
-  function normalizeHeaderKey_(val) {
-    return String(val || '')
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .toUpperCase()
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-
   function getFolderId_(kind) {
     const config = (typeof DatabaseService !== 'undefined' && DatabaseService.getConfig)
       ? (DatabaseService.getConfig() || {})
@@ -65,7 +56,10 @@ var ClientMediaController = (function () {
     const displayName = getClientDisplayName_(clientId);
     const safeName = sanitizeFilenamePart_(displayName) || ('Cliente ' + clientId);
     const safeExt = ext || 'jpg';
-    return `CLIENTE_${clientId}__${safeName}__${kind}.${safeExt}`;
+    const tz = (typeof Session !== 'undefined' && Session.getScriptTimeZone) ? Session.getScriptTimeZone() : 'GMT';
+    const ts = Utilities.formatDate(new Date(), tz, 'yyyyMMdd_HHmmss');
+    const rand = Math.random().toString(16).slice(2, 6).toUpperCase();
+    return `CLIENTE_${clientId}__${safeName}__${kind}__${ts}_${rand}.${safeExt}`;
   }
 
   function extFromMime_(mimeType) {
@@ -95,23 +89,19 @@ var ClientMediaController = (function () {
     return DriveApp.searchFiles(q);
   }
 
-  function pickLatestFile_(iter) {
-    let best = null;
-    let bestTs = -Infinity;
+  function listFiles_(folderId, clientId, kind, limit) {
+    const iter = searchFiles_(folderId, clientId, kind);
+    const items = [];
     while (iter.hasNext()) {
-      const f = iter.next();
-      let ts = 0;
-      try {
-        ts = f.getLastUpdated().getTime();
-      } catch (e) {
-        ts = 0;
-      }
-      if (ts >= bestTs) {
-        bestTs = ts;
-        best = f;
-      }
+      items.push(iter.next());
     }
-    return best;
+    items.sort(function (a, b) {
+      const ta = a && a.getLastUpdated ? a.getLastUpdated().getTime() : 0;
+      const tb = b && b.getLastUpdated ? b.getLastUpdated().getTime() : 0;
+      return tb - ta;
+    });
+    const lim = Number(limit) || 30;
+    return items.slice(0, lim);
   }
 
   function buildImageBase64_(file, maxSizePx) {
@@ -138,21 +128,19 @@ var ClientMediaController = (function () {
     };
   }
 
-  function buildFileDto_(file) {
-    if (!file) return { exists: false };
-    const preview = buildImageBase64_(file, 720);
+  function buildThumbDto_(file, thumbSizePx) {
+    const preview = buildImageBase64_(file, Number(thumbSizePx) || 320);
     return {
-      exists: true,
       fileId: file.getId(),
       name: file.getName(),
       url: file.getUrl(),
       updatedAt: file.getLastUpdated ? file.getLastUpdated().toISOString() : '',
       mimeType: preview.mimeType,
-      previewBase64: preview.base64
+      thumbnailBase64: preview.base64
     };
   }
 
-  function getClientMedia(clientId) {
+  function listClientMedia(clientId) {
     if (clientId == null || clientId === '') {
       throw new Error('clientId requerido');
     }
@@ -161,13 +149,27 @@ var ClientMediaController = (function () {
     const folderF = getFolderId_(KINDS.FACHADA);
     const folderL = getFolderId_(KINDS.LLAVE);
 
-    const fFile = pickLatestFile_(searchFiles_(folderF, id, KINDS.FACHADA));
-    const lFile = pickLatestFile_(searchFiles_(folderL, id, KINDS.LLAVE));
+    const fachadaFiles = listFiles_(folderF, id, KINDS.FACHADA, 30).map(function (f) { return buildThumbDto_(f, 320); });
+    const llaveFiles = listFiles_(folderL, id, KINDS.LLAVE, 30).map(function (f) { return buildThumbDto_(f, 320); });
 
     return {
       clientId: id,
-      fachada: buildFileDto_(fFile),
-      llave: buildFileDto_(lFile)
+      fachada: fachadaFiles,
+      llave: llaveFiles
+    };
+  }
+
+  function getClientMediaImage(fileId, maxSizePx) {
+    if (!fileId) throw new Error('fileId requerido');
+    const f = DriveApp.getFileById(String(fileId));
+    const preview = buildImageBase64_(f, Number(maxSizePx) || 1400);
+    return {
+      fileId: f.getId(),
+      name: f.getName(),
+      url: f.getUrl(),
+      updatedAt: f.getLastUpdated ? f.getLastUpdated().toISOString() : '',
+      mimeType: preview.mimeType,
+      base64: preview.base64
     };
   }
 
@@ -177,6 +179,7 @@ var ClientMediaController = (function () {
     const kind = String(payload.kind || '').trim().toUpperCase();
     const base64 = String(payload.base64 || '').trim();
     const mimeType = String(payload.mimeType || 'image/jpeg').trim() || 'image/jpeg';
+    const replaceFileId = payload.replaceFileId ? String(payload.replaceFileId).trim() : '';
 
     if (clientId == null || clientId === '') throw new Error('clientId requerido');
     if (kind !== KINDS.FACHADA && kind !== KINDS.LLAVE) throw new Error('kind inválido');
@@ -184,28 +187,43 @@ var ClientMediaController = (function () {
 
     const id = String(clientId).trim();
 
-    const folderId = getFolderId_(kind);
     const folder = getFolder_(kind);
-
-    // Borrar versiones previas de este tipo (para "modificar/reemplazar")
-    const oldIter = searchFiles_(folderId, id, kind);
-    while (oldIter.hasNext()) {
-      const f = oldIter.next();
-      try { f.setTrashed(true); } catch (e) { /* ignore */ }
-    }
 
     const bytes = Utilities.base64Decode(base64);
     const ext = extFromMime_(mimeType);
     const filename = buildFileName_(id, kind, ext);
     const blob = Utilities.newBlob(bytes, mimeType, filename);
 
-    const file = folder.createFile(blob);
-    file.setName(filename);
+    let file = null;
+    if (replaceFileId) {
+      try {
+        file = DriveApp.getFileById(replaceFileId);
+      } catch (e) {
+        file = null;
+      }
+    }
+
+    if (file) {
+      try {
+        file.setBlob(blob);
+      } catch (e) {
+        // fallback: recrear archivo
+        file = null;
+      }
+    }
+
+    if (!file) {
+      file = folder.createFile(blob);
+    } else {
+      try { file.moveTo(folder); } catch (e) { /* ignore */ }
+    }
+
+    try { file.setName(filename); } catch (e) { /* ignore */ }
 
     return {
       ok: true,
       kind: kind,
-      file: buildFileDto_(file)
+      file: buildThumbDto_(file, 320)
     };
   }
 
@@ -231,10 +249,18 @@ var ClientMediaController = (function () {
     return { ok: true, deleted: deleted };
   }
 
+  function deleteClientMediaFile(fileId) {
+    if (!fileId) throw new Error('fileId requerido');
+    const f = DriveApp.getFileById(String(fileId));
+    f.setTrashed(true);
+    return { ok: true };
+  }
+
   return {
-    getClientMedia: getClientMedia,
+    listClientMedia: listClientMedia,
+    getClientMediaImage: getClientMediaImage,
     uploadClientMedia: uploadClientMedia,
-    deleteClientMedia: deleteClientMedia
+    deleteClientMedia: deleteClientMedia,
+    deleteClientMediaFile: deleteClientMediaFile
   };
 })();
-

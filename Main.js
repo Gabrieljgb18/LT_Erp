@@ -62,7 +62,16 @@ function getReferenceData() {
 // ===================== Media Clientes (Drive) =====================
 
 function getClientMedia(clientId) {
-  return ClientMediaController.getClientMedia(clientId);
+  // Compat: devuelve el listado completo (fachada/llave arrays)
+  return ClientMediaController.listClientMedia(clientId);
+}
+
+function listClientMedia(clientId) {
+  return ClientMediaController.listClientMedia(clientId);
+}
+
+function getClientMediaImage(fileId, maxSizePx) {
+  return ClientMediaController.getClientMediaImage(fileId, maxSizePx);
 }
 
 function uploadClientMedia(payload) {
@@ -71,6 +80,10 @@ function uploadClientMedia(payload) {
 
 function deleteClientMedia(clientId, kind) {
   return ClientMediaController.deleteClientMedia(clientId, kind);
+}
+
+function deleteClientMediaFile(fileId) {
+  return ClientMediaController.deleteClientMediaFile(fileId);
 }
 
 // Helper para autorizar scopes nuevos (Drive) desde el editor de Apps Script.
