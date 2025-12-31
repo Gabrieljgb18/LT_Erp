@@ -40,6 +40,33 @@
           <i class="bi bi-ui-checks-grid nav-icon"></i>
           <span>Formularios</span>
         </a>
+        <div class="nav-item-group">
+          <a class="nav-link-parent" data-toggle-submenu="submenu-asistencia">
+            <div class="d-flex align-items-center gap-2">
+              <i class="bi bi-calendar2-week nav-icon"></i>
+              <span>Asistencia</span>
+            </div>
+            <i class="bi bi-chevron-right nav-arrow"></i>
+          </a>
+          <div id="submenu-asistencia" class="nav-submenu">
+            <a class="nav-link" data-target="asistencia-plan">
+              <i class="bi bi-diagram-3 nav-icon"></i>
+              <span>Plan Semanal</span>
+            </a>
+            <a class="nav-link" data-target="asistencia-diaria">
+              <i class="bi bi-clipboard-check nav-icon"></i>
+              <span>Tomar Asistencia</span>
+            </a>
+            <a class="nav-link" data-target="asistencia-calendario">
+              <i class="bi bi-person-badge nav-icon"></i>
+              <span>Calendario Empleado</span>
+            </a>
+            <a class="nav-link" data-target="asistencia-clientes">
+              <i class="bi bi-buildings nav-icon"></i>
+              <span>Calendario Clientes</span>
+            </a>
+          </div>
+        </div>
         <a class="nav-link" data-target="reportes">
           <i class="bi bi-people nav-icon"></i>
           <span>Reporte Empleados</span>
@@ -69,7 +96,7 @@
         <button id="sidebar-toggle" class="sidebar-toggle">
           ☰
         </button>
-        <h5 class="m-0" id="page-title">Asistencia</h5>
+        <h5 class="m-0" id="page-title">Formularios</h5>
         <div id="global-loading" class="ms-auto d-none"></div>
       </header>
 
@@ -162,6 +189,26 @@
                 </div>
               </div>
             </div>
+          </div>
+
+          <!-- View: Asistencia Plan Semanal -->
+          <div id="view-asistencia-plan" class="view-section d-none">
+            <div id="weekly-plan-panel"></div>
+          </div>
+
+          <!-- View: Asistencia Diaria -->
+          <div id="view-asistencia-diaria" class="view-section d-none">
+            <div id="daily-attendance-panel"></div>
+          </div>
+
+          <!-- View: Calendario Empleado -->
+          <div id="view-asistencia-calendario" class="view-section d-none">
+            <div id="employee-calendar-panel"></div>
+          </div>
+
+          <!-- View: Calendario Clientes -->
+          <div id="view-asistencia-clientes" class="view-section d-none">
+            <div id="client-calendar-panel"></div>
           </div>
 
           <!-- View: Reportes -->

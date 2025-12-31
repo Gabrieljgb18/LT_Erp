@@ -371,6 +371,10 @@
         const pageTitle = document.getElementById('page-title');
         const titles = {
           registro: 'Formularios',
+          'asistencia-plan': 'Plan Semanal',
+          'asistencia-diaria': 'Tomar Asistencia',
+          'asistencia-calendario': 'Calendario Empleado',
+          'asistencia-clientes': 'Calendario Clientes',
           reportes: 'Reporte Empleados',
           'reportes-clientes': 'Reporte Clientes',
           facturacion: 'Facturación',
@@ -394,6 +398,34 @@
         }
 
         // Initialize view-specific content
+        if (viewId === 'asistencia-plan' && typeof WeeklyPlanPanel !== 'undefined') {
+          const container = document.getElementById('weekly-plan-panel');
+          if (container) {
+            container.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary"></div><div class="mt-2">Cargando planes...</div></div>';
+            ApiService.call('searchRecords', 'ASISTENCIA_PLAN', '')
+              .then(records => {
+                WeeklyPlanPanel.renderList(container, records || []);
+              })
+              .catch(err => {
+                console.error('Error cargando planes:', err);
+                container.innerHTML = '<div class="alert alert-danger">Error al cargar planes</div>';
+              });
+          }
+        }
+
+        if (viewId === 'asistencia-diaria' && typeof AttendanceDailyUI !== 'undefined') {
+          const container = document.getElementById('daily-attendance-panel');
+          if (container) AttendanceDailyUI.render(container);
+        }
+
+        if (viewId === 'asistencia-calendario' && typeof EmployeeCalendarPanel !== 'undefined') {
+          EmployeeCalendarPanel.render('employee-calendar-panel');
+        }
+
+        if (viewId === 'asistencia-clientes' && typeof ClientCalendarPanel !== 'undefined') {
+          ClientCalendarPanel.render('client-calendar-panel');
+        }
+
         if (viewId === 'reportes' && HoursDetailPanel) {
           if (MonthlySummaryPanel) MonthlySummaryPanel.render();
           HoursDetailPanel.render();

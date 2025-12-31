@@ -35,7 +35,7 @@ const Sidebar = (() => {
         }
 
         // Setup menu items
-        const links = elements.sidebar.querySelectorAll('.nav-link');
+        const links = elements.sidebar.querySelectorAll('.nav-link[data-target]');
         links.forEach(link => {
             link.addEventListener('click', (e) => {
                 const targetId = link.getAttribute('data-target');
@@ -48,6 +48,26 @@ const Sidebar = (() => {
                 }
             });
             elements.menuItems.push(link);
+        });
+
+        // Setup submenu toggles
+        const submenuToggles = elements.sidebar.querySelectorAll('[data-toggle-submenu]');
+        submenuToggles.forEach(toggle => {
+            toggle.addEventListener('click', (e) => {
+                e.preventDefault();
+                const submenuId = toggle.getAttribute('data-toggle-submenu');
+                const submenu = document.getElementById(submenuId);
+                if (!submenu) return;
+
+                const isOpen = submenu.classList.contains('show');
+                elements.sidebar.querySelectorAll('.nav-submenu').forEach(sm => sm.classList.remove('show'));
+                elements.sidebar.querySelectorAll('.nav-link-parent').forEach(p => p.classList.remove('expanded'));
+
+                if (!isOpen) {
+                    submenu.classList.add('show');
+                    toggle.classList.add('expanded');
+                }
+            });
         });
     }
 
@@ -94,13 +114,35 @@ const Sidebar = (() => {
         activeItem = targetId;
 
         // Update menu items
+        let activeLink = null;
         elements.menuItems.forEach(item => {
             if (item.getAttribute('data-target') === targetId) {
                 item.classList.add('active');
+                activeLink = item;
             } else {
                 item.classList.remove('active');
             }
         });
+
+        // Reset parent menus
+        if (elements.sidebar) {
+            elements.sidebar.querySelectorAll('.nav-link-parent').forEach(p => {
+                p.classList.remove('active');
+            });
+        }
+
+        // Expand parent submenu if needed
+        if (activeLink) {
+            const group = activeLink.closest('.nav-item-group');
+            if (group) {
+                const parentToggle = group.querySelector('.nav-link-parent');
+                const submenu = group.querySelector('.nav-submenu');
+                if (parentToggle && submenu) {
+                    parentToggle.classList.add('active', 'expanded');
+                    submenu.classList.add('show');
+                }
+            }
+        }
 
         // Trigger custom event for view change
         const event = new CustomEvent('view-change', {

@@ -8,4 +8,3 @@ mcp/**
 **/*.ts
 **/*.map
 MODULO_ASISTENCIA.md
-controllers/AttendanceController/employeeSchedule.js

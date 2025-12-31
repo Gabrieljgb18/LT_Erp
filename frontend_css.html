@@ -1148,6 +1148,27 @@ transition: opacity 0.2s ease;
 opacity: 1;
 }
 
+.calendar-client-card--summary {
+padding: 0.65rem;
+}
+
+.calendar-client-employees {
+display: flex;
+flex-wrap: wrap;
+gap: 0.35rem;
+margin-top: 0.4rem;
+}
+
+.calendar-emp-chip {
+background: rgba(99, 102, 241, 0.12);
+color: #4f46e5;
+border-radius: 999px;
+padding: 0.15rem 0.5rem;
+font-size: 0.7rem;
+font-weight: 600;
+white-space: nowrap;
+}
+
 .calendar-no-work {
 flex: 1;
 display: flex;
@@ -1167,6 +1188,38 @@ font-size: 1.5rem;
 #calendar-summary .h4 {
 font-weight: 700;
 letter-spacing: -0.02em;
+}
+
+#client-calendar-summary .h4 {
+font-weight: 700;
+letter-spacing: -0.02em;
+}
+
+.client-photo-thumb {
+width: 96px;
+height: 96px;
+border: 1px solid var(--border-color);
+border-radius: var(--radius-md);
+background: #fff;
+display: inline-flex;
+align-items: center;
+justify-content: center;
+padding: 0;
+overflow: hidden;
+cursor: zoom-in;
+box-shadow: var(--shadow-sm);
+transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.client-photo-thumb img {
+width: 100%;
+height: 100%;
+object-fit: cover;
+}
+
+.client-photo-thumb:hover {
+transform: translateY(-1px);
+box-shadow: var(--shadow-md);
 }
 
 /* ==============================================

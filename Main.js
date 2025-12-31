@@ -316,3 +316,21 @@ function deleteInvoice(id) {
 function generateInvoicePdf(id) {
   return InvoiceController.generateInvoicePdf(id);
 }
+
+// ===================== ASISTENCIA API =====================
+
+function getEmployeeWeeklySchedule(empleado, idEmpleado, weekStartDate) {
+  return AttendanceEmployeeSchedule.getEmployeeWeeklySchedule(empleado, idEmpleado, weekStartDate);
+}
+
+function getEmpleadosConId() {
+  return AttendanceEmployeeSchedule.getEmpleadosConId();
+}
+
+function getWeeklyClientOverview(weekStartDate, clientId) {
+  return AttendanceEmployeeSchedule.getWeeklyClientOverview(weekStartDate, clientId);
+}
+
+function generateEmployeeSchedulePdf(empleado, idEmpleado, weekStartDate) {
+  return PdfController.generateEmployeeSchedulePdf(empleado, idEmpleado, weekStartDate);
+}

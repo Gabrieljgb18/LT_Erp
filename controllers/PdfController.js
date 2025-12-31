@@ -434,8 +434,318 @@ var PdfController = (function () {
         return `<html><head>${style}</head><body>${header}${summaryGrid}${table}${footer}</body></html>`;
     }
 
+    function generateEmployeeSchedulePdf(empleado, idEmpleado, weekStartStr) {
+        if (empleado && typeof empleado === 'object' && !Array.isArray(empleado)) {
+            idEmpleado = empleado.idEmpleado || empleado.ID_EMPLEADO || idEmpleado;
+            weekStartStr = empleado.weekStartDate || empleado.weekStart || weekStartStr;
+            empleado = empleado.empleado || empleado.nombre || empleado.label || '';
+        }
+
+        const data = AttendanceEmployeeSchedule.getEmployeeWeeklySchedule(empleado, idEmpleado, weekStartStr);
+        if (!data || data.error) {
+            return { error: data ? data.error : 'No se pudo generar la hoja de ruta.' };
+        }
+
+        const clientIds = new Set();
+        (data.dias || []).forEach(dia => {
+            (dia.clientes || []).forEach(c => {
+                if (c && c.idCliente) clientIds.add(String(c.idCliente));
+            });
+        });
+
+        const mediaMap = buildClientMediaMap_(Array.from(clientIds));
+        const html = buildEmployeeScheduleHtml_(data, mediaMap);
+        const output = HtmlService.createHtmlOutput(html).setTitle('Hoja de Ruta');
+        const pdfBlob = output.getAs('application/pdf');
+        const base64 = Utilities.base64Encode(pdfBlob.getBytes());
+
+        const empClean = String(empleado || 'empleado').replace(/[^a-zA-Z0-9]/g, '_');
+        const label = data.semana && data.semana.label ? data.semana.label.replace(/\s+/g, '') : (weekStartStr || '');
+        const filename = `hoja_ruta_${empClean}_${label || 'semana'}.pdf`;
+
+        return { filename: filename, base64: base64 };
+    }
+
+    function buildClientMediaMap_(clientIds) {
+        const map = {};
+        const ids = Array.isArray(clientIds) ? clientIds : [];
+        ids.forEach(id => {
+            if (!id) return;
+            try {
+                const media = ClientMediaController.listClientMedia(id);
+                map[id] = {
+                    fachada: pickMedia_(media && media.fachada ? media.fachada : []),
+                    llave: pickMedia_(media && media.llave ? media.llave : [])
+                };
+            } catch (e) {
+                map[id] = { fachada: [], llave: [] };
+            }
+        });
+        return map;
+    }
+
+    function pickMedia_(items, limit) {
+        const max = Number(limit) || 2;
+        return (items || []).slice(0, max).map(it => ({
+            src: it && it.thumbnailBase64
+                ? `data:${it.mimeType || 'image/jpeg'};base64,${it.thumbnailBase64}`
+                : '',
+            name: it && it.name ? it.name : ''
+        }));
+    }
+
+    function escapeHtml_(val) {
+        return String(val == null ? '' : val)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function formatHours_(n) {
+        const num = Number(n);
+        return isNaN(num) ? '0' : num.toFixed(1).replace('.0', '');
+    }
+
+    function buildEmployeeScheduleHtml_(data, mediaMap) {
+        const style = `
+        <style>
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+            * { box-sizing: border-box; }
+            body {
+                font-family: 'Inter', sans-serif;
+                color: #1e293b;
+                margin: 0;
+                padding: 28px;
+                background: #ffffff;
+                font-size: 11px;
+            }
+            .header {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                padding-bottom: 15px;
+                border-bottom: 2px solid #6366f1;
+                margin-bottom: 22px;
+            }
+            .brand h1 {
+                margin: 0;
+                font-size: 20px;
+                font-weight: 700;
+                color: #0f172a;
+            }
+            .brand .subtitle {
+                margin-top: 4px;
+                color: #6366f1;
+                font-size: 12px;
+                font-weight: 600;
+            }
+            .meta {
+                text-align: right;
+                font-size: 11px;
+                color: #475569;
+            }
+            .meta strong { color: #0f172a; }
+            .summary {
+                display: flex;
+                gap: 12px;
+                margin-bottom: 18px;
+            }
+            .summary-card {
+                flex: 1;
+                padding: 10px;
+                border-radius: 8px;
+                border: 1px solid #e2e8f0;
+                background: #f8fafc;
+                text-align: center;
+            }
+            .summary-card strong {
+                display: block;
+                font-size: 16px;
+                margin-top: 4px;
+            }
+            .day-section {
+                margin-bottom: 16px;
+                page-break-inside: avoid;
+            }
+            .day-header {
+                background: #eef2ff;
+                color: #1e293b;
+                padding: 8px 12px;
+                border-radius: 8px 8px 0 0;
+                font-weight: 700;
+                display: flex;
+                justify-content: space-between;
+            }
+            .visit-card {
+                border: 1px solid #e2e8f0;
+                border-top: none;
+                border-radius: 0 0 8px 8px;
+                padding: 12px;
+                background: #fff;
+            }
+            .visit {
+                border: 1px solid #e2e8f0;
+                border-radius: 8px;
+                padding: 10px;
+                margin-top: 10px;
+                page-break-inside: avoid;
+            }
+            .visit-title {
+                font-weight: 700;
+                font-size: 12px;
+                margin-bottom: 6px;
+            }
+            .visit-meta {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px 14px;
+                font-size: 10px;
+                color: #475569;
+                margin-bottom: 6px;
+            }
+            .visit-meta span {
+                display: inline-block;
+            }
+            .visit-obs {
+                margin-top: 6px;
+                font-size: 10px;
+                color: #0f172a;
+            }
+            .photos {
+                display: flex;
+                gap: 12px;
+                margin-top: 8px;
+            }
+            .photo-group {
+                flex: 1;
+            }
+            .photo-title {
+                font-size: 10px;
+                font-weight: 600;
+                margin-bottom: 4px;
+                color: #475569;
+            }
+            .photo-row {
+                display: flex;
+                gap: 6px;
+                flex-wrap: wrap;
+            }
+            .photo {
+                width: 90px;
+                height: 70px;
+                border-radius: 6px;
+                border: 1px solid #e2e8f0;
+                object-fit: cover;
+            }
+            .photo-empty {
+                font-size: 10px;
+                color: #94a3b8;
+            }
+            .day-empty {
+                color: #94a3b8;
+                padding: 10px 0;
+                font-size: 10px;
+            }
+            .footer {
+                margin-top: 20px;
+                color: #94a3b8;
+                font-size: 10px;
+                text-align: center;
+            }
+        </style>`;
+
+        const header = `
+        <div class="header">
+            <div class="brand">
+                <h1>Hoja de Ruta</h1>
+                <div class="subtitle">LT ERP · Asistencia</div>
+            </div>
+            <div class="meta">
+                <div>Empleado: <strong>${escapeHtml_(data.empleado || '')}</strong></div>
+                <div>Semana: <strong>${escapeHtml_(data.semana ? data.semana.label : '')}</strong></div>
+                <div>Generado: <strong>${new Date().toLocaleDateString('es-AR')}</strong></div>
+            </div>
+        </div>`;
+
+        const summary = `
+        <div class="summary">
+            <div class="summary-card">
+                Horas programadas
+                <strong>${formatHours_(data.resumen ? data.resumen.totalHoras : 0)} hs</strong>
+            </div>
+            <div class="summary-card">
+                Clientes
+                <strong>${data.resumen ? data.resumen.totalClientes : 0}</strong>
+            </div>
+            <div class="summary-card">
+                Días con trabajo
+                <strong>${data.resumen ? data.resumen.diasTrabajo : 0}</strong>
+            </div>
+        </div>`;
+
+        const buildPhotoGroup = (label, items) => {
+            if (!items || !items.length) {
+                return `<div class="photo-group"><div class="photo-title">${label}</div><div class="photo-empty">Sin fotos</div></div>`;
+            }
+            const photos = items.map(p => p.src ? `<img class="photo" src="${p.src}" alt="${escapeHtml_(label)}">` : '').join('');
+            return `<div class="photo-group"><div class="photo-title">${label}</div><div class="photo-row">${photos}</div></div>`;
+        };
+
+        const daysHtml = (data.dias || []).map(dia => {
+            const dayHeader = `${escapeHtml_(dia.diaDisplay || '')} · ${escapeHtml_(dia.fechaDisplay || '')}`;
+            if (!dia.clientes || dia.clientes.length === 0) {
+                return `
+                <div class="day-section">
+                    <div class="day-header">${dayHeader}</div>
+                    <div class="visit-card">
+                        <div class="day-empty">Sin asignaciones</div>
+                    </div>
+                </div>`;
+            }
+
+            const visits = dia.clientes.map(c => {
+                const media = mediaMap && c.idCliente ? mediaMap[String(c.idCliente)] : null;
+                const fachada = media ? media.fachada : [];
+                const llave = media ? media.llave : [];
+                const meta = [
+                    c.horaEntrada ? `Ingreso: ${escapeHtml_(c.horaEntrada)}` : '',
+                    c.horasPlan ? `Horas: ${formatHours_(c.horasPlan)} hs` : '',
+                    c.direccion ? `Dirección: ${escapeHtml_(c.direccion)}` : '',
+                    c.telefono ? `Tel: ${escapeHtml_(c.telefono)}` : '',
+                    c.encargado ? `Contacto: ${escapeHtml_(c.encargado)}` : '',
+                    c.correo ? `Correo: ${escapeHtml_(c.correo)}` : ''
+                ].filter(Boolean);
+
+                return `
+                    <div class="visit">
+                        <div class="visit-title">${escapeHtml_(c.cliente || c.razonSocial || '')}</div>
+                        <div class="visit-meta">${meta.map(m => `<span>${m}</span>`).join('')}</div>
+                        ${c.observaciones ? `<div class="visit-obs"><strong>Obs:</strong> ${escapeHtml_(c.observaciones)}</div>` : ''}
+                        <div class="photos">
+                            ${buildPhotoGroup('Fachadas', fachada)}
+                            ${buildPhotoGroup('Llaves', llave)}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            return `
+                <div class="day-section">
+                    <div class="day-header">${dayHeader}</div>
+                    <div class="visit-card">${visits}</div>
+                </div>`;
+        }).join('');
+
+        const footer = `<div class="footer">Generado automáticamente por LT ERP</div>`;
+
+        return `<html><head>${style}</head><body>${header}${summary}${daysHtml}${footer}</body></html>`;
+    }
+
     return {
         generateHoursPdf: generateHoursPdf,
-        generateClientHoursPdf: generateClientHoursPdf
+        generateClientHoursPdf: generateClientHoursPdf,
+        generateEmployeeSchedulePdf: generateEmployeeSchedulePdf
     };
 })();
