@@ -422,6 +422,9 @@ const AttendanceEmployeeSchedule = (function () {
                     cliente: clienteData.nombre || nombreCliente,
                     razonSocial: clienteData.razonSocial || '',
                     direccion: clienteData.direccion || '',
+                    telefono: clienteData.telefono || '',
+                    encargado: clienteData.encargado || '',
+                    correo: clienteData.correoAdministracion || '',
                     observaciones: row[idxObs] || '',
                     totalHoras: 0,
                     asignaciones: []

@@ -4992,7 +4992,10 @@ var ClientMediaPanel = (function () {
                             : '';
 
                         html += `
-                            <div class="calendar-client-card calendar-client-card--summary">
+                            <div class="calendar-client-card calendar-client-card--summary"
+                                 data-cliente-id="${escapeHtml(cliente.idCliente || '')}"
+                                 data-cliente-nombre="${escapeHtml(cliente.cliente || '')}"
+                                 data-dia="${escapeHtml(dia.diaSemana || '')}">
                                 <div class="calendar-client-name" title="${escapeHtml(cliente.cliente)}">
                                     <i class="bi bi-building me-1"></i>
                                     ${escapeHtml(cliente.cliente || cliente.razonSocial || '')}
@@ -5012,6 +5015,9 @@ var ClientMediaPanel = (function () {
                                         ${empleadosUnique.map(emp => `<span class="calendar-emp-chip">${escapeHtml(emp)}</span>`).join('')}
                                     </div>
                                 ` : ''}
+                                <div class="calendar-client-expand">
+                                    <i class="bi bi-eye"></i> Ver detalles
+                                </div>
                             </div>
                         `;
                     });
@@ -5036,6 +5042,285 @@ var ClientMediaPanel = (function () {
             `;
 
             container.innerHTML = html;
+
+            container.querySelectorAll('.calendar-client-card').forEach(card => {
+                card.addEventListener('click', () => {
+                    const clienteId = card.dataset.clienteId;
+                    const clienteNombre = card.dataset.clienteNombre;
+                    const dia = card.dataset.dia;
+                    showClientDetails(clienteId, clienteNombre, dia);
+                });
+            });
+        }
+
+        function showClientDetails(clienteId, clienteNombre, diaSemana) {
+            if (!scheduleData || !scheduleData.dias) return;
+
+            let clienteData = null;
+            scheduleData.dias.forEach(dia => {
+                if (dia.diaSemana !== diaSemana) return;
+                const c = (dia.clientes || []).find(cl => {
+                    if (clienteId) {
+                        return String(cl.idCliente || '') === String(clienteId);
+                    }
+                    return clienteNombre && String(cl.cliente || '').trim() === String(clienteNombre).trim();
+                });
+                if (c) clienteData = c;
+            });
+
+            if (!clienteData) return;
+
+            const asignaciones = Array.isArray(clienteData.asignaciones) ? clienteData.asignaciones : [];
+            const asignacionesHtml = asignaciones.length
+                ? asignaciones.map(a => {
+                    const empleado = a.empleado || 'Sin asignar';
+                    const hora = a.horaEntrada ? ` · ${a.horaEntrada}` : '';
+                    const horas = a.horasPlan ? ` · ${formatHoras(a.horasPlan)} hs` : '';
+                    return `
+                        <div class="d-flex align-items-center gap-2">
+                            <i class="bi bi-person text-primary"></i>
+                            <span>${escapeHtml(empleado)}${escapeHtml(hora)}${escapeHtml(horas)}</span>
+                        </div>
+                    `;
+                }).join('')
+                : '<div class="text-muted small">Sin asignaciones</div>';
+
+            const modalHtml = `
+                <div class="modal fade" id="client-calendar-detail-modal" tabindex="-1">
+                    <div class="modal-dialog modal-lg modal-dialog-centered">
+                        <div class="modal-content">
+                            <div class="modal-header bg-primary text-white">
+                                <h5 class="modal-title">
+                                    <i class="bi bi-building me-2"></i>
+                                    ${escapeHtml(clienteData.cliente || clienteData.razonSocial || '')}
+                                </h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="row g-4">
+                                    <div class="col-md-6">
+                                        <h6 class="text-muted text-uppercase small mb-3">
+                                            <i class="bi bi-info-circle me-1"></i> Información del día
+                                        </h6>
+                                        <div class="d-flex flex-column gap-2">
+                                            <div class="d-flex align-items-center gap-2">
+                                                <i class="bi bi-hourglass-split text-primary"></i>
+                                                <span><strong>Horas:</strong> ${formatHoras(clienteData.totalHoras)} hs</span>
+                                            </div>
+                                            <div class="d-flex align-items-center gap-2">
+                                                <i class="bi bi-people text-primary"></i>
+                                                <span><strong>Empleados:</strong> ${asignaciones.length}</span>
+                                            </div>
+                                            ${clienteData.observaciones ? `
+                                                <div class="d-flex align-items-start gap-2">
+                                                    <i class="bi bi-sticky text-warning mt-1"></i>
+                                                    <span><strong>Obs:</strong> ${escapeHtml(clienteData.observaciones)}</span>
+                                                </div>
+                                            ` : ''}
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <h6 class="text-muted text-uppercase small mb-3">
+                                            <i class="bi bi-building me-1"></i> Datos del cliente
+                                        </h6>
+                                        <div class="d-flex flex-column gap-2">
+                                            ${clienteData.idCliente ? `
+                                                <div class="d-flex align-items-center gap-2">
+                                                    <i class="bi bi-hash text-secondary"></i>
+                                                    <span><strong>ID:</strong> ${escapeHtml(clienteData.idCliente)}</span>
+                                                </div>
+                                            ` : ''}
+                                            ${clienteData.direccion ? `
+                                                <div class="d-flex align-items-start gap-2">
+                                                    <i class="bi bi-geo-alt text-danger mt-1"></i>
+                                                    <span>${escapeHtml(clienteData.direccion)}</span>
+                                                </div>
+                                            ` : ''}
+                                            ${clienteData.telefono ? `
+                                                <div class="d-flex align-items-center gap-2">
+                                                    <i class="bi bi-telephone text-success"></i>
+                                                    <a href="tel:${escapeHtml(clienteData.telefono)}">${escapeHtml(clienteData.telefono)}</a>
+                                                </div>
+                                            ` : ''}
+                                            ${clienteData.encargado ? `
+                                                <div class="d-flex align-items-center gap-2">
+                                                    <i class="bi bi-person text-info"></i>
+                                                    <span><strong>Contacto:</strong> ${escapeHtml(clienteData.encargado)}</span>
+                                                </div>
+                                            ` : ''}
+                                            ${clienteData.correo ? `
+                                                <div class="d-flex align-items-center gap-2">
+                                                    <i class="bi bi-envelope text-primary"></i>
+                                                    <a href="mailto:${escapeHtml(clienteData.correo)}">${escapeHtml(clienteData.correo)}</a>
+                                                </div>
+                                            ` : ''}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mt-4">
+                                    <h6 class="text-muted text-uppercase small mb-3">
+                                        <i class="bi bi-people me-1"></i> Empleados asignados
+                                    </h6>
+                                    <div class="lt-surface p-3">
+                                        <div class="d-flex flex-column gap-2">
+                                            ${asignacionesHtml}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div id="client-calendar-photos" class="mt-4 d-none">
+                                    <h6 class="text-muted text-uppercase small mb-3">
+                                        <i class="bi bi-images me-1"></i> Fotos del local
+                                    </h6>
+                                    <div class="row g-3" id="client-calendar-photos-container">
+                                        <div class="text-center text-muted py-3">
+                                            <div class="spinner-border spinner-border-sm"></div>
+                                            Cargando fotos...
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                                ${clienteData.direccion ? `
+                                    <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(clienteData.direccion)}" 
+                                       target="_blank" class="btn btn-outline-primary">
+                                        <i class="bi bi-map me-1"></i> Ver en mapa
+                                    </a>
+                                ` : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            const oldModal = document.getElementById('client-calendar-detail-modal');
+            if (oldModal) oldModal.remove();
+
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            const modalEl = document.getElementById('client-calendar-detail-modal');
+            const modal = new bootstrap.Modal(modalEl);
+            modal.show();
+
+            modalEl.addEventListener('hidden.bs.modal', () => {
+                modalEl.remove();
+            });
+
+            if (clienteId && typeof ApiService !== 'undefined') {
+                loadClientPhotos(clienteId);
+            }
+        }
+
+        function loadClientPhotos(clienteId) {
+            const photosSection = document.getElementById('client-calendar-photos');
+            const photosContainer = document.getElementById('client-calendar-photos-container');
+
+            if (!photosSection || !photosContainer) return;
+
+            photosContainer.innerHTML = `
+                <div class="text-center text-muted py-3">
+                    <div class="spinner-border spinner-border-sm"></div>
+                    Cargando fotos...
+                </div>
+            `;
+
+            ApiService.call('listClientMedia', clienteId)
+                .then(media => {
+                    const fachada = media && Array.isArray(media.fachada) ? media.fachada : [];
+                    const llave = media && Array.isArray(media.llave) ? media.llave : [];
+
+                    if (!fachada.length && !llave.length) {
+                        photosSection.classList.add('d-none');
+                        return;
+                    }
+
+                    photosSection.classList.remove('d-none');
+
+                    const buildGroup = (items, title, icon, iconClass) => {
+                        const count = items.length;
+                        const thumbs = count
+                            ? items.map(photo => {
+                                const mime = photo.mimeType || 'image/jpeg';
+                                const base64 = photo.thumbnailBase64 || '';
+                                const dataUrl = base64 ? `data:${mime};base64,${base64}` : '';
+                                return `
+                                    <button type="button" class="client-photo-thumb" data-photo-id="${escapeHtml(photo.fileId || '')}" title="${escapeHtml(photo.name || title)}">
+                                        ${dataUrl ? `<img src="${dataUrl}" alt="${escapeHtml(title)}">` : '<i class=\"bi bi-image\"></i>'}
+                                    </button>
+                                `;
+                            }).join('')
+                            : '<div class="text-muted small">Sin fotos</div>';
+
+                        return `
+                            <div class="col-12 col-md-6">
+                                <div class="lt-surface p-2 h-100">
+                                    <div class="d-flex align-items-center justify-content-between mb-2">
+                                        <div class="d-flex align-items-center gap-2">
+                                            <i class="bi ${icon} ${iconClass}"></i>
+                                            <span class="fw-semibold small">${escapeHtml(title)}</span>
+                                        </div>
+                                        <span class="small text-muted">${count} foto${count === 1 ? '' : 's'}</span>
+                                    </div>
+                                    <div class="d-flex flex-wrap gap-2">
+                                        ${thumbs}
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    };
+
+                    photosContainer.innerHTML = `
+                        ${buildGroup(fachada, 'Fachadas', 'bi-building', 'text-primary')}
+                        ${buildGroup(llave, 'Llaves', 'bi-key-fill', 'text-warning')}
+                    `;
+
+                    photosContainer.querySelectorAll('[data-photo-id]').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            const fileId = btn.dataset.photoId;
+                            if (fileId) viewPhoto(fileId);
+                        });
+                    });
+                })
+                .catch(() => {
+                    photosSection.classList.add('d-none');
+                });
+        }
+
+        function viewPhoto(fileId) {
+            if (!fileId || typeof ApiService === 'undefined') return;
+
+            ApiService.call('getClientMediaImage', fileId, 1600)
+                .then(imgData => {
+                    if (imgData && imgData.base64) {
+                        const dataUrl = `data:${imgData.mimeType || 'image/jpeg'};base64,${imgData.base64}`;
+                        const modalHtml = `
+                            <div class="modal fade" id="client-calendar-photo-modal" tabindex="-1">
+                                <div class="modal-dialog modal-xl modal-dialog-centered">
+                                    <div class="modal-content bg-dark">
+                                        <div class="modal-body p-0 text-center">
+                                            <button type="button" class="btn-close btn-close-white position-absolute top-0 end-0 m-3" 
+                                                    data-bs-dismiss="modal" style="z-index: 10;"></button>
+                                            <img src="${dataUrl}" alt="Foto" 
+                                                 style="max-width: 100%; max-height: 90vh; object-fit: contain;">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+
+                        const oldModal = document.getElementById('client-calendar-photo-modal');
+                        if (oldModal) oldModal.remove();
+
+                        document.body.insertAdjacentHTML('beforeend', modalHtml);
+                        const modalEl = document.getElementById('client-calendar-photo-modal');
+                        const modal = new bootstrap.Modal(modalEl);
+                        modal.show();
+
+                        modalEl.addEventListener('hidden.bs.modal', () => modalEl.remove());
+                    }
+                })
+                .catch(err => console.error('Error cargando foto:', err));
         }
 
         function updateSummary(data) {
