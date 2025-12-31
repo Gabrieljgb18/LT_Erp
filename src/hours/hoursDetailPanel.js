@@ -462,7 +462,23 @@ var HoursDetailPanel = (function () {
     }
 
     function deleteRecord(id) {
-        if (!confirm('¿Está seguro de eliminar este registro de horas?')) return;
+        const confirmPromise =
+            typeof window !== 'undefined' &&
+            window.UiDialogs &&
+            typeof window.UiDialogs.confirm === 'function'
+                ? window.UiDialogs.confirm({
+                    title: 'Eliminar registro de horas',
+                    message: '¿Está seguro de eliminar este registro de horas?',
+                    confirmText: 'Eliminar',
+                    cancelText: 'Cancelar',
+                    confirmVariant: 'danger',
+                    icon: 'bi-trash3-fill',
+                    iconClass: 'text-danger'
+                })
+                : Promise.resolve(confirm('¿Está seguro de eliminar este registro de horas?'));
+
+        confirmPromise.then(function (confirmed) {
+            if (!confirmed) return;
 
         UiState.setGlobalLoading(true, "Eliminando...");
 
@@ -479,6 +495,7 @@ var HoursDetailPanel = (function () {
             .finally(() => {
                 UiState.setGlobalLoading(false);
             });
+        });
     }
 
     function openInlineEditModal(record) {

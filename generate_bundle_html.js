@@ -13,6 +13,7 @@ if (typeof require === "undefined") {
     path.join(root, "src", "referenceService.js"),
     path.join(root, "src", "domains", "meta.js"),
     path.join(root, "src", "ui", "alerts.js"),
+    path.join(root, "src", "ui", "dialogs.js"),
     path.join(root, "src", "ui", "state.js"),
     path.join(root, "src", "ui", "formRenderer.js"),
     path.join(root, "src", "ui", "footer.js"),

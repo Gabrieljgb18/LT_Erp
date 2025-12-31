@@ -1241,22 +1241,37 @@ var InvoicePanel = (function () {
     }
 
     function deleteInvoice(id, skipRefreshMain) {
-        if (!confirm('¿Estás seguro de que querés anular esta factura?')) {
-            return;
-        }
+        const confirmPromise =
+            typeof window !== 'undefined' &&
+            window.UiDialogs &&
+            typeof window.UiDialogs.confirm === 'function'
+                ? window.UiDialogs.confirm({
+                    title: 'Anular factura',
+                    message: '¿Estás seguro de que querés anular esta factura?',
+                    confirmText: 'Anular',
+                    cancelText: 'Cancelar',
+                    confirmVariant: 'danger',
+                    icon: 'bi-x-octagon-fill',
+                    iconClass: 'text-danger'
+                })
+                : Promise.resolve(confirm('¿Estás seguro de que querés anular esta factura?'));
 
-        ApiService.call('deleteInvoice', id)
-            .then(() => {
-                Alerts && Alerts.showAlert('Factura anulada exitosamente', 'success');
-                if (!skipRefreshMain) {
-                    handleSearch(); // Recargar lista principal
-                }
-                refreshGeneratorList();
-            })
-            .catch(err => {
-                console.error('Error al anular factura:', err);
-                Alerts && Alerts.showAlert('Error al anular: ' + err.message, 'danger');
-            });
+        confirmPromise.then(function (confirmed) {
+            if (!confirmed) return;
+
+            ApiService.call('deleteInvoice', id)
+                .then(() => {
+                    Alerts && Alerts.showAlert('Factura anulada exitosamente', 'success');
+                    if (!skipRefreshMain) {
+                        handleSearch(); // Recargar lista principal
+                    }
+                    refreshGeneratorList();
+                })
+                .catch(err => {
+                    console.error('Error al anular factura:', err);
+                    Alerts && Alerts.showAlert('Error al anular: ' + err.message, 'danger');
+                });
+        });
     }
 
     function toggleLoading(show) {
@@ -1408,18 +1423,36 @@ var InvoicePanel = (function () {
     }
 
     function deleteAttendance(id) {
-        if (!confirm('¿Eliminar este registro de asistencia?')) return;
-        UiState && UiState.setGlobalLoading(true, 'Eliminando asistencia...');
-        ApiService.call('deleteRecord', 'ASISTENCIA', id)
-            .then(() => {
-                Alerts && Alerts.showAlert('Registro eliminado.', 'success');
-                refreshGeneratorList();
-            })
-            .catch(err => {
-                console.error(err);
-                Alerts && Alerts.showAlert('Error al eliminar: ' + err.message, 'danger');
-            })
-            .finally(() => UiState && UiState.setGlobalLoading(false));
+        const confirmPromise =
+            typeof window !== 'undefined' &&
+            window.UiDialogs &&
+            typeof window.UiDialogs.confirm === 'function'
+                ? window.UiDialogs.confirm({
+                    title: 'Eliminar asistencia',
+                    message: '¿Eliminar este registro de asistencia?',
+                    confirmText: 'Eliminar',
+                    cancelText: 'Cancelar',
+                    confirmVariant: 'danger',
+                    icon: 'bi-trash3-fill',
+                    iconClass: 'text-danger'
+                })
+                : Promise.resolve(confirm('¿Eliminar este registro de asistencia?'));
+
+        confirmPromise.then(function (confirmed) {
+            if (!confirmed) return;
+
+            UiState && UiState.setGlobalLoading(true, 'Eliminando asistencia...');
+            ApiService.call('deleteRecord', 'ASISTENCIA', id)
+                .then(() => {
+                    Alerts && Alerts.showAlert('Registro eliminado.', 'success');
+                    refreshGeneratorList();
+                })
+                .catch(err => {
+                    console.error(err);
+                    Alerts && Alerts.showAlert('Error al eliminar: ' + err.message, 'danger');
+                })
+                .finally(() => UiState && UiState.setGlobalLoading(false));
+        });
     }
 
     function downloadPdf(id) {

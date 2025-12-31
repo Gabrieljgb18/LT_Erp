@@ -155,12 +155,24 @@
                 return;
             }
 
-            if (!confirm("¿Estás seguro de que querés eliminar este registro?")) {
-                return;
-            }
-
             const tipoFormato = global.FormManager ? global.FormManager.getCurrentFormat() : null;
             if (!tipoFormato) return;
+
+            const confirmPromise =
+                global.UiDialogs && typeof global.UiDialogs.confirm === "function"
+                    ? global.UiDialogs.confirm({
+                        title: "Eliminar registro",
+                        message: "¿Estás seguro de que querés eliminar este registro?",
+                        confirmText: "Eliminar",
+                        cancelText: "Cancelar",
+                        confirmVariant: "danger",
+                        icon: "bi-trash3-fill",
+                        iconClass: "text-danger"
+                    })
+                    : Promise.resolve(confirm("¿Estás seguro de que querés eliminar este registro?"));
+
+            confirmPromise.then(function (confirmed) {
+                if (!confirmed) return;
 
             UiState.setGlobalLoading(true, "Eliminando...");
 
@@ -182,6 +194,7 @@
                 .finally(function () {
                     UiState.setGlobalLoading(false);
                 });
+            });
         }
 
         function cancelEdit() {

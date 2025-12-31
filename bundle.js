@@ -412,6 +412,108 @@
 
 
 (function (global) {
+  function safeEscape(str) {
+    if (global.HtmlHelpers && typeof global.HtmlHelpers.escapeHtml === "function") {
+      return global.HtmlHelpers.escapeHtml(str);
+    }
+    return String(str || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function normalizeTextToHtml(text) {
+    return safeEscape(text).replace(/\n/g, "<br>");
+  }
+
+  function confirmDialog(options = {}) {
+    const title = options.title || "Confirmar";
+    const message = options.message || "¿Estás seguro?";
+    const confirmText = options.confirmText || "Confirmar";
+    const cancelText = options.cancelText || "Cancelar";
+    const icon = options.icon || "bi-exclamation-triangle-fill";
+    const iconClass = options.iconClass || "text-warning";
+    const confirmVariant = options.confirmVariant || "danger";
+    const modalSizeClass = options.size === "sm" ? "modal-sm" : options.size === "lg" ? "modal-lg" : "";
+
+    if (!global.document || !global.document.body) {
+      return Promise.resolve(global.confirm(`${title}\n\n${message}`));
+    }
+
+    if (!global.bootstrap || !global.bootstrap.Modal) {
+      return Promise.resolve(global.confirm(`${title}\n\n${message}`));
+    }
+
+    const modalId = "lt-erp-confirm-" + Date.now() + "-" + Math.random().toString(16).slice(2);
+    const titleId = modalId + "-title";
+    const bodyId = modalId + "-body";
+
+    const wrapper = document.createElement("div");
+    wrapper.innerHTML = `
+      <div class="modal fade" id="${modalId}" tabindex="-1" aria-labelledby="${titleId}" aria-describedby="${bodyId}">
+        <div class="modal-dialog modal-dialog-centered ${modalSizeClass}">
+          <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+              <h5 class="modal-title d-flex align-items-center gap-2" id="${titleId}">
+                <i class="bi ${safeEscape(icon)} ${safeEscape(iconClass)}"></i>
+                <span>${safeEscape(title)}</span>
+              </h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body" id="${bodyId}">
+              <div class="text-body-secondary">${normalizeTextToHtml(message)}</div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">${safeEscape(cancelText)}</button>
+              <button type="button" class="btn btn-${safeEscape(confirmVariant)}" data-lt-confirm="1">${safeEscape(confirmText)}</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const modalEl = wrapper.firstElementChild;
+    document.body.appendChild(modalEl);
+
+    return new Promise((resolve) => {
+      let result = false;
+      const modal = new global.bootstrap.Modal(modalEl, { backdrop: true, keyboard: true, focus: true });
+      const confirmBtn = modalEl.querySelector('[data-lt-confirm="1"]');
+
+      function cleanup() {
+        modalEl.removeEventListener("hidden.bs.modal", onHidden);
+        if (confirmBtn) confirmBtn.removeEventListener("click", onConfirm);
+        modal.dispose();
+        modalEl.remove();
+      }
+
+      function onConfirm() {
+        result = true;
+        modal.hide();
+      }
+
+      function onHidden() {
+        cleanup();
+        resolve(result);
+      }
+
+      if (confirmBtn) confirmBtn.addEventListener("click", onConfirm);
+      modalEl.addEventListener("hidden.bs.modal", onHidden);
+
+      modal.show();
+    });
+  }
+
+  global.UiDialogs = {
+    confirm: confirmDialog
+  };
+})(typeof window !== "undefined" ? window : this);
+
+
+
+(function (global) {
   function escapeHtml(val) {
     return String(val == null ? "" : val)
       .replace(/&/g, "&amp;")
@@ -1080,13 +1182,27 @@ const Sidebar = (() => {
          */
         function deleteRecord(record) {
             if (!record) return;
-            if (!confirm('¿Estás seguro de que deseas eliminar este registro?')) return;
-
             const id = record.ID || record.Id || record.id;
             if (!id) {
                 Alerts && Alerts.showAlert('ID no encontrado para eliminar.', 'warning');
                 return;
             }
+
+            const confirmPromise =
+                global.UiDialogs && typeof global.UiDialogs.confirm === 'function'
+                    ? global.UiDialogs.confirm({
+                        title: 'Eliminar registro',
+                        message: '¿Estás seguro de que deseas eliminar este registro?',
+                        confirmText: 'Eliminar',
+                        cancelText: 'Cancelar',
+                        confirmVariant: 'danger',
+                        icon: 'bi-trash3-fill',
+                        iconClass: 'text-danger'
+                    })
+                    : Promise.resolve(confirm('¿Estás seguro de que deseas eliminar este registro?'));
+
+            confirmPromise.then(function (confirmed) {
+                if (!confirmed) return;
 
             UiState && UiState.setGlobalLoading(true, 'Eliminando...');
 
@@ -1108,6 +1224,7 @@ const Sidebar = (() => {
                 .finally(function () {
                     UiState && UiState.setGlobalLoading(false);
                 });
+            });
         }
 
         /**
@@ -4314,22 +4431,37 @@ var InvoicePanel = (function () {
     }
 
     function deleteInvoice(id, skipRefreshMain) {
-        if (!confirm('¿Estás seguro de que querés anular esta factura?')) {
-            return;
-        }
+        const confirmPromise =
+            typeof window !== 'undefined' &&
+            window.UiDialogs &&
+            typeof window.UiDialogs.confirm === 'function'
+                ? window.UiDialogs.confirm({
+                    title: 'Anular factura',
+                    message: '¿Estás seguro de que querés anular esta factura?',
+                    confirmText: 'Anular',
+                    cancelText: 'Cancelar',
+                    confirmVariant: 'danger',
+                    icon: 'bi-x-octagon-fill',
+                    iconClass: 'text-danger'
+                })
+                : Promise.resolve(confirm('¿Estás seguro de que querés anular esta factura?'));
 
-        ApiService.call('deleteInvoice', id)
-            .then(() => {
-                Alerts && Alerts.showAlert('Factura anulada exitosamente', 'success');
-                if (!skipRefreshMain) {
-                    handleSearch(); // Recargar lista principal
-                }
-                refreshGeneratorList();
-            })
-            .catch(err => {
-                console.error('Error al anular factura:', err);
-                Alerts && Alerts.showAlert('Error al anular: ' + err.message, 'danger');
-            });
+        confirmPromise.then(function (confirmed) {
+            if (!confirmed) return;
+
+            ApiService.call('deleteInvoice', id)
+                .then(() => {
+                    Alerts && Alerts.showAlert('Factura anulada exitosamente', 'success');
+                    if (!skipRefreshMain) {
+                        handleSearch(); // Recargar lista principal
+                    }
+                    refreshGeneratorList();
+                })
+                .catch(err => {
+                    console.error('Error al anular factura:', err);
+                    Alerts && Alerts.showAlert('Error al anular: ' + err.message, 'danger');
+                });
+        });
     }
 
     function toggleLoading(show) {
@@ -4481,18 +4613,36 @@ var InvoicePanel = (function () {
     }
 
     function deleteAttendance(id) {
-        if (!confirm('¿Eliminar este registro de asistencia?')) return;
-        UiState && UiState.setGlobalLoading(true, 'Eliminando asistencia...');
-        ApiService.call('deleteRecord', 'ASISTENCIA', id)
-            .then(() => {
-                Alerts && Alerts.showAlert('Registro eliminado.', 'success');
-                refreshGeneratorList();
-            })
-            .catch(err => {
-                console.error(err);
-                Alerts && Alerts.showAlert('Error al eliminar: ' + err.message, 'danger');
-            })
-            .finally(() => UiState && UiState.setGlobalLoading(false));
+        const confirmPromise =
+            typeof window !== 'undefined' &&
+            window.UiDialogs &&
+            typeof window.UiDialogs.confirm === 'function'
+                ? window.UiDialogs.confirm({
+                    title: 'Eliminar asistencia',
+                    message: '¿Eliminar este registro de asistencia?',
+                    confirmText: 'Eliminar',
+                    cancelText: 'Cancelar',
+                    confirmVariant: 'danger',
+                    icon: 'bi-trash3-fill',
+                    iconClass: 'text-danger'
+                })
+                : Promise.resolve(confirm('¿Eliminar este registro de asistencia?'));
+
+        confirmPromise.then(function (confirmed) {
+            if (!confirmed) return;
+
+            UiState && UiState.setGlobalLoading(true, 'Eliminando asistencia...');
+            ApiService.call('deleteRecord', 'ASISTENCIA', id)
+                .then(() => {
+                    Alerts && Alerts.showAlert('Registro eliminado.', 'success');
+                    refreshGeneratorList();
+                })
+                .catch(err => {
+                    console.error(err);
+                    Alerts && Alerts.showAlert('Error al eliminar: ' + err.message, 'danger');
+                })
+                .finally(() => UiState && UiState.setGlobalLoading(false));
+        });
     }
 
     function downloadPdf(id) {
@@ -5060,7 +5210,23 @@ var HoursDetailPanel = (function () {
     }
 
     function deleteRecord(id) {
-        if (!confirm('¿Está seguro de eliminar este registro de horas?')) return;
+        const confirmPromise =
+            typeof window !== 'undefined' &&
+            window.UiDialogs &&
+            typeof window.UiDialogs.confirm === 'function'
+                ? window.UiDialogs.confirm({
+                    title: 'Eliminar registro de horas',
+                    message: '¿Está seguro de eliminar este registro de horas?',
+                    confirmText: 'Eliminar',
+                    cancelText: 'Cancelar',
+                    confirmVariant: 'danger',
+                    icon: 'bi-trash3-fill',
+                    iconClass: 'text-danger'
+                })
+                : Promise.resolve(confirm('¿Está seguro de eliminar este registro de horas?'));
+
+        confirmPromise.then(function (confirmed) {
+            if (!confirmed) return;
 
         UiState.setGlobalLoading(true, "Eliminando...");
 
@@ -5077,6 +5243,7 @@ var HoursDetailPanel = (function () {
             .finally(() => {
                 UiState.setGlobalLoading(false);
             });
+        });
     }
 
     function openInlineEditModal(record) {
@@ -7328,12 +7495,24 @@ var BulkValuesPanel = (function () {
                 return;
             }
 
-            if (!confirm("¿Estás seguro de que querés eliminar este registro?")) {
-                return;
-            }
-
             const tipoFormato = global.FormManager ? global.FormManager.getCurrentFormat() : null;
             if (!tipoFormato) return;
+
+            const confirmPromise =
+                global.UiDialogs && typeof global.UiDialogs.confirm === "function"
+                    ? global.UiDialogs.confirm({
+                        title: "Eliminar registro",
+                        message: "¿Estás seguro de que querés eliminar este registro?",
+                        confirmText: "Eliminar",
+                        cancelText: "Cancelar",
+                        confirmVariant: "danger",
+                        icon: "bi-trash3-fill",
+                        iconClass: "text-danger"
+                    })
+                    : Promise.resolve(confirm("¿Estás seguro de que querés eliminar este registro?"));
+
+            confirmPromise.then(function (confirmed) {
+                if (!confirmed) return;
 
             UiState.setGlobalLoading(true, "Eliminando...");
 
@@ -7355,6 +7534,7 @@ var BulkValuesPanel = (function () {
                 .finally(function () {
                     UiState.setGlobalLoading(false);
                 });
+            });
         }
 
         function cancelEdit() {

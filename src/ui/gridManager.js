@@ -210,13 +210,27 @@
          */
         function deleteRecord(record) {
             if (!record) return;
-            if (!confirm('¿Estás seguro de que deseas eliminar este registro?')) return;
-
             const id = record.ID || record.Id || record.id;
             if (!id) {
                 Alerts && Alerts.showAlert('ID no encontrado para eliminar.', 'warning');
                 return;
             }
+
+            const confirmPromise =
+                global.UiDialogs && typeof global.UiDialogs.confirm === 'function'
+                    ? global.UiDialogs.confirm({
+                        title: 'Eliminar registro',
+                        message: '¿Estás seguro de que deseas eliminar este registro?',
+                        confirmText: 'Eliminar',
+                        cancelText: 'Cancelar',
+                        confirmVariant: 'danger',
+                        icon: 'bi-trash3-fill',
+                        iconClass: 'text-danger'
+                    })
+                    : Promise.resolve(confirm('¿Estás seguro de que deseas eliminar este registro?'));
+
+            confirmPromise.then(function (confirmed) {
+                if (!confirmed) return;
 
             UiState && UiState.setGlobalLoading(true, 'Eliminando...');
 
@@ -238,6 +252,7 @@
                 .finally(function () {
                     UiState && UiState.setGlobalLoading(false);
                 });
+            });
         }
 
         /**
