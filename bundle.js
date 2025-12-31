@@ -1354,14 +1354,21 @@ const Sidebar = (() => {
 var ClientMediaPanel = (function () {
     const SECTION_ID = 'client-media-section';
     const NOTICE_ID = 'client-media-notice';
-    const REPLACE_INPUT_ID = 'client-media-replace-input';
+    const LOADING_ID = 'client-media-loading';
+    const LOADING_TEXT_ID = 'client-media-loading-text';
+    const VIEWER_ID = 'client-media-viewer';
+    const VIEWER_TITLE_ID = 'client-media-viewer-title';
+    const VIEWER_IMG_ID = 'client-media-viewer-img';
+    const VIEWER_SPINNER_ID = 'client-media-viewer-spinner';
+    const VIEWER_MSG_ID = 'client-media-viewer-msg';
+    const VIEWER_DRIVE_ID = 'client-media-viewer-drive';
     const ACCEPT_IMAGE_ANY = 'image/' + '*';
 
     let state = {
         clientId: '',
         fachada: [],
         llave: [],
-        pendingReplace: null // { kind, fileId }
+        viewerKeyHandlerInstalled: false
     };
 
     function escapeHtml_(val) {
@@ -1407,6 +1414,123 @@ var ClientMediaPanel = (function () {
                 <div class="small">${escapeHtml_(message)}</div>
             </div>
         `;
+    }
+
+    function setPanelLoading_(isLoading, message) {
+        const overlay = document.getElementById(LOADING_ID);
+        if (!overlay) return;
+        const text = document.getElementById(LOADING_TEXT_ID);
+        if (text) text.textContent = message || 'Procesando...';
+        overlay.classList.toggle('d-none', !isLoading);
+    }
+
+    function ensureViewer_() {
+        const existing = document.getElementById(VIEWER_ID);
+        if (existing) return existing;
+
+        const overlay = document.createElement('div');
+        overlay.id = VIEWER_ID;
+        overlay.className = 'client-media-viewer d-none';
+        overlay.innerHTML = `
+            <div class="client-media-viewer__backdrop" data-cm-viewer-close="1"></div>
+            <div class="client-media-viewer__dialog" role="dialog" aria-modal="true" aria-labelledby="${VIEWER_TITLE_ID}">
+                <div class="client-media-viewer__header">
+                    <div class="client-media-viewer__title" id="${VIEWER_TITLE_ID}">Foto</div>
+                    <button type="button" class="btn btn-sm btn-outline-light lt-btn-icon" data-cm-viewer-close="1" aria-label="Cerrar">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+                <div class="client-media-viewer__body">
+                    <div class="client-media-viewer__spinner" id="${VIEWER_SPINNER_ID}">
+                        <div class="spinner-border text-light" role="status" aria-label="Cargando"></div>
+                        <div class="small mt-2 text-light opacity-75" id="${VIEWER_MSG_ID}">Cargando...</div>
+                    </div>
+                    <img id="${VIEWER_IMG_ID}" class="d-none" alt="">
+                </div>
+                <div class="client-media-viewer__footer">
+                    <a id="${VIEWER_DRIVE_ID}" class="btn btn-outline-light btn-sm d-none" target="_blank" rel="noopener">
+                        <i class="bi bi-box-arrow-up-right"></i> Abrir en Drive
+                    </a>
+                    <button type="button" class="btn btn-light btn-sm" data-cm-viewer-close="1">Cerrar</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+
+        overlay.addEventListener('click', function (e) {
+            const closeTarget = e.target && e.target.closest ? e.target.closest('[data-cm-viewer-close]') : null;
+            if (closeTarget) {
+                closeViewer_();
+            }
+        });
+
+        if (!state.viewerKeyHandlerInstalled) {
+            state.viewerKeyHandlerInstalled = true;
+            document.addEventListener('keydown', function (e) {
+                if (e && e.key === 'Escape') closeViewer_();
+            });
+        }
+
+        return overlay;
+    }
+
+    function openViewerLoading_(title, message) {
+        const overlay = ensureViewer_();
+        const titleEl = document.getElementById(VIEWER_TITLE_ID);
+        const img = document.getElementById(VIEWER_IMG_ID);
+        const spinner = document.getElementById(VIEWER_SPINNER_ID);
+        const msg = document.getElementById(VIEWER_MSG_ID);
+        const drive = document.getElementById(VIEWER_DRIVE_ID);
+
+        if (titleEl) titleEl.textContent = title || 'Foto';
+        if (msg) msg.textContent = message || 'Cargando...';
+        if (drive) {
+            drive.classList.add('d-none');
+            drive.removeAttribute('href');
+        }
+        if (img) {
+            img.classList.add('d-none');
+            img.removeAttribute('src');
+        }
+        if (spinner) spinner.classList.remove('d-none');
+
+        overlay.classList.remove('d-none');
+    }
+
+    function openViewerImage_(title, imageState) {
+        const overlay = ensureViewer_();
+        const titleEl = document.getElementById(VIEWER_TITLE_ID);
+        const img = document.getElementById(VIEWER_IMG_ID);
+        const spinner = document.getElementById(VIEWER_SPINNER_ID);
+        const drive = document.getElementById(VIEWER_DRIVE_ID);
+
+        if (titleEl) titleEl.textContent = title || 'Foto';
+
+        if (!imageState || !imageState.base64) return;
+        const dataUrl = `data:${imageState.mimeType || 'image/jpeg'};base64,${imageState.base64 || ''}`;
+
+        if (spinner) spinner.classList.add('d-none');
+        if (img) {
+            img.src = dataUrl;
+            img.alt = title || 'Foto';
+            img.classList.remove('d-none');
+        }
+        if (drive) {
+            if (imageState.url) {
+                drive.href = String(imageState.url);
+                drive.classList.remove('d-none');
+            } else {
+                drive.classList.add('d-none');
+                drive.removeAttribute('href');
+            }
+        }
+        overlay.classList.remove('d-none');
+    }
+
+    function closeViewer_() {
+        const overlay = document.getElementById(VIEWER_ID);
+        if (!overlay) return;
+        overlay.classList.add('d-none');
     }
 
     function buildKindCardHtml_(kind) {
@@ -1462,14 +1586,22 @@ var ClientMediaPanel = (function () {
             clientId: clientId,
             fachada: [],
             llave: [],
-            pendingReplace: null
+            viewerKeyHandlerInstalled: state.viewerKeyHandlerInstalled
         };
 
         const section = document.createElement('div');
         section.className = 'col-12';
         section.id = SECTION_ID;
         section.innerHTML = `
-            <div class="lt-surface lt-surface--subtle p-3">
+            <div class="lt-surface lt-surface--subtle p-3 client-media-panel">
+                <div class="client-media-loading d-none" id="${LOADING_ID}">
+                    <div class="client-media-loading__backdrop"></div>
+                    <div class="client-media-loading__content">
+                        <div class="spinner-border text-primary" role="status" aria-label="Cargando"></div>
+                        <div class="small mt-2" id="${LOADING_TEXT_ID}">Procesando...</div>
+                    </div>
+                </div>
+
                 <div class="d-flex align-items-start justify-content-between flex-wrap gap-2 mb-2">
                     <div class="d-flex align-items-center gap-3">
                         <div class="rounded-circle d-flex align-items-center justify-content-center"
@@ -1493,21 +1625,10 @@ var ClientMediaPanel = (function () {
                     ${buildKindCardHtml_('FACHADA')}
                     ${buildKindCardHtml_('LLAVE')}
                 </div>
-
-                <div class="small text-muted mt-2" id="client-media-hint"></div>
             </div>
-
-            <input type="file" class="d-none" id="${REPLACE_INPUT_ID}">
         `;
 
         containerEl.appendChild(section);
-
-        const hint = document.getElementById('client-media-hint');
-        if (hint) {
-            hint.innerHTML = clientId
-                ? `Se guardan en Drive y se renombran como <span class="text-body-secondary fw-semibold">CLIENTE_${escapeHtml_(clientId)}__NOMBRE__TIPO__timestamp</span>.`
-                : 'Guardá el cliente para poder cargar fotos (necesitamos el ID).';
-        }
 
         attachEvents_(section);
 
@@ -1555,34 +1676,22 @@ var ClientMediaPanel = (function () {
 
             col.innerHTML = `
                 <div class="lt-surface p-2 h-100">
-                    <div class="ratio ratio-4x3 bg-white border rounded-3 overflow-hidden">
-                        ${dataUrl
-                    ? `<img src="${dataUrl}" alt="${escapeHtml_(name || kind)}" style="object-fit: cover; width: 100%; height: 100%; cursor: zoom-in;"
-                                data-cm-action="view" data-cm-kind="${escapeHtml_(kind)}" data-cm-file-id="${escapeHtml_(fileId)}">`
-                    : `<div class="d-flex align-items-center justify-content-center text-muted small">Sin preview</div>`
-                }
-                    </div>
-                    <div class="d-flex align-items-center justify-content-between gap-2 mt-2">
-                        <div class="small text-muted text-truncate" title="${escapeHtml_(name)}">
-                            <i class="bi bi-image me-1"></i>${escapeHtml_(name || '')}
-                        </div>
-                        <div class="btn-group btn-group-sm">
-                            <button type="button" class="btn btn-outline-secondary"
-                                data-cm-action="view" data-cm-kind="${escapeHtml_(kind)}" data-cm-file-id="${escapeHtml_(fileId)}"
-                                title="Ver">
-                                <i class="bi bi-eye"></i>
-                            </button>
-                            <button type="button" class="btn btn-outline-primary"
-                                data-cm-action="replace" data-cm-kind="${escapeHtml_(kind)}" data-cm-file-id="${escapeHtml_(fileId)}"
-                                title="Reemplazar">
-                                <i class="bi bi-arrow-repeat"></i>
-                            </button>
-                            <button type="button" class="btn btn-outline-danger"
+                    <div class="ratio ratio-4x3 bg-white border rounded-3 overflow-hidden client-media-thumb">
+                        <div class="client-media-thumb__inner">
+                            ${dataUrl
+                        ? `<img src="${dataUrl}" alt="${escapeHtml_(name || kind)}" class="client-media-thumb__img"
+                                    data-cm-action="view" data-cm-kind="${escapeHtml_(kind)}" data-cm-file-id="${escapeHtml_(fileId)}">`
+                        : `<div class="d-flex align-items-center justify-content-center text-muted small h-100">Sin preview</div>`
+                    }
+                            <button type="button" class="client-media-thumb__delete"
                                 data-cm-action="delete" data-cm-kind="${escapeHtml_(kind)}" data-cm-file-id="${escapeHtml_(fileId)}"
                                 title="Eliminar">
                                 <i class="bi bi-trash3"></i>
                             </button>
                         </div>
+                    </div>
+                    <div class="small text-muted text-truncate mt-2" title="${escapeHtml_(name)}">
+                        <i class="bi bi-image me-1"></i>${escapeHtml_(name || '')}
                     </div>
                 </div>
             `;
@@ -1593,6 +1702,7 @@ var ClientMediaPanel = (function () {
 
     function refresh_(clientId) {
         showNotice_('', '');
+        setPanelLoading_(true, 'Cargando fotos...');
         ApiService.call('listClientMedia', clientId)
             .then((res) => {
                 state.fachada = (res && res.fachada) ? res.fachada : [];
@@ -1603,7 +1713,8 @@ var ClientMediaPanel = (function () {
             .catch((err) => {
                 console.error(err);
                 showNotice_('danger', 'No se pudieron cargar las fotos. ' + (err && err.message ? err.message : err));
-            });
+            })
+            .finally(() => setPanelLoading_(false));
     }
 
     function attachEvents_(sectionEl) {
@@ -1635,14 +1746,6 @@ var ClientMediaPanel = (function () {
                 return;
             }
 
-            if (action === 'replace') {
-                if (!fileId) return;
-                state.pendingReplace = { kind: kind, fileId: fileId };
-                const input = document.getElementById(REPLACE_INPUT_ID);
-                if (input) input.click();
-                return;
-            }
-
             if (action === 'delete') {
                 if (!fileId) return;
                 confirmDeleteFile_(fileId);
@@ -1659,24 +1762,9 @@ var ClientMediaPanel = (function () {
                 const files = this.files ? Array.from(this.files) : [];
                 this.value = '';
                 if (!files.length) return;
-                uploadFiles_(state.clientId, kind, files, '');
+                uploadFiles_(state.clientId, kind, files);
             });
         });
-
-        // Input: reemplazar
-        const replaceInput = document.getElementById(REPLACE_INPUT_ID);
-        if (replaceInput) {
-            replaceInput.accept = ACCEPT_IMAGE_ANY;
-            replaceInput.addEventListener('change', function () {
-                const file = this.files && this.files[0] ? this.files[0] : null;
-                this.value = '';
-                if (!file) return;
-                if (!state.pendingReplace) return;
-                const { kind, fileId } = state.pendingReplace;
-                state.pendingReplace = null;
-                uploadFiles_(state.clientId, kind, [file], fileId);
-            });
-        }
     }
 
     function resizeImageToJpegBase64_(file, maxDimPx = 1600, quality = 0.85) {
@@ -1718,16 +1806,18 @@ var ClientMediaPanel = (function () {
         });
     }
 
-    async function uploadFiles_(clientId, kind, files, replaceFileId) {
+    async function uploadFiles_(clientId, kind, files) {
         const list = Array.isArray(files) ? files.filter(Boolean) : [];
         if (!list.length) return;
 
         showNotice_('', '');
 
         try {
+            setPanelLoading_(true, `Subiendo ${list.length} foto(s)...`);
             UiState && UiState.setGlobalLoading(true, `Subiendo ${list.length} foto(s)...`);
             for (let i = 0; i < list.length; i++) {
-                const label = replaceFileId ? 'Reemplazando foto...' : `Subiendo foto ${i + 1}/${list.length}...`;
+                const label = `Subiendo foto ${i + 1}/${list.length}...`;
+                setPanelLoading_(true, label);
                 UiState && UiState.setGlobalLoading(true, label);
                 const { base64, mimeType } = await resizeImageToJpegBase64_(list[i], 1600, 0.85);
                 await ApiService.call('uploadClientMedia', {
@@ -1735,10 +1825,8 @@ var ClientMediaPanel = (function () {
                     kind: kind,
                     base64: base64,
                     mimeType: mimeType,
-                    replaceFileId: replaceFileId || ''
+                    replaceFileId: ''
                 });
-                // Solo reemplazamos una vez si fue replace
-                if (replaceFileId) break;
             }
             showNotice_('success', 'Fotos actualizadas.');
             refresh_(clientId);
@@ -1746,12 +1834,14 @@ var ClientMediaPanel = (function () {
             console.error(err);
             showNotice_('danger', 'Error al subir foto: ' + (err && err.message ? err.message : err));
         } finally {
+            setPanelLoading_(false);
             UiState && UiState.setGlobalLoading(false);
         }
     }
 
     function confirmDeleteFile_(fileId) {
         const doDelete = () => {
+            setPanelLoading_(true, 'Eliminando foto...');
             UiState && UiState.setGlobalLoading(true, 'Eliminando foto...');
             ApiService.call('deleteClientMediaFile', fileId)
                 .then(() => {
@@ -1762,7 +1852,10 @@ var ClientMediaPanel = (function () {
                     console.error(err);
                     showNotice_('danger', 'Error al eliminar foto: ' + (err && err.message ? err.message : err));
                 })
-                .finally(() => UiState && UiState.setGlobalLoading(false));
+                .finally(() => {
+                    setPanelLoading_(false);
+                    UiState && UiState.setGlobalLoading(false);
+                });
         };
 
         if (typeof UiDialogs !== 'undefined' && UiDialogs && typeof UiDialogs.confirm === 'function') {
@@ -1782,64 +1875,27 @@ var ClientMediaPanel = (function () {
     }
 
     function openImageModalFromServer_(fileId) {
+        openViewerLoading_('Foto', 'Cargando foto...');
         UiState && UiState.setGlobalLoading(true, 'Cargando foto...');
         ApiService.call('getClientMediaImage', fileId, 1600)
             .then((res) => {
                 if (!res || !res.base64) {
                     showNotice_('warning', 'No se pudo cargar la imagen.');
+                    closeViewer_();
                     return;
                 }
-                openImageModal_('Foto', res);
+                openViewerImage_('Foto', res);
             })
             .catch((err) => {
                 console.error(err);
                 showNotice_('danger', 'Error al cargar foto: ' + (err && err.message ? err.message : err));
+                closeViewer_();
             })
             .finally(() => UiState && UiState.setGlobalLoading(false));
     }
 
     function openImageModal_(title, state) {
-        if (!state || !state.base64) return;
-        if (typeof bootstrap === 'undefined' || !bootstrap.Modal) {
-            window.open(state.url || '#', '_blank');
-            return;
-        }
-
-        const modalId = 'client-media-preview-' + Date.now() + '-' + Math.random().toString(16).slice(2);
-        const titleId = modalId + '-title';
-
-        const dataUrl = `data:${state.mimeType || 'image/jpeg'};base64,${state.base64 || ''}`;
-
-        const wrapper = document.createElement('div');
-        wrapper.innerHTML = `
-            <div class="modal fade" id="${modalId}" tabindex="-1" aria-labelledby="${titleId}">
-                <div class="modal-dialog modal-dialog-centered modal-lg">
-                    <div class="modal-content border-0 shadow">
-                        <div class="modal-header">
-                            <h5 class="modal-title" id="${titleId}">${escapeHtml_(title)}</h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-                        </div>
-                        <div class="modal-body p-0 bg-dark">
-                            <img src="${dataUrl}" alt="${escapeHtml_(title)}" style="width:100%; height:auto; display:block;">
-                        </div>
-                        <div class="modal-footer">
-                            ${state.url ? `<a class="btn btn-outline-secondary" href="${escapeHtml_(state.url)}" target="_blank" rel="noopener">Abrir en Drive</a>` : ''}
-                            <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Cerrar</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        const modalEl = wrapper.firstElementChild;
-        document.body.appendChild(modalEl);
-
-        const modal = new bootstrap.Modal(modalEl, { backdrop: true, keyboard: true, focus: true });
-        modalEl.addEventListener('hidden.bs.modal', function () {
-            try { modal.dispose(); } catch (e) { /* ignore */ }
-            modalEl.remove();
-        });
-        modal.show();
+        openViewerImage_(title, state);
     }
 
     return {
