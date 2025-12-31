@@ -7,6 +7,7 @@ var ClientMediaPanel = (function () {
     const SECTION_ID = 'client-media-section';
     const NOTICE_ID = 'client-media-notice';
     const REPLACE_INPUT_ID = 'client-media-replace-input';
+    const ACCEPT_IMAGE_ANY = 'image/' + '*';
 
     let state = {
         clientId: '',
@@ -93,7 +94,7 @@ var ClientMediaPanel = (function () {
                         </div>
                     </div>
 
-                    <input type="file" class="d-none" accept="image/*" multiple
+                    <input type="file" class="d-none" multiple
                         id="client-media-${key}-add-input" data-cm-input-kind="${escapeHtml_(kind)}">
                 </div>
             </div>
@@ -148,8 +149,7 @@ var ClientMediaPanel = (function () {
                 <div class="small text-muted mt-2" id="client-media-hint"></div>
             </div>
 
-            <input type="file" class="d-none" accept="image/*"
-                id="${REPLACE_INPUT_ID}">
+            <input type="file" class="d-none" id="${REPLACE_INPUT_ID}">
         `;
 
         containerEl.appendChild(section);
@@ -306,6 +306,7 @@ var ClientMediaPanel = (function () {
         ['FACHADA', 'LLAVE'].forEach((kind) => {
             const input = document.getElementById(`client-media-${kind.toLowerCase()}-add-input`);
             if (!input) return;
+            input.accept = ACCEPT_IMAGE_ANY;
             input.addEventListener('change', function () {
                 const files = this.files ? Array.from(this.files) : [];
                 this.value = '';
@@ -317,6 +318,7 @@ var ClientMediaPanel = (function () {
         // Input: reemplazar
         const replaceInput = document.getElementById(REPLACE_INPUT_ID);
         if (replaceInput) {
+            replaceInput.accept = ACCEPT_IMAGE_ANY;
             replaceInput.addEventListener('change', function () {
                 const file = this.files && this.files[0] ? this.files[0] : null;
                 this.value = '';
@@ -496,4 +498,3 @@ var ClientMediaPanel = (function () {
         render: render
     };
 })();
-
