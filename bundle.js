@@ -3985,7 +3985,16 @@ var ClientMediaPanel = (function () {
          */
         function renderCalendarGrid(data) {
             const container = document.getElementById('calendar-grid-container');
-            if (!container || !data || !data.dias) return;
+            if (!container) return;
+            if (!data || !data.dias) {
+                container.innerHTML = `
+                    <div class="text-center text-muted py-5">
+                        <i class="bi bi-calendar3 display-4 mb-3 d-block opacity-50"></i>
+                        <p class="mb-0">Sin datos para mostrar</p>
+                    </div>
+                `;
+                return;
+            }
 
             const dias = data.dias;
 
@@ -4804,7 +4813,12 @@ var ClientMediaPanel = (function () {
             if (!container) return;
 
             if (!data || !data.dias || data.dias.length === 0) {
-                container.innerHTML = '<div class="text-center text-muted py-5">Sin datos para mostrar.</div>';
+                container.innerHTML = `
+                    <div class="text-center text-muted py-5">
+                        <i class="bi bi-calendar3 display-4 mb-3 d-block opacity-50"></i>
+                        <p class="mb-0">Sin datos para mostrar</p>
+                    </div>
+                `;
                 return;
             }
 

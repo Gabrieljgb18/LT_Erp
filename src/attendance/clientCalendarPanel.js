@@ -203,7 +203,12 @@
             if (!container) return;
 
             if (!data || !data.dias || data.dias.length === 0) {
-                container.innerHTML = '<div class="text-center text-muted py-5">Sin datos para mostrar.</div>';
+                container.innerHTML = `
+                    <div class="text-center text-muted py-5">
+                        <i class="bi bi-calendar3 display-4 mb-3 d-block opacity-50"></i>
+                        <p class="mb-0">Sin datos para mostrar</p>
+                    </div>
+                `;
                 return;
             }
 

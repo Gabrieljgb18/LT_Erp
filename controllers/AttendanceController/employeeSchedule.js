@@ -122,6 +122,10 @@ const AttendanceEmployeeSchedule = (function () {
             cliente = DatabaseService.findClienteById(cleanId);
         }
 
+        if (!cliente && nombreCliente) {
+            cliente = DatabaseService.findClienteByNombreORazon(nombreCliente);
+        }
+
         if (!cliente) {
             return {
                 id: cleanId,
@@ -171,6 +175,20 @@ const AttendanceEmployeeSchedule = (function () {
             correoAdministracion: getVal('CORREO ADMINISTRACION') || '',
             valorHora: Number(getVal('VALOR HORA')) || 0
         };
+    }
+
+    function resolveEmpleadoIdFromName_(nombre) {
+        if (!nombre) return '';
+        if (!DatabaseService || !DatabaseService.findEmpleadoByNombre) return '';
+        const found = DatabaseService.findEmpleadoByNombre(nombre);
+        return found && found.id ? String(found.id).trim() : '';
+    }
+
+    function resolveClienteIdFromName_(nombre) {
+        if (!nombre) return '';
+        if (!DatabaseService || !DatabaseService.findClienteByNombreORazon) return '';
+        const found = DatabaseService.findClienteByNombreORazon(nombre);
+        return found && found.id ? String(found.id).trim() : '';
     }
 
     /**
@@ -239,11 +257,17 @@ const AttendanceEmployeeSchedule = (function () {
         const clientesSet = new Set();
 
         rows.forEach(row => {
-            const rowEmpleado = String(row[idxEmpleado] || '').trim().toLowerCase();
+            const rowEmpleadoRaw = idxEmpleado > -1 ? String(row[idxEmpleado] || '').trim() : '';
+            const rowEmpleado = rowEmpleadoRaw.toLowerCase();
             const rowIdEmpleado = idxIdEmpleado > -1 ? String(row[idxIdEmpleado] || '').trim() : '';
 
             if (targetIdEmpleado) {
-                if (!rowIdEmpleado || rowIdEmpleado !== targetIdEmpleado) return;
+                if (rowIdEmpleado) {
+                    if (rowIdEmpleado !== targetIdEmpleado) return;
+                } else {
+                    const resolvedId = resolveEmpleadoIdFromName_(rowEmpleadoRaw);
+                    if (!resolvedId || resolvedId !== targetIdEmpleado) return;
+                }
             } else if (!targetEmpleado || rowEmpleado !== targetEmpleado) {
                 return;
             }
@@ -358,8 +382,16 @@ const AttendanceEmployeeSchedule = (function () {
             const idCliente = idxIdCliente > -1 ? row[idxIdCliente] : '';
             const nombreCliente = row[idxCliente] || '';
             const cleanId = idCliente != null ? String(idCliente).trim() : '';
-
-            if (targetClientId && cleanId !== targetClientId) return;
+            let matchClient = true;
+            if (targetClientId) {
+                if (cleanId) {
+                    matchClient = cleanId === targetClientId;
+                } else {
+                    const resolvedId = resolveClienteIdFromName_(nombreCliente);
+                    matchClient = resolvedId && resolvedId === targetClientId;
+                }
+            }
+            if (!matchClient) return;
 
             const clienteData = getClienteData(cleanId, nombreCliente);
             const horaEntrada = formatHoraEntrada_(row[idxHoraEntrada]);
