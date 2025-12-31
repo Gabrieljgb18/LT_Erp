@@ -530,6 +530,13 @@ var DatabaseService = (function () {
       return { scanned: lastRow - 1, fixed: 0 };
     }
 
+    // Normalizar formato de columna de ID_EMPLEADO para evitar que se guarde como Date (serial)
+    try {
+      sheet.getRange(2, idxIdEmp + 1, lastRow - 1, 1).setNumberFormat('0');
+    } catch (e) {
+      // ignore
+    }
+
     const range = sheet.getRange(2, 1, lastRow - 1, lastCol);
     const data = range.getValues();
 
@@ -542,39 +549,56 @@ var DatabaseService = (function () {
       const legacyEmpleadoVal = row[idxEmpleado];
       const legacyMontoVal = row[idxMonto];
 
-      if (!(legacyIdEmpVal instanceof Date) || isNaN(legacyIdEmpVal.getTime())) continue;
+      let changed = false;
 
-      // Si FECHA ya es Date o un string tipo yyyy-mm-dd, asumimos que está bien.
-      if (legacyFechaVal instanceof Date) continue;
+      // Caso legacy (corrimiento): ID_EMPLEADO contiene Date, FECHA contiene nombre, EMPLEADO contiene monto y MONTO vacío.
+      const idEmpIsDate = (legacyIdEmpVal instanceof Date) && !isNaN(legacyIdEmpVal.getTime());
+      const fechaIsDate = (legacyFechaVal instanceof Date) && !isNaN(legacyFechaVal.getTime());
       const fechaStr = String(legacyFechaVal || '').trim();
-      if (!fechaStr) continue;
-      if (/^\d{4}-\d{2}-\d{2}/.test(fechaStr) || /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(fechaStr)) continue;
 
+      const fechaLooksDateString = /^\d{4}-\d{2}-\d{2}/.test(fechaStr) || /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(fechaStr);
       const empleadoIsNumber =
         (typeof legacyEmpleadoVal === 'number' && !isNaN(legacyEmpleadoVal)) ||
         (/^\s*-?\d+([.,]\d+)?\s*$/.test(String(legacyEmpleadoVal || '')));
-      if (!empleadoIsNumber) continue;
-
-      // En legacy, MONTO queda vacío (porque se corrió 1 columna).
       const montoEmpty = legacyMontoVal === '' || legacyMontoVal == null;
-      if (!montoEmpty) continue;
 
-      // Re-mapear a columnas correctas
-      const correctFecha = legacyIdEmpVal;
-      const correctEmpleadoName = fechaStr;
-      const correctMonto = legacyEmpleadoVal;
+      if (idEmpIsDate && !fechaIsDate && fechaStr && !fechaLooksDateString && empleadoIsNumber && montoEmpty) {
+        // Re-mapear a columnas correctas
+        row[idxFecha] = legacyIdEmpVal;          // FECHA = Date
+        row[idxEmpleado] = fechaStr;             // EMPLEADO = nombre
+        row[idxMonto] = legacyEmpleadoVal;       // MONTO = número
+        changed = true;
+      }
 
-      let correctIdEmpleado = '';
-      const emp = findEmpleadoByNombre(correctEmpleadoName);
-      if (emp && emp.id) correctIdEmpleado = emp.id;
+      // Normalizar/Completar ID_EMPLEADO (por nombre) si falta o quedó como Date (serial)
+      const empleadoNameNow = String(row[idxEmpleado] || '').trim();
+      if (empleadoNameNow) {
+        const currIdEmp = row[idxIdEmp];
+        const currIdEmpIsDate = (currIdEmp instanceof Date) && !isNaN(currIdEmp.getTime());
+        const currIdEmpIsNumeric =
+          (typeof currIdEmp === 'number' && !isNaN(currIdEmp)) ||
+          (/^\s*\d+\s*$/.test(String(currIdEmp || '')));
 
-      row[idxIdEmp] = correctIdEmpleado;
-      row[idxFecha] = correctFecha;
-      row[idxEmpleado] = correctEmpleadoName;
-      row[idxMonto] = correctMonto;
+        if (currIdEmpIsDate || !currIdEmpIsNumeric) {
+          const emp = findEmpleadoByNombre(empleadoNameNow);
+          if (emp && emp.id != null && emp.id !== '') {
+            const asNum = Number(emp.id);
+            row[idxIdEmp] = isNaN(asNum) ? String(emp.id) : asNum;
+            changed = true;
+          }
+        } else if (typeof currIdEmp === 'string' && currIdEmp.trim() !== '') {
+          const asNum = Number(currIdEmp);
+          if (!isNaN(asNum)) {
+            row[idxIdEmp] = asNum;
+            changed = true;
+          }
+        }
+      }
 
-      data[i] = row;
-      fixed++;
+      if (changed) {
+        data[i] = row;
+        fixed++;
+      }
     }
 
     if (fixed > 0) {
