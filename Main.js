@@ -73,6 +73,12 @@ function deleteClientMedia(clientId, kind) {
   return ClientMediaController.deleteClientMedia(clientId, kind);
 }
 
+// Helper para autorizar scopes nuevos (Drive) desde el editor de Apps Script.
+function authorizeDriveScopes() {
+  DriveApp.getRootFolder().getName();
+  return { ok: true };
+}
+
 /**
  * Obtiene la comparación entre plan y asistencia real
  */
