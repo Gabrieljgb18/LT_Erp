@@ -107,7 +107,8 @@ const AttendanceEmployeeSchedule = (function () {
                 fechaDisplay: entry ? entry.fechaDisplay : '',
                 diaSemana: entry ? entry.diaSemana : dia,
                 diaDisplay: entry ? entry.diaDisplay : '',
-                clientes: entry && Array.isArray(entry.clientes) ? entry.clientes : []
+                clientes: entry && Array.isArray(entry.clientes) ? entry.clientes : [],
+                empleados: entry && Array.isArray(entry.empleados) ? entry.empleados : []
             };
         });
     }
@@ -468,6 +469,140 @@ const AttendanceEmployeeSchedule = (function () {
     }
 
     /**
+     * Vista semanal por empleado (para calendario general)
+     */
+    function getWeeklyEmployeeOverview(weekStartStr, employeeId) {
+        if (weekStartStr && typeof weekStartStr === 'object' && !Array.isArray(weekStartStr)) {
+            employeeId = weekStartStr.employeeId || weekStartStr.idEmpleado || employeeId;
+            weekStartStr = weekStartStr.weekStartDate || weekStartStr.weekStart || '';
+        }
+
+        const weekStart = weekStartStr ? getMondayOfWeek(new Date(weekStartStr + 'T00:00:00')) : getMondayOfWeek(new Date());
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekStart.getDate() + 6);
+
+        const diasMap = buildWeekDays_(weekStart);
+
+        const sheetPlan = DatabaseService.getDbSheetForFormat('ASISTENCIA_PLAN');
+        const dataPlan = sheetPlan.getDataRange().getValues();
+        if (dataPlan.length < 2) {
+            const diasOut = sanitizeDays_(diasMap);
+            return {
+                semana: {
+                    start: formatDate(weekStart),
+                    end: formatDate(weekEnd),
+                    label: `${formatDateShort(weekStart)} - ${formatDateShort(weekEnd)}`
+                },
+                dias: diasOut,
+                resumen: { totalHoras: 0, totalEmpleados: 0, diasTrabajo: 0 }
+            };
+        }
+
+        const headers = dataPlan[0].map(h => String(h || '').trim().toUpperCase());
+        const rows = dataPlan.slice(1);
+
+        const idxIdEmpleado = headers.indexOf('ID_EMPLEADO');
+        const idxEmpleado = headers.indexOf('EMPLEADO');
+        const idxIdCliente = headers.indexOf('ID_CLIENTE');
+        const idxCliente = headers.indexOf('CLIENTE');
+        const idxDiaSemana = headers.indexOf('DIA SEMANA');
+        const idxHoraEntrada = headers.indexOf('HORA ENTRADA');
+        const idxHorasPlan = headers.indexOf('HORAS PLAN');
+        const idxVigDesde = headers.indexOf('VIGENTE DESDE');
+        const idxVigHasta = headers.indexOf('VIGENTE HASTA');
+        const idxObs = headers.indexOf('OBSERVACIONES');
+
+        const targetEmployeeId = employeeId != null && employeeId !== '' ? String(employeeId).trim() : '';
+
+        let totalHoras = 0;
+        const empleadosSet = new Set();
+
+        rows.forEach(row => {
+            const diaSemana = normalizeDayName_(row[idxDiaSemana]);
+            const dayEntry = diasMap[diaSemana];
+            if (!dayEntry) return;
+
+            const fechaDia = dayEntry.dateObj;
+            if (!isDateWithinRange_(fechaDia, row[idxVigDesde], row[idxVigHasta])) return;
+
+            const rowEmpleadoRaw = idxEmpleado > -1 ? String(row[idxEmpleado] || '').trim() : '';
+            const rowIdEmpleado = idxIdEmpleado > -1 ? String(row[idxIdEmpleado] || '').trim() : '';
+
+            if (targetEmployeeId) {
+                if (rowIdEmpleado) {
+                    if (rowIdEmpleado !== targetEmployeeId) return;
+                } else {
+                    const resolvedId = resolveEmpleadoIdFromName_(rowEmpleadoRaw);
+                    if (!resolvedId || resolvedId !== targetEmployeeId) return;
+                }
+            }
+
+            const empleadoId = rowIdEmpleado || resolveEmpleadoIdFromName_(rowEmpleadoRaw) || '';
+            const empleadoNombre = rowEmpleadoRaw || 'Sin asignar';
+            const key = empleadoId ? `id:${empleadoId}` : `name:${empleadoNombre}`;
+
+            if (!dayEntry._empleadosMap) dayEntry._empleadosMap = {};
+            if (!dayEntry._empleadosMap[key]) {
+                dayEntry._empleadosMap[key] = {
+                    idEmpleado: empleadoId,
+                    empleado: empleadoNombre,
+                    totalHoras: 0,
+                    clientes: []
+                };
+            }
+
+            const idCliente = idxIdCliente > -1 ? row[idxIdCliente] : '';
+            const nombreCliente = row[idxCliente] || '';
+            const clienteData = getClienteData(idCliente, nombreCliente);
+            const horaEntrada = formatHoraEntrada_(row[idxHoraEntrada]);
+            const horas = Number(row[idxHorasPlan]) || 0;
+
+            dayEntry._empleadosMap[key].totalHoras += horas;
+            dayEntry._empleadosMap[key].clientes.push({
+                idCliente: clienteData.id || idCliente,
+                cliente: clienteData.nombre || nombreCliente,
+                razonSocial: clienteData.razonSocial || '',
+                horaEntrada: horaEntrada,
+                horasPlan: horas,
+                direccion: clienteData.direccion || '',
+                observaciones: row[idxObs] || ''
+            });
+
+            totalHoras += horas;
+            empleadosSet.add(empleadoId || empleadoNombre);
+        });
+
+        ORDEN_DIAS.forEach(dia => {
+            const dayEntry = diasMap[dia];
+            if (dayEntry && dayEntry._empleadosMap) {
+                dayEntry.empleados = Object.values(dayEntry._empleadosMap)
+                    .sort((a, b) => String(a.empleado || '').localeCompare(String(b.empleado || '')));
+                delete dayEntry._empleadosMap;
+            } else if (dayEntry) {
+                dayEntry.empleados = [];
+            }
+        });
+
+        const diasArray = ORDEN_DIAS.map(dia => diasMap[dia]);
+        const diasOut = sanitizeDays_(diasMap);
+        const diasTrabajo = diasArray.filter(d => d.empleados && d.empleados.length > 0).length;
+
+        return {
+            semana: {
+                start: formatDate(weekStart),
+                end: formatDate(weekEnd),
+                label: `${formatDateShort(weekStart)} - ${formatDateShort(weekEnd)}`
+            },
+            dias: diasOut,
+            resumen: {
+                totalHoras: totalHoras,
+                totalEmpleados: empleadosSet.size,
+                diasTrabajo: diasTrabajo
+            }
+        };
+    }
+
+    /**
      * Obtiene la lista de empleados activos con sus IDs
      */
     function getEmpleadosConId() {
@@ -503,6 +638,7 @@ const AttendanceEmployeeSchedule = (function () {
     return {
         getEmployeeWeeklySchedule: getEmployeeWeeklySchedule,
         getWeeklyClientOverview: getWeeklyClientOverview,
+        getWeeklyEmployeeOverview: getWeeklyEmployeeOverview,
         getEmpleadosConId: getEmpleadosConId
     };
 

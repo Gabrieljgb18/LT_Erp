@@ -12,6 +12,9 @@
         let currentWeekStart = null;
         let scheduleData = null;
         let empleadosList = [];
+        let isAllEmployees = false;
+
+        const ALL_EMPLOYEES_VALUE = '__ALL__';
 
         // Helpers
         function escapeHtml(str) {
@@ -134,7 +137,7 @@
                                 </div>
                                 <div>
                                     <div class="h4 mb-0 text-primary" id="summary-clientes">0</div>
-                                    <small class="text-muted">Clientes</small>
+                                    <small class="text-muted" id="summary-clientes-label">Clientes</small>
                                 </div>
                                 <div>
                                     <div class="h4 mb-0 text-primary" id="summary-dias">0</div>
@@ -253,6 +256,103 @@
                     showClientDetails(clienteId, clienteNombre, dia);
                 });
             });
+        }
+
+        function renderAllEmployeesGrid(data) {
+            const container = document.getElementById('calendar-grid-container');
+            if (!container) return;
+
+            if (!data || !data.dias || data.dias.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center text-muted py-5">
+                        <i class="bi bi-calendar3 display-4 mb-3 d-block opacity-50"></i>
+                        <p class="mb-0">Sin datos para mostrar</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = `
+                <div class="calendar-week-grid">
+                    <div class="calendar-days-row">
+            `;
+
+            data.dias.forEach((dia, idx) => {
+                const hasEmployees = dia.empleados && dia.empleados.length > 0;
+                const isWeekend = idx >= 5;
+                const dayClasses = [
+                    'calendar-day',
+                    hasEmployees ? 'calendar-day--has-work' : 'calendar-day--free',
+                    isWeekend ? 'calendar-day--weekend' : ''
+                ].filter(Boolean).join(' ');
+
+                html += `
+                    <div class="${dayClasses}">
+                        <div class="calendar-day-header">
+                            <span class="calendar-day-name">${escapeHtml(dia.diaDisplay || '')}</span>
+                            <span class="calendar-day-date">${escapeHtml(dia.fechaDisplay || '')}</span>
+                        </div>
+                        <div class="calendar-day-content">
+                `;
+
+                if (hasEmployees) {
+                    dia.empleados.forEach(emp => {
+                        const clientes = Array.isArray(emp.clientes) ? emp.clientes : [];
+                        const uniqueClientes = [];
+                        const seen = new Set();
+                        clientes.forEach(c => {
+                            const key = c.idCliente || c.cliente || c.razonSocial || '';
+                            if (!key || seen.has(key)) return;
+                            seen.add(key);
+                            uniqueClientes.push(c);
+                        });
+
+                        html += `
+                            <div class="calendar-client-card calendar-client-card--summary">
+                                <div class="calendar-client-name" title="${escapeHtml(emp.empleado || '')}">
+                                    <i class="bi bi-person-workspace me-1"></i>
+                                    ${escapeHtml(emp.empleado || 'Sin asignar')}
+                                </div>
+                                <div class="calendar-client-time">
+                                    <i class="bi bi-clock me-1"></i>
+                                    ${formatHoras(emp.totalHoras)} hs
+                                </div>
+                                ${uniqueClientes.length ? `
+                                    <div class="calendar-client-employees">
+                                        ${uniqueClientes.map(c => {
+                                            const nombre = c.cliente || c.razonSocial || '';
+                                            const detalles = [];
+                                            if (c.horaEntrada) detalles.push(c.horaEntrada);
+                                            if (c.horasPlan) detalles.push(`${formatHoras(c.horasPlan)} hs`);
+                                            const title = detalles.length ? `${nombre} · ${detalles.join(' · ')}` : nombre;
+                                            return `<span class="calendar-emp-chip" title="${escapeHtml(title)}">${escapeHtml(nombre)}</span>`;
+                                        }).join('')}
+                                    </div>
+                                ` : ''}
+                            </div>
+                        `;
+                    });
+                } else {
+                    html += `
+                        <div class="calendar-no-work">
+                            <i class="bi bi-moon-stars opacity-50"></i>
+                            <span>Sin asignaciones</span>
+                        </div>
+                    `;
+                }
+
+                html += `
+                        </div>
+                    </div>
+                `;
+            });
+
+            html += `
+                    </div>
+                </div>
+            `;
+
+            container.innerHTML = html;
         }
 
         /**
@@ -529,15 +629,21 @@
 
             summaryEl.classList.remove('d-none');
             document.getElementById('summary-horas').textContent = formatHoras(data.resumen.totalHoras);
-            document.getElementById('summary-clientes').textContent = data.resumen.totalClientes || 0;
+            const totalClientes = isAllEmployees
+                ? (data.resumen.totalEmpleados || data.resumen.totalClientes || 0)
+                : (data.resumen.totalClientes || 0);
+            document.getElementById('summary-clientes').textContent = totalClientes;
             document.getElementById('summary-dias').textContent = data.resumen.diasTrabajo || 0;
+
+            const labelEl = document.getElementById('summary-clientes-label');
+            if (labelEl) labelEl.textContent = isAllEmployees ? 'Empleados' : 'Clientes';
         }
 
         /**
          * Carga la agenda del empleado seleccionado
          */
         function loadSchedule() {
-            if (!currentEmpleado && !currentIdEmpleado) return;
+            if (!isAllEmployees && !currentEmpleado && !currentIdEmpleado) return;
 
             const container = document.getElementById('calendar-grid-container');
             if (container) {
@@ -550,24 +656,28 @@
             }
 
             const weekStartStr = formatDateISO(currentWeekStart);
+            const apiName = isAllEmployees ? 'getWeeklyEmployeeOverview' : 'getEmployeeWeeklySchedule';
+            const payload = isAllEmployees
+                ? { weekStartDate: weekStartStr }
+                : { empleado: currentEmpleado, idEmpleado: currentIdEmpleado, weekStartDate: weekStartStr };
 
-            ApiService.call('getEmployeeWeeklySchedule', {
-                empleado: currentEmpleado,
-                idEmpleado: currentIdEmpleado,
-                weekStartDate: weekStartStr
-            })
+            ApiService.call(apiName, payload)
                 .then(data => {
                     if (data && data.error) {
                         throw new Error(data.error);
                     }
                     scheduleData = data;
-                    renderCalendarGrid(data);
+                    if (isAllEmployees) {
+                        renderAllEmployeesGrid(data);
+                    } else {
+                        renderCalendarGrid(data);
+                    }
                     updateSummary(data);
                     updateWeekLabel();
 
                     // Habilitar botón PDF
                     const pdfBtn = document.getElementById('calendar-generate-pdf');
-                    if (pdfBtn) pdfBtn.disabled = false;
+                    if (pdfBtn) pdfBtn.disabled = isAllEmployees;
                 })
                 .catch(err => {
                     console.error('Error cargando agenda:', err);
@@ -611,6 +721,11 @@
                     empleadosList = empleados || [];
 
                     select.innerHTML = '<option value="">Seleccionar empleado...</option>';
+                    const allOpt = document.createElement('option');
+                    allOpt.value = ALL_EMPLOYEES_VALUE;
+                    allOpt.textContent = 'Todos los empleados';
+                    select.appendChild(allOpt);
+
                     empleadosList.forEach(emp => {
                         const id = emp && emp.id != null ? String(emp.id).trim() : '';
                         const nombre = emp && emp.nombre ? String(emp.nombre).trim() : '';
@@ -629,6 +744,11 @@
                         const refData = ReferenceService.get();
                         if (refData && refData.empleados) {
                             select.innerHTML = '<option value="">Seleccionar empleado...</option>';
+                            const allOpt = document.createElement('option');
+                            allOpt.value = ALL_EMPLOYEES_VALUE;
+                            allOpt.textContent = 'Todos los empleados';
+                            select.appendChild(allOpt);
+
                             refData.empleados.forEach(emp => {
                                 const opt = document.createElement('option');
                                 const nombre = String(emp || '').trim();
@@ -647,6 +767,11 @@
          * Genera y descarga el PDF de hoja de ruta
          */
         function generatePdf() {
+            if (isAllEmployees) {
+                if (Alerts) Alerts.showAlert('Selecciona un empleado para generar el PDF', 'warning');
+                return;
+            }
+
             if (!currentEmpleado && !currentIdEmpleado) {
                 if (Alerts) Alerts.showAlert('Selecciona un empleado primero', 'warning');
                 return;
@@ -701,12 +826,19 @@
             if (empleadoSelect) {
                 empleadoSelect.addEventListener('change', function () {
                     const selected = this.options[this.selectedIndex];
-                    currentIdEmpleado = selected && selected.dataset ? (selected.dataset.id || '') : '';
-                    currentEmpleado = selected && selected.dataset ? (selected.dataset.nombre || selected.textContent || '') : (this.value || '');
+                    const selectedValue = this.value || '';
+                    isAllEmployees = selectedValue === ALL_EMPLOYEES_VALUE;
 
-                    if (currentEmpleado) {
+                    if (isAllEmployees) {
+                        currentIdEmpleado = '';
+                        currentEmpleado = '';
+                        loadSchedule();
+                    } else if (selectedValue) {
+                        currentIdEmpleado = selected && selected.dataset ? (selected.dataset.id || '') : '';
+                        currentEmpleado = selected && selected.dataset ? (selected.dataset.nombre || selected.textContent || '') : selectedValue;
                         loadSchedule();
                     } else {
+                        isAllEmployees = false;
                         scheduleData = null;
                         document.getElementById('calendar-grid-container').innerHTML = `
                             <div class="text-center text-muted py-5">
@@ -725,7 +857,7 @@
             if (prevBtn) {
                 prevBtn.addEventListener('click', () => {
                     currentWeekStart = addDays(currentWeekStart, -7);
-                    if (currentEmpleado || currentIdEmpleado) {
+                    if (isAllEmployees || currentEmpleado || currentIdEmpleado) {
                         loadSchedule();
                     } else {
                         updateWeekLabel();
@@ -737,7 +869,7 @@
             if (nextBtn) {
                 nextBtn.addEventListener('click', () => {
                     currentWeekStart = addDays(currentWeekStart, 7);
-                    if (currentEmpleado || currentIdEmpleado) {
+                    if (isAllEmployees || currentEmpleado || currentIdEmpleado) {
                         loadSchedule();
                     } else {
                         updateWeekLabel();
@@ -749,7 +881,7 @@
             if (todayBtn) {
                 todayBtn.addEventListener('click', () => {
                     currentWeekStart = getMondayOfWeek(new Date());
-                    if (currentEmpleado || currentIdEmpleado) {
+                    if (isAllEmployees || currentEmpleado || currentIdEmpleado) {
                         loadSchedule();
                     } else {
                         updateWeekLabel();

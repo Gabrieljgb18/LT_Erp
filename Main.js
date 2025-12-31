@@ -331,6 +331,10 @@ function getWeeklyClientOverview(weekStartDate, clientId) {
   return AttendanceEmployeeSchedule.getWeeklyClientOverview(weekStartDate, clientId);
 }
 
+function getWeeklyEmployeeOverview(weekStartDate, employeeId) {
+  return AttendanceEmployeeSchedule.getWeeklyEmployeeOverview(weekStartDate, employeeId);
+}
+
 function generateEmployeeSchedulePdf(empleado, idEmpleado, weekStartDate) {
   return PdfController.generateEmployeeSchedulePdf(empleado, idEmpleado, weekStartDate);
 }

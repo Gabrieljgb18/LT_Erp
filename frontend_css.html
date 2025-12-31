@@ -999,6 +999,8 @@ border: 1px solid var(--border-color);
 border-radius: var(--radius-lg);
 padding: 1.5rem;
 box-shadow: var(--shadow-sm);
+overflow-x: auto;
+scrollbar-gutter: stable;
 }
 
 .calendar-week-grid {
@@ -1007,19 +1009,19 @@ width: 100%;
 
 .calendar-days-row {
 display: grid;
-grid-template-columns: repeat(7, 1fr);
+grid-template-columns: repeat(7, minmax(0, 1fr));
 gap: 0.75rem;
 }
 
 @media (max-width: 991.98px) {
 .calendar-days-row {
-grid-template-columns: repeat(2, 1fr);
+grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 }
 
 @media (max-width: 575.98px) {
 .calendar-days-row {
-grid-template-columns: 1fr;
+grid-template-columns: minmax(0, 1fr);
 }
 }
 
@@ -1028,6 +1030,7 @@ background: var(--surface-subtle);
 border-radius: var(--radius-md);
 border: 1px solid var(--border-color);
 min-height: 180px;
+min-width: 0;
 display: flex;
 flex-direction: column;
 transition: all 0.2s ease;
@@ -1074,6 +1077,7 @@ flex: 1;
 display: flex;
 flex-direction: column;
 gap: 0.5rem;
+min-width: 0;
 }
 
 .calendar-client-card {
@@ -1084,6 +1088,7 @@ padding: 0.75rem;
 cursor: pointer;
 transition: all 0.2s ease;
 box-shadow: var(--shadow-sm);
+min-width: 0;
 }
 
 .calendar-client-card:hover {
@@ -1167,6 +1172,9 @@ padding: 0.15rem 0.5rem;
 font-size: 0.7rem;
 font-weight: 600;
 white-space: nowrap;
+max-width: 100%;
+overflow: hidden;
+text-overflow: ellipsis;
 }
 
 .calendar-no-work {
