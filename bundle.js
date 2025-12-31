@@ -476,6 +476,7 @@
 
     const modalEl = wrapper.firstElementChild;
     document.body.appendChild(modalEl);
+    modalEl.style.zIndex = "2600";
 
     return new Promise((resolve) => {
       let result = false;
@@ -484,6 +485,7 @@
 
       function cleanup() {
         modalEl.removeEventListener("hidden.bs.modal", onHidden);
+        modalEl.removeEventListener("shown.bs.modal", onShown);
         if (confirmBtn) confirmBtn.removeEventListener("click", onConfirm);
         modal.dispose();
         modalEl.remove();
@@ -499,8 +501,15 @@
         resolve(result);
       }
 
+      function onShown() {
+        const backdrops = document.querySelectorAll(".modal-backdrop");
+        const lastBackdrop = backdrops && backdrops.length ? backdrops[backdrops.length - 1] : null;
+        if (lastBackdrop) lastBackdrop.style.zIndex = "2590";
+      }
+
       if (confirmBtn) confirmBtn.addEventListener("click", onConfirm);
       modalEl.addEventListener("hidden.bs.modal", onHidden);
+      modalEl.addEventListener("shown.bs.modal", onShown);
 
       modal.show();
     });
@@ -510,7 +519,6 @@
     confirm: confirmDialog
   };
 })(typeof window !== "undefined" ? window : this);
-
 
 
 (function (global) {
