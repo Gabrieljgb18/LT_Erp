@@ -255,6 +255,9 @@
             if (FormManager && typeof FormManager.applyClientesEncargadoVisibility === "function") {
                 FormManager.applyClientesEncargadoVisibility();
             }
+            if (ClientTagsField && typeof ClientTagsField.syncFromValue === "function") {
+                ClientTagsField.syncFromValue();
+            }
         }
 
         /**

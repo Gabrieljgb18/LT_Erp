@@ -342,6 +342,48 @@ color: var(--text-muted);
 margin-left: 1.6rem;
 }
 
+.client-tags-field .tag-chips {
+display: flex;
+flex-wrap: wrap;
+gap: 0.4rem;
+padding: 0.5rem 0.6rem;
+border: 1px dashed var(--border-color);
+border-radius: 0.75rem;
+background: rgba(15, 23, 42, 0.02);
+min-height: 42px;
+}
+
+.tag-chips__empty {
+padding: 0.1rem 0;
+}
+
+.tag-chip {
+display: inline-flex;
+align-items: center;
+gap: 0.25rem;
+padding: 0.25rem 0.6rem;
+border-radius: 999px;
+background: rgba(99, 102, 241, 0.12);
+color: #4338ca;
+font-weight: 600;
+font-size: 0.75rem;
+}
+
+.tag-chip__remove {
+border: none;
+background: transparent;
+color: inherit;
+line-height: 1;
+padding: 0;
+cursor: pointer;
+display: inline-flex;
+align-items: center;
+}
+
+.tag-chip__remove i {
+font-size: 0.9rem;
+}
+
 .form-control,
 .form-select {
 border: 1.5px solid var(--border-color);

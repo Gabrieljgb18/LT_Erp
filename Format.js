@@ -12,6 +12,7 @@ var Formats = (function () {
         'CUIT',
         'NOMBRE ADMINISTRADOR',
         'DESCRIPCION',
+        'ETIQUETAS',
         'TIPO SERVICIO',
         'TIENE ENCARGADO',
         'ENCARGADO',
@@ -39,6 +40,7 @@ var Formats = (function () {
         120, // CUIT
         180, // NOMBRE ADMINISTRADOR
         240, // DESCRIPCION
+        200, // ETIQUETAS
         140, // TIPO SERVICIO
         120, // TIENE ENCARGADO
         150, // ENCARGADO

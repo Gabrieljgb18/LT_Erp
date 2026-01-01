@@ -134,6 +134,56 @@
     return wrapper;
   }
 
+  function renderTags(field) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "mb-1 client-tags-field";
+
+    const label = document.createElement("label");
+    label.className = "form-label mb-1";
+    label.htmlFor = "field-" + field.id;
+    label.textContent = field.label;
+
+    const hidden = document.createElement("input");
+    hidden.type = "hidden";
+    hidden.id = "field-" + field.id;
+
+    const chips = document.createElement("div");
+    chips.className = "tag-chips";
+    chips.dataset.tagsChips = "1";
+
+    const inputGroup = document.createElement("div");
+    inputGroup.className = "input-group input-group-sm mt-2";
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "form-control form-control-sm";
+    input.placeholder = field.placeholder || "Agregar etiqueta...";
+    input.setAttribute("data-tags-input", "1");
+
+    const datalist = document.createElement("datalist");
+    const listId = "tags-datalist-" + field.id;
+    datalist.id = listId;
+    datalist.dataset.tagsDatalist = "1";
+    input.setAttribute("list", listId);
+
+    const addBtn = document.createElement("button");
+    addBtn.type = "button";
+    addBtn.className = "btn btn-outline-primary";
+    addBtn.textContent = "Agregar";
+    addBtn.setAttribute("data-tags-add", "1");
+
+    inputGroup.appendChild(input);
+    inputGroup.appendChild(addBtn);
+
+    wrapper.appendChild(label);
+    wrapper.appendChild(chips);
+    wrapper.appendChild(inputGroup);
+    wrapper.appendChild(hidden);
+    wrapper.appendChild(datalist);
+
+    return wrapper;
+  }
+
   function renderInput(field) {
     const wrapper = document.createElement("div");
     wrapper.className = "mb-1";
@@ -190,6 +240,8 @@
           }));
           return renderDeclarativeSelect(field, options);
         }
+        case "tags":
+          return renderTags(field);
         case "textarea": {
           // Textarea para textos largos
           const wrapper = document.createElement("div");

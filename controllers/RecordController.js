@@ -194,6 +194,10 @@ var RecordController = (function () {
             if (clienteNombre && valorHora !== undefined && valorHora !== '') {
                 DatabaseService.appendHoraLogCliente(clienteNombre, valorHora);
             }
+            if (DatabaseService && typeof DatabaseService.upsertClientTags === 'function') {
+                const tags = record['ETIQUETAS'];
+                if (tags) DatabaseService.upsertClientTags(tags);
+            }
         }
 
         // Log value changes for EMPLEADOS
@@ -277,6 +281,10 @@ var RecordController = (function () {
             const clienteNombre = newRecord['NOMBRE'] || newRecord['RAZON SOCIAL'] || '';
             if (clienteNombre && newValor !== undefined && newValor !== '' && newValor !== oldValor) {
                 DatabaseService.appendHoraLogCliente(clienteNombre, newValor);
+            }
+            if (DatabaseService && typeof DatabaseService.upsertClientTags === 'function') {
+                const tags = newRecord['ETIQUETAS'];
+                if (tags) DatabaseService.upsertClientTags(tags);
             }
         }
 

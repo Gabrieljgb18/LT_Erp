@@ -166,6 +166,9 @@
             if (tipoFormato === "CLIENTES") {
                 setupClientesEncargadoToggle();
                 moveClientMediaPanelAboveServiceDays(container);
+                if (global.ClientTagsField && typeof global.ClientTagsField.init === "function") {
+                    global.ClientTagsField.init(container);
+                }
             }
 
             // Actualizar visibilidad del footer
@@ -216,6 +219,9 @@
 
             if (currentFormat === "CLIENTES") {
                 applyClientesEncargadoVisibility();
+                if (global.ClientTagsField && typeof global.ClientTagsField.reset === "function") {
+                    global.ClientTagsField.reset();
+                }
             }
         }
 
@@ -247,6 +253,7 @@
                 });
             };
 
+            toggleField("SECTION_ENCARGADO", show);
             toggleField("ENCARGADO", show);
             toggleField("TELEFONO", show);
         }

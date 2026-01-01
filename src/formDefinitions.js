@@ -18,6 +18,7 @@
           options: ["Oficina", "Edificio", "Casa Particular", "Empresa", "Laboratorio", "Hospital"]
         },
         { id: "DESCRIPCION", label: "Descripción", type: "textarea", rows: 3, placeholder: "Descripción del servicio", full: true },
+        { id: "ETIQUETAS", label: "Etiquetas", type: "tags", full: true, placeholder: "Agregar etiqueta..." },
         { id: "DIRECCION", label: "Dirección", type: "text", full: true },
         { id: "SECTION_ADMIN", label: "Administración y facturación", type: "section", icon: "bi-clipboard-check" },
         { id: "NOMBRE ADMINISTRADOR", label: "Administrador", type: "text", placeholder: "Nombre del administrador" },

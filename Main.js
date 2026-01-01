@@ -59,6 +59,14 @@ function getReferenceData() {
   return RecordController.getReferenceData();
 }
 
+function getClientTags() {
+  return DatabaseService.getClientTags();
+}
+
+function upsertClientTags(tags) {
+  return DatabaseService.upsertClientTags(tags);
+}
+
 // ===================== Media Clientes (Drive) =====================
 
 function getClientMedia(clientId) {

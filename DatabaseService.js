@@ -349,6 +349,66 @@ var DatabaseService = (function () {
     return obj;
   }
 
+  // ====== TAGS CLIENTES ======
+
+  const DEFAULT_CLIENT_TAGS = [
+    'Retirar Residuos',
+    'Se baldea',
+    'Entrega de correo'
+  ];
+
+  function normalizeTagsInput_(input) {
+    if (!input) return [];
+    if (Array.isArray(input)) return input;
+
+    const raw = String(input).trim();
+    if (!raw) return [];
+
+    if (raw[0] === '[') {
+      try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (e) {
+        // fallback to split
+      }
+    }
+
+    return raw.split(',').map(s => s.trim()).filter(Boolean);
+  }
+
+  function uniqueTags_(tags) {
+    const out = [];
+    const seen = new Set();
+    (tags || []).forEach(t => {
+      const clean = String(t || '').trim().replace(/\s+/g, ' ');
+      if (!clean) return;
+      const key = clean.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push(clean);
+    });
+    return out;
+  }
+
+  function getClientTags() {
+    const config = getConfig();
+    const raw = config['CLIENTE_TAGS'];
+    let tags = uniqueTags_(normalizeTagsInput_(raw));
+    if (!tags.length) {
+      tags = DEFAULT_CLIENT_TAGS.slice();
+      upsertConfig({ CLIENTE_TAGS: JSON.stringify(tags) });
+    }
+    return tags;
+  }
+
+  function upsertClientTags(tagsInput) {
+    const existing = getClientTags();
+    const incoming = uniqueTags_(normalizeTagsInput_(tagsInput));
+    const merged = uniqueTags_(existing.concat(incoming));
+    upsertConfig({ CLIENTE_TAGS: JSON.stringify(merged) });
+    return merged;
+  }
+
   function normalizeClientName_(name) {
     if (!name) return '';
     return String(name)
@@ -633,6 +693,8 @@ var DatabaseService = (function () {
     repairAdelantosLegacyRows: repairAdelantosLegacyRows,
     appendHoraLogCliente: appendHoraLogCliente,
     appendHoraLogEmpleado: appendHoraLogEmpleado,
+    getClientTags: getClientTags,
+    upsertClientTags: upsertClientTags,
     getNextId: getNextId,
     findRowById: findRowById,
     getDbSpreadsheet: getDbSpreadsheet

@@ -67,6 +67,9 @@
             if (global.FormManager && typeof global.FormManager.applyClientesEncargadoVisibility === "function") {
                 global.FormManager.applyClientesEncargadoVisibility();
             }
+            if (global.ClientTagsField && typeof global.ClientTagsField.syncFromValue === "function") {
+                global.ClientTagsField.syncFromValue();
+            }
         }
 
         function saveRecord() {
