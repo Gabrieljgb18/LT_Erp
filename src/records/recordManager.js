@@ -57,6 +57,7 @@
                         value === "Activo" ||
                         value === 1 ||
                         value === "1";
+                    input.dispatchEvent(new Event("change"));
                 } else {
                     // For text inputs, use the value as-is (even if empty string)
                     input.value = value !== null && value !== undefined ? value : "";

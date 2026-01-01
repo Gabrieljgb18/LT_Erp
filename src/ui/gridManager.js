@@ -75,8 +75,9 @@
             const formDef = FORM_DEFINITIONS[tipoFormato];
             if (!formDef) return;
 
-            // Obtener los 5 campos más relevantes
-            const relevantFields = formDef.fields.slice(0, 5);
+            // Obtener los 5 campos más relevantes (sin secciones/ocultos)
+            const visibleFields = formDef.fields.filter(field => field.type !== 'section' && !field.hidden);
+            const relevantFields = visibleFields.slice(0, 5);
 
             // Renderizar headers
             const headersRow = document.getElementById('grid-headers');
@@ -241,6 +242,7 @@
 
                 if (field.type === 'boolean') {
                     input.checked = !!value;
+                    input.dispatchEvent(new Event("change"));
                 } else if (field.type === 'date' && value) {
                     // Convertir fecha a formato YYYY-MM-DD
                     const date = new Date(value);

@@ -107,6 +107,7 @@
     CLIENTES: {
       title: "Registro de clientes",
       fields: [
+        { id: "SECTION_DATOS", label: "Datos del cliente", type: "section", icon: "bi-building" },
         { id: "NOMBRE", label: "Nombre", type: "text", placeholder: "Nombre del cliente" },
         { id: "ESTADO", label: "Estado", type: "boolean", trueLabel: "Activo", falseLabel: "Inactivo" },
         { id: "RAZON SOCIAL", label: "Razón social", type: "text" },
@@ -117,8 +118,10 @@
           type: "select",
           options: ["Oficina", "Edificio", "Casa Particular", "Empresa", "Laboratorio", "Hospital"]
         },
-        { id: "DESCRIPCION", label: "Descripción", type: "textarea", rows: 3, placeholder: "Descripción del servicio" },
+        { id: "DESCRIPCION", label: "Descripción", type: "textarea", rows: 3, placeholder: "Descripción del servicio", full: true },
         { id: "DIRECCION", label: "Dirección", type: "text", full: true },
+        { id: "SECTION_ADMIN", label: "Administración y facturación", type: "section", icon: "bi-clipboard-check" },
+        { id: "NOMBRE ADMINISTRADOR", label: "Administrador", type: "text", placeholder: "Nombre del administrador" },
         { id: "CORREO ADMINISTRACION", label: "Correo administración", type: "email" },
         { id: "CORREO FACTURACION", label: "Correo facturación", type: "email" },
         {
@@ -129,6 +132,7 @@
         },
         { id: "FECHA CONTRATO", label: "Fecha contrato", type: "date" },
         { id: "VALOR HORA", label: "Valor de hora", type: "number", step: "0.01" },
+        { id: "SECTION_ENCARGADO", label: "Encargado en el lugar", type: "section", icon: "bi-person-badge" },
         {
           id: "TIENE ENCARGADO",
           label: "Tiene encargado",
@@ -139,6 +143,7 @@
         },
         { id: "ENCARGADO", label: "Nombre encargado", type: "text" },
         { id: "TELEFONO", label: "Teléfono encargado", type: "phone" },
+        { id: "SECTION_DIAS", label: "Días de servicio", type: "section", icon: "bi-calendar-week" },
         { id: "LUNES HS", label: "Horas lunes", type: "number", step: "0.5" },
         { id: "MARTES HS", label: "Horas martes", type: "number", step: "0.5" },
         { id: "MIERCOLES HS", label: "Horas miércoles", type: "number", step: "0.5" },
@@ -632,13 +637,37 @@
     const switchLabel = document.createElement("label");
     switchLabel.className = "form-check-label small";
     switchLabel.htmlFor = input.id;
-    switchLabel.textContent = field.trueLabel || "Activo";
+    const trueLabel = field.trueLabel || "Activo";
+    const falseLabel = field.falseLabel || "Inactivo";
+    switchLabel.textContent = input.checked ? trueLabel : falseLabel;
+
+    input.addEventListener("change", function () {
+      switchLabel.textContent = input.checked ? trueLabel : falseLabel;
+    });
 
     switchDiv.appendChild(input);
     switchDiv.appendChild(switchLabel);
 
     wrapper.appendChild(label);
     wrapper.appendChild(switchDiv);
+    return wrapper;
+  }
+
+  function renderSection(field) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "form-section-heading";
+
+    const icon = field.icon ? `<i class="bi ${field.icon}"></i>` : "";
+    const subtitle = field.subtitle ? `<div class="form-section-subtitle">${field.subtitle}</div>` : "";
+
+    wrapper.innerHTML = `
+      <div class="form-section-title">
+        ${icon}
+        <span>${field.label || ""}</span>
+      </div>
+      ${subtitle}
+    `;
+
     return wrapper;
   }
 
@@ -744,6 +773,8 @@
       switch (field.type) {
         case "boolean":
           return renderBoolean(field);
+        case "section":
+          return renderSection(field);
         case "dayOfWeek":
           return renderDayOfWeek(field);
         case "cliente": {
@@ -1122,8 +1153,9 @@ const Sidebar = (() => {
             const formDef = FORM_DEFINITIONS[tipoFormato];
             if (!formDef) return;
 
-            // Obtener los 5 campos más relevantes
-            const relevantFields = formDef.fields.slice(0, 5);
+            // Obtener los 5 campos más relevantes (sin secciones/ocultos)
+            const visibleFields = formDef.fields.filter(field => field.type !== 'section' && !field.hidden);
+            const relevantFields = visibleFields.slice(0, 5);
 
             // Renderizar headers
             const headersRow = document.getElementById('grid-headers');
@@ -1288,6 +1320,7 @@ const Sidebar = (() => {
 
                 if (field.type === 'boolean') {
                     input.checked = !!value;
+                    input.dispatchEvent(new Event("change"));
                 } else if (field.type === 'date' && value) {
                     // Convertir fecha a formato YYYY-MM-DD
                     const date = new Date(value);
@@ -9503,8 +9536,10 @@ var BulkValuesPanel = (function () {
 
             formDef.fields.forEach(field => {
                 const colDiv = document.createElement("div");
-                colDiv.className = "col-12";
-                colDiv.dataset.fieldId = field.id;
+                const isSection = field.type === "section";
+                const isFull = isSection || field.full;
+                colDiv.className = isFull ? "col-12" : "col-12 col-md-6";
+                if (field.id) colDiv.dataset.fieldId = field.id;
 
                 const formGroup = FormRenderer.renderField(field, referenceData);
                 colDiv.appendChild(formGroup);
@@ -9527,6 +9562,7 @@ var BulkValuesPanel = (function () {
 
             if (tipoFormato === "CLIENTES") {
                 setupClientesEncargadoToggle();
+                moveClientMediaPanelAboveServiceDays(container);
             }
 
             // Actualizar visibilidad del footer
@@ -9569,6 +9605,7 @@ var BulkValuesPanel = (function () {
 
                 if (field.type === "boolean") {
                     input.checked = typeof field.defaultChecked === "boolean" ? field.defaultChecked : true;
+                    input.dispatchEvent(new Event("change"));
                 } else {
                     input.value = "";
                 }
@@ -9616,6 +9653,16 @@ var BulkValuesPanel = (function () {
             if (!toggle) return;
             toggle.onchange = applyClientesEncargadoVisibility;
             applyClientesEncargadoVisibility();
+        }
+
+        function moveClientMediaPanelAboveServiceDays(container) {
+            if (!container) return;
+            const section = document.getElementById("client-media-section");
+            const anchor = container.querySelector('[data-field-id="SECTION_DIAS"]')
+                || container.querySelector('[data-field-id="LUNES HS"]');
+            if (section && anchor && section.parentNode === container) {
+                container.insertBefore(section, anchor);
+            }
         }
 
         return {
@@ -9692,6 +9739,7 @@ var BulkValuesPanel = (function () {
                         value === "Activo" ||
                         value === 1 ||
                         value === "1";
+                    input.dispatchEvent(new Event("change"));
                 } else {
                     // For text inputs, use the value as-is (even if empty string)
                     input.value = value !== null && value !== undefined ? value : "";

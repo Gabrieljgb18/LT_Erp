@@ -10,6 +10,7 @@ var Formats = (function () {
         'ESTADO',
         'RAZON SOCIAL',
         'CUIT',
+        'NOMBRE ADMINISTRADOR',
         'DESCRIPCION',
         'TIPO SERVICIO',
         'TIENE ENCARGADO',
@@ -36,6 +37,7 @@ var Formats = (function () {
         100, // ESTADO
         200, // RAZON SOCIAL
         120, // CUIT
+        180, // NOMBRE ADMINISTRADOR
         240, // DESCRIPCION
         140, // TIPO SERVICIO
         120, // TIENE ENCARGADO

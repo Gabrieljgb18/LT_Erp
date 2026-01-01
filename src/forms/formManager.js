@@ -139,8 +139,10 @@
 
             formDef.fields.forEach(field => {
                 const colDiv = document.createElement("div");
-                colDiv.className = "col-12";
-                colDiv.dataset.fieldId = field.id;
+                const isSection = field.type === "section";
+                const isFull = isSection || field.full;
+                colDiv.className = isFull ? "col-12" : "col-12 col-md-6";
+                if (field.id) colDiv.dataset.fieldId = field.id;
 
                 const formGroup = FormRenderer.renderField(field, referenceData);
                 colDiv.appendChild(formGroup);
@@ -163,6 +165,7 @@
 
             if (tipoFormato === "CLIENTES") {
                 setupClientesEncargadoToggle();
+                moveClientMediaPanelAboveServiceDays(container);
             }
 
             // Actualizar visibilidad del footer
@@ -205,6 +208,7 @@
 
                 if (field.type === "boolean") {
                     input.checked = typeof field.defaultChecked === "boolean" ? field.defaultChecked : true;
+                    input.dispatchEvent(new Event("change"));
                 } else {
                     input.value = "";
                 }
@@ -252,6 +256,16 @@
             if (!toggle) return;
             toggle.onchange = applyClientesEncargadoVisibility;
             applyClientesEncargadoVisibility();
+        }
+
+        function moveClientMediaPanelAboveServiceDays(container) {
+            if (!container) return;
+            const section = document.getElementById("client-media-section");
+            const anchor = container.querySelector('[data-field-id="SECTION_DIAS"]')
+                || container.querySelector('[data-field-id="LUNES HS"]');
+            if (section && anchor && section.parentNode === container) {
+                container.insertBefore(section, anchor);
+            }
         }
 
         return {

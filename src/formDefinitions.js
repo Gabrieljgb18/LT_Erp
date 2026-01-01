@@ -6,6 +6,7 @@
     CLIENTES: {
       title: "Registro de clientes",
       fields: [
+        { id: "SECTION_DATOS", label: "Datos del cliente", type: "section", icon: "bi-building" },
         { id: "NOMBRE", label: "Nombre", type: "text", placeholder: "Nombre del cliente" },
         { id: "ESTADO", label: "Estado", type: "boolean", trueLabel: "Activo", falseLabel: "Inactivo" },
         { id: "RAZON SOCIAL", label: "Razón social", type: "text" },
@@ -16,8 +17,10 @@
           type: "select",
           options: ["Oficina", "Edificio", "Casa Particular", "Empresa", "Laboratorio", "Hospital"]
         },
-        { id: "DESCRIPCION", label: "Descripción", type: "textarea", rows: 3, placeholder: "Descripción del servicio" },
+        { id: "DESCRIPCION", label: "Descripción", type: "textarea", rows: 3, placeholder: "Descripción del servicio", full: true },
         { id: "DIRECCION", label: "Dirección", type: "text", full: true },
+        { id: "SECTION_ADMIN", label: "Administración y facturación", type: "section", icon: "bi-clipboard-check" },
+        { id: "NOMBRE ADMINISTRADOR", label: "Administrador", type: "text", placeholder: "Nombre del administrador" },
         { id: "CORREO ADMINISTRACION", label: "Correo administración", type: "email" },
         { id: "CORREO FACTURACION", label: "Correo facturación", type: "email" },
         {
@@ -28,6 +31,7 @@
         },
         { id: "FECHA CONTRATO", label: "Fecha contrato", type: "date" },
         { id: "VALOR HORA", label: "Valor de hora", type: "number", step: "0.01" },
+        { id: "SECTION_ENCARGADO", label: "Encargado en el lugar", type: "section", icon: "bi-person-badge" },
         {
           id: "TIENE ENCARGADO",
           label: "Tiene encargado",
@@ -38,6 +42,7 @@
         },
         { id: "ENCARGADO", label: "Nombre encargado", type: "text" },
         { id: "TELEFONO", label: "Teléfono encargado", type: "phone" },
+        { id: "SECTION_DIAS", label: "Días de servicio", type: "section", icon: "bi-calendar-week" },
         { id: "LUNES HS", label: "Horas lunes", type: "number", step: "0.5" },
         { id: "MARTES HS", label: "Horas martes", type: "number", step: "0.5" },
         { id: "MIERCOLES HS", label: "Horas miércoles", type: "number", step: "0.5" },

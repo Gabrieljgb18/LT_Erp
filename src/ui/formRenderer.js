@@ -25,13 +25,37 @@
     const switchLabel = document.createElement("label");
     switchLabel.className = "form-check-label small";
     switchLabel.htmlFor = input.id;
-    switchLabel.textContent = field.trueLabel || "Activo";
+    const trueLabel = field.trueLabel || "Activo";
+    const falseLabel = field.falseLabel || "Inactivo";
+    switchLabel.textContent = input.checked ? trueLabel : falseLabel;
+
+    input.addEventListener("change", function () {
+      switchLabel.textContent = input.checked ? trueLabel : falseLabel;
+    });
 
     switchDiv.appendChild(input);
     switchDiv.appendChild(switchLabel);
 
     wrapper.appendChild(label);
     wrapper.appendChild(switchDiv);
+    return wrapper;
+  }
+
+  function renderSection(field) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "form-section-heading";
+
+    const icon = field.icon ? `<i class="bi ${field.icon}"></i>` : "";
+    const subtitle = field.subtitle ? `<div class="form-section-subtitle">${field.subtitle}</div>` : "";
+
+    wrapper.innerHTML = `
+      <div class="form-section-title">
+        ${icon}
+        <span>${field.label || ""}</span>
+      </div>
+      ${subtitle}
+    `;
+
     return wrapper;
   }
 
@@ -137,6 +161,8 @@
       switch (field.type) {
         case "boolean":
           return renderBoolean(field);
+        case "section":
+          return renderSection(field);
         case "dayOfWeek":
           return renderDayOfWeek(field);
         case "cliente": {
