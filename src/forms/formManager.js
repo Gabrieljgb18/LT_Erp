@@ -140,6 +140,7 @@
             formDef.fields.forEach(field => {
                 const colDiv = document.createElement("div");
                 colDiv.className = "col-12";
+                colDiv.dataset.fieldId = field.id;
 
                 const formGroup = FormRenderer.renderField(field, referenceData);
                 colDiv.appendChild(formGroup);
@@ -158,6 +159,10 @@
                 } catch (e) {
                     console.warn("No se pudo renderizar panel de fotos:", e);
                 }
+            }
+
+            if (tipoFormato === "CLIENTES") {
+                setupClientesEncargadoToggle();
             }
 
             // Actualizar visibilidad del footer
@@ -199,11 +204,15 @@
                 input.classList.remove("is-invalid");
 
                 if (field.type === "boolean") {
-                    input.checked = true;
+                    input.checked = typeof field.defaultChecked === "boolean" ? field.defaultChecked : true;
                 } else {
                     input.value = "";
                 }
             });
+
+            if (currentFormat === "CLIENTES") {
+                applyClientesEncargadoVisibility();
+            }
         }
 
         /**
@@ -223,13 +232,36 @@
             return currentFormat;
         }
 
+        function applyClientesEncargadoVisibility() {
+            if (currentFormat !== "CLIENTES") return;
+            const toggle = document.getElementById("field-TIENE ENCARGADO");
+            const show = !!(toggle && toggle.checked);
+
+            const toggleField = (fieldId, visible) => {
+                document.querySelectorAll(`[data-field-id="${fieldId}"]`).forEach(el => {
+                    el.classList.toggle("d-none", !visible);
+                });
+            };
+
+            toggleField("ENCARGADO", show);
+            toggleField("TELEFONO", show);
+        }
+
+        function setupClientesEncargadoToggle() {
+            const toggle = document.getElementById("field-TIENE ENCARGADO");
+            if (!toggle) return;
+            toggle.onchange = applyClientesEncargadoVisibility;
+            applyClientesEncargadoVisibility();
+        }
+
         return {
             init,
             loadFormats,
             renderForm,
             clearForm,
             updateReferenceData,
-            getCurrentFormat
+            getCurrentFormat,
+            applyClientesEncargadoVisibility
         };
     })();
 

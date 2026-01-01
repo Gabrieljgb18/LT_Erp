@@ -108,16 +108,37 @@
       title: "Registro de clientes",
       fields: [
         { id: "NOMBRE", label: "Nombre", type: "text", placeholder: "Nombre del cliente" },
-        { id: "ESTADO", label: "Estado", type: "boolean", trueLabel: "Activo" },
+        { id: "ESTADO", label: "Estado", type: "boolean", trueLabel: "Activo", falseLabel: "Inactivo" },
         { id: "RAZON SOCIAL", label: "Razón social", type: "text" },
         { id: "CUIT", label: "CUIT", type: "text" },
-        { id: "ENCARGADO", label: "Encargado", type: "text" },
-        { id: "TELEFONO", label: "Teléfono", type: "phone" },
+        {
+          id: "TIPO SERVICIO",
+          label: "Tipo de servicio",
+          type: "select",
+          options: ["Oficina", "Edificio", "Casa Particular", "Empresa", "Laboratorio", "Hospital"]
+        },
+        { id: "DESCRIPCION", label: "Descripción", type: "textarea", rows: 3, placeholder: "Descripción del servicio" },
         { id: "DIRECCION", label: "Dirección", type: "text", full: true },
         { id: "CORREO ADMINISTRACION", label: "Correo administración", type: "email" },
         { id: "CORREO FACTURACION", label: "Correo facturación", type: "email" },
+        {
+          id: "TIPO FACTURACION",
+          label: "Tipo de facturación",
+          type: "select",
+          options: ["Recibo X", "Factura A", "Factura B"]
+        },
         { id: "FECHA CONTRATO", label: "Fecha contrato", type: "date" },
         { id: "VALOR HORA", label: "Valor de hora", type: "number", step: "0.01" },
+        {
+          id: "TIENE ENCARGADO",
+          label: "Tiene encargado",
+          type: "boolean",
+          trueLabel: "Sí",
+          falseLabel: "No",
+          defaultChecked: false
+        },
+        { id: "ENCARGADO", label: "Nombre encargado", type: "text" },
+        { id: "TELEFONO", label: "Teléfono encargado", type: "phone" },
         { id: "LUNES HS", label: "Horas lunes", type: "number", step: "0.5" },
         { id: "MARTES HS", label: "Horas martes", type: "number", step: "0.5" },
         { id: "MIERCOLES HS", label: "Horas miércoles", type: "number", step: "0.5" },
@@ -602,7 +623,11 @@
     input.type = "checkbox";
     input.className = "form-check-input";
     input.id = "field-" + field.id;
-    input.checked = true;
+    if (typeof field.defaultChecked === "boolean") {
+      input.checked = field.defaultChecked;
+    } else {
+      input.checked = true;
+    }
 
     const switchLabel = document.createElement("label");
     switchLabel.className = "form-check-label small";
@@ -1160,7 +1185,18 @@ const Sidebar = (() => {
 
                     // Formatear según el tipo
                     if (field.type === 'boolean') {
-                        value = value ? '✅ Activo' : '❌ Inactivo';
+                        const isTrue = value === true ||
+                            value === 'TRUE' ||
+                            value === 'true' ||
+                            value === 1 ||
+                            value === '1' ||
+                            value === 'Activo' ||
+                            value === 'SI' ||
+                            value === 'Si' ||
+                            value === 'Asistió';
+                        const trueLabel = field.trueLabel || 'Activo';
+                        const falseLabel = field.falseLabel || 'Inactivo';
+                        value = isTrue ? `✅ ${trueLabel}` : `❌ ${falseLabel}`;
                     } else if (field.type === 'date' && value) {
                         value = formatDateForGrid(value);
                     } else if (field.type === 'number' && value) {
@@ -1260,6 +1296,10 @@ const Sidebar = (() => {
                     input.value = value || '';
                 }
             });
+
+            if (FormManager && typeof FormManager.applyClientesEncargadoVisibility === "function") {
+                FormManager.applyClientesEncargadoVisibility();
+            }
         }
 
         /**
@@ -9464,6 +9504,7 @@ var BulkValuesPanel = (function () {
             formDef.fields.forEach(field => {
                 const colDiv = document.createElement("div");
                 colDiv.className = "col-12";
+                colDiv.dataset.fieldId = field.id;
 
                 const formGroup = FormRenderer.renderField(field, referenceData);
                 colDiv.appendChild(formGroup);
@@ -9482,6 +9523,10 @@ var BulkValuesPanel = (function () {
                 } catch (e) {
                     console.warn("No se pudo renderizar panel de fotos:", e);
                 }
+            }
+
+            if (tipoFormato === "CLIENTES") {
+                setupClientesEncargadoToggle();
             }
 
             // Actualizar visibilidad del footer
@@ -9523,11 +9568,15 @@ var BulkValuesPanel = (function () {
                 input.classList.remove("is-invalid");
 
                 if (field.type === "boolean") {
-                    input.checked = true;
+                    input.checked = typeof field.defaultChecked === "boolean" ? field.defaultChecked : true;
                 } else {
                     input.value = "";
                 }
             });
+
+            if (currentFormat === "CLIENTES") {
+                applyClientesEncargadoVisibility();
+            }
         }
 
         /**
@@ -9547,13 +9596,36 @@ var BulkValuesPanel = (function () {
             return currentFormat;
         }
 
+        function applyClientesEncargadoVisibility() {
+            if (currentFormat !== "CLIENTES") return;
+            const toggle = document.getElementById("field-TIENE ENCARGADO");
+            const show = !!(toggle && toggle.checked);
+
+            const toggleField = (fieldId, visible) => {
+                document.querySelectorAll(`[data-field-id="${fieldId}"]`).forEach(el => {
+                    el.classList.toggle("d-none", !visible);
+                });
+            };
+
+            toggleField("ENCARGADO", show);
+            toggleField("TELEFONO", show);
+        }
+
+        function setupClientesEncargadoToggle() {
+            const toggle = document.getElementById("field-TIENE ENCARGADO");
+            if (!toggle) return;
+            toggle.onchange = applyClientesEncargadoVisibility;
+            applyClientesEncargadoVisibility();
+        }
+
         return {
             init,
             loadFormats,
             renderForm,
             clearForm,
             updateReferenceData,
-            getCurrentFormat
+            getCurrentFormat,
+            applyClientesEncargadoVisibility
         };
     })();
 
@@ -9625,6 +9697,10 @@ var BulkValuesPanel = (function () {
                     input.value = value !== null && value !== undefined ? value : "";
                 }
             });
+
+            if (global.FormManager && typeof global.FormManager.applyClientesEncargadoVisibility === "function") {
+                global.FormManager.applyClientesEncargadoVisibility();
+            }
         }
 
         function saveRecord() {

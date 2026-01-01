@@ -10,11 +10,15 @@ var Formats = (function () {
         'ESTADO',
         'RAZON SOCIAL',
         'CUIT',
+        'DESCRIPCION',
+        'TIPO SERVICIO',
+        'TIENE ENCARGADO',
         'ENCARGADO',
         'TELEFONO',
         'DIRECCION',
         'CORREO ADMINISTRACION',
         'CORREO FACTURACION',
+        'TIPO FACTURACION',
         'FECHA CONTRATO',
         'VALOR HORA',
         'LUNES HS',
@@ -32,11 +36,15 @@ var Formats = (function () {
         100, // ESTADO
         200, // RAZON SOCIAL
         120, // CUIT
+        240, // DESCRIPCION
+        140, // TIPO SERVICIO
+        120, // TIENE ENCARGADO
         150, // ENCARGADO
         120, // TELEFONO
         200, // DIRECCION
         200, // CORREO ADMINISTRACION
         200, // CORREO FACTURACION
+        140, // TIPO FACTURACION
         120, // FECHA CONTRATO
         120, // VALOR DE HORA
         90,  // LUNES HS

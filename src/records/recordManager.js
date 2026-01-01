@@ -62,6 +62,10 @@
                     input.value = value !== null && value !== undefined ? value : "";
                 }
             });
+
+            if (global.FormManager && typeof global.FormManager.applyClientesEncargadoVisibility === "function") {
+                global.FormManager.applyClientesEncargadoVisibility();
+            }
         }
 
         function saveRecord() {

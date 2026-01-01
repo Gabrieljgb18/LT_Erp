@@ -138,7 +138,18 @@
 
                     // Formatear según el tipo
                     if (field.type === 'boolean') {
-                        value = value ? '✅ Activo' : '❌ Inactivo';
+                        const isTrue = value === true ||
+                            value === 'TRUE' ||
+                            value === 'true' ||
+                            value === 1 ||
+                            value === '1' ||
+                            value === 'Activo' ||
+                            value === 'SI' ||
+                            value === 'Si' ||
+                            value === 'Asistió';
+                        const trueLabel = field.trueLabel || 'Activo';
+                        const falseLabel = field.falseLabel || 'Inactivo';
+                        value = isTrue ? `✅ ${trueLabel}` : `❌ ${falseLabel}`;
                     } else if (field.type === 'date' && value) {
                         value = formatDateForGrid(value);
                     } else if (field.type === 'number' && value) {
@@ -238,6 +249,10 @@
                     input.value = value || '';
                 }
             });
+
+            if (FormManager && typeof FormManager.applyClientesEncargadoVisibility === "function") {
+                FormManager.applyClientesEncargadoVisibility();
+            }
         }
 
         /**

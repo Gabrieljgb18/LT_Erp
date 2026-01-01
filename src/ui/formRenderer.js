@@ -16,7 +16,11 @@
     input.type = "checkbox";
     input.className = "form-check-input";
     input.id = "field-" + field.id;
-    input.checked = true;
+    if (typeof field.defaultChecked === "boolean") {
+      input.checked = field.defaultChecked;
+    } else {
+      input.checked = true;
+    }
 
     const switchLabel = document.createElement("label");
     switchLabel.className = "form-check-label small";

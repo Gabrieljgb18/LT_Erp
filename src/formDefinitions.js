@@ -7,16 +7,37 @@
       title: "Registro de clientes",
       fields: [
         { id: "NOMBRE", label: "Nombre", type: "text", placeholder: "Nombre del cliente" },
-        { id: "ESTADO", label: "Estado", type: "boolean", trueLabel: "Activo" },
+        { id: "ESTADO", label: "Estado", type: "boolean", trueLabel: "Activo", falseLabel: "Inactivo" },
         { id: "RAZON SOCIAL", label: "Razón social", type: "text" },
         { id: "CUIT", label: "CUIT", type: "text" },
-        { id: "ENCARGADO", label: "Encargado", type: "text" },
-        { id: "TELEFONO", label: "Teléfono", type: "phone" },
+        {
+          id: "TIPO SERVICIO",
+          label: "Tipo de servicio",
+          type: "select",
+          options: ["Oficina", "Edificio", "Casa Particular", "Empresa", "Laboratorio", "Hospital"]
+        },
+        { id: "DESCRIPCION", label: "Descripción", type: "textarea", rows: 3, placeholder: "Descripción del servicio" },
         { id: "DIRECCION", label: "Dirección", type: "text", full: true },
         { id: "CORREO ADMINISTRACION", label: "Correo administración", type: "email" },
         { id: "CORREO FACTURACION", label: "Correo facturación", type: "email" },
+        {
+          id: "TIPO FACTURACION",
+          label: "Tipo de facturación",
+          type: "select",
+          options: ["Recibo X", "Factura A", "Factura B"]
+        },
         { id: "FECHA CONTRATO", label: "Fecha contrato", type: "date" },
         { id: "VALOR HORA", label: "Valor de hora", type: "number", step: "0.01" },
+        {
+          id: "TIENE ENCARGADO",
+          label: "Tiene encargado",
+          type: "boolean",
+          trueLabel: "Sí",
+          falseLabel: "No",
+          defaultChecked: false
+        },
+        { id: "ENCARGADO", label: "Nombre encargado", type: "text" },
+        { id: "TELEFONO", label: "Teléfono encargado", type: "phone" },
         { id: "LUNES HS", label: "Horas lunes", type: "number", step: "0.5" },
         { id: "MARTES HS", label: "Horas martes", type: "number", step: "0.5" },
         { id: "MIERCOLES HS", label: "Horas miércoles", type: "number", step: "0.5" },

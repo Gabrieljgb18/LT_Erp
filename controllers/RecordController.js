@@ -107,6 +107,29 @@ var RecordController = (function () {
     }
   }
 
+  function ensureHeaders_(sheet, headers, templateHeaders) {
+    if (!templateHeaders || !templateHeaders.length) return headers;
+    if (!headers || !headers.length) return templateHeaders;
+
+    const missing = templateHeaders.filter(h => headers.indexOf(h) === -1);
+    if (!missing.length) return headers;
+
+    const newHeaders = headers.concat(missing);
+
+    sheet.getRange(1, 1, 1, newHeaders.length).setValues([newHeaders]);
+
+    const lastRow = sheet.getLastRow();
+    if (lastRow > 1) {
+      const blanks = [];
+      for (let i = 0; i < lastRow - 1; i++) {
+        blanks.push(new Array(missing.length).fill(''));
+      }
+      sheet.getRange(2, headers.length + 1, lastRow - 1, missing.length).setValues(blanks);
+    }
+
+    return newHeaders;
+  }
+
     /**
      * Guarda un nuevo registro
      * @param {string} tipoFormato - Tipo de formato
@@ -124,6 +147,7 @@ var RecordController = (function () {
         const existingLastCol = sheet.getLastColumn();
         if (existingLastRow >= 1 && existingLastCol > 0) {
             headers = sheet.getRange(1, 1, 1, existingLastCol).getValues()[0];
+            headers = ensureHeaders_(sheet, headers, templateHeaders);
         } else {
             headers = templateHeaders;
         }
@@ -206,14 +230,16 @@ var RecordController = (function () {
         }
 
         const lastCol = sheet.getLastColumn();
-        const headerRow = lastCol > 0 ? sheet.getRange(1, 1, 1, lastCol).getValues()[0] : [];
-        const headers = headerRow || [];
+        let headerRow = lastCol > 0 ? sheet.getRange(1, 1, 1, lastCol).getValues()[0] : [];
+        let headers = headerRow || [];
         if (!headers.length) {
             throw new Error('No se pudieron leer headers de la hoja para: ' + tipoFormato);
         }
+        headers = ensureHeaders_(sheet, headers, (template && template.headers) ? template.headers : []);
+        headerRow = headers;
 
         // Get current values for comparison
-        const currentRowValues = sheet.getRange(rowNumber, 1, 1, lastCol).getValues()[0];
+        const currentRowValues = sheet.getRange(rowNumber, 1, 1, headers.length).getValues()[0];
         const currentRecord = {};
         headerRow.forEach(function (h, idx) {
             currentRecord[h] = currentRowValues[idx];
