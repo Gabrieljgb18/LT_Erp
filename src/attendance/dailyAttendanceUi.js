@@ -199,8 +199,8 @@
                     card.classList.add("border", "border-secondary", "border-opacity-50");
                 }
 
-                const clienteSelect = buildClienteSelect(row.uid, row.cliente, !row.fueraDePlan);
-                const empleadoSelect = buildEmpleadoSelect(row.uid, row.empleado, !row.fueraDePlan);
+                const clienteSelect = buildClienteSelect(row.uid, row.cliente, !row.fueraDePlan, row.idCliente);
+                const empleadoSelect = buildEmpleadoSelect(row.uid, row.empleado, !row.fueraDePlan, row.idEmpleado);
                 const horasPlanText = formatHorasPlan(row.horasPlan);
                 const horaPlanText = formatHoraPlan(row.horaPlan);
                 const collapseId = "att-card-" + row.uid;
@@ -313,33 +313,39 @@
             });
         }
 
-        function buildClienteSelect(uid, selected, disabled) {
+        function buildClienteSelect(uid, selected, disabled, selectedId) {
             const opts = ['<option value="">Cliente...</option>'];
             let found = false;
+            const selectedIdStr = selectedId != null && selectedId !== '' ? String(selectedId) : '';
             (reference.clientes || []).forEach(cli => {
                 const label = cli.razonSocial || cli.nombre || cli.CLIENTE || cli;
+                const id = cli && typeof cli === 'object' && cli.id != null ? String(cli.id) : '';
                 if (!label) return;
-                if (label === selected) found = true;
-                const sel = label === selected ? " selected" : "";
-                opts.push(`<option value="${HtmlHelpers.escapeHtml(label)}"${sel}>${HtmlHelpers.escapeHtml(label)}</option>`);
+                const sel = selectedIdStr && id && id === selectedIdStr ? " selected" : "";
+                if (sel) found = true;
+                opts.push(`<option value="${HtmlHelpers.escapeHtml(label)}" data-id="${HtmlHelpers.escapeHtml(id)}"${sel}>${HtmlHelpers.escapeHtml(label)}</option>`);
             });
             if (selected && !found) {
-                opts.push(`<option value="${HtmlHelpers.escapeHtml(selected)}" selected>${HtmlHelpers.escapeHtml(selected)}</option>`);
+                opts.push(`<option value="" selected>${HtmlHelpers.escapeHtml(selected)} (sin ID)</option>`);
             }
             const disabledAttr = disabled ? "disabled" : "";
             return `<select class="form-select form-select-sm bg-white border" data-role="cliente" data-uid="${uid}" ${disabledAttr}>${opts.join("")}</select>`;
         }
 
-        function buildEmpleadoSelect(uid, selected, disabled) {
+        function buildEmpleadoSelect(uid, selected, disabled, selectedId) {
             let found = false;
             const optsArr = ['<option value="">Empleado...</option>'];
+            const selectedIdStr = selectedId != null && selectedId !== '' ? String(selectedId) : '';
             (reference.empleados || []).forEach(emp => {
-                if (emp === selected) found = true;
-                const sel = emp === selected ? " selected" : "";
-                optsArr.push(`<option value="${HtmlHelpers.escapeHtml(emp)}"${sel}>${HtmlHelpers.escapeHtml(emp)}</option>`);
+                const label = typeof emp === 'string' ? emp : (emp.nombre || emp.empleado || emp.label || '');
+                const id = emp && typeof emp === 'object' && emp.id != null ? String(emp.id) : '';
+                if (!label) return;
+                const sel = selectedIdStr && id && id === selectedIdStr ? " selected" : "";
+                if (sel) found = true;
+                optsArr.push(`<option value="${HtmlHelpers.escapeHtml(label)}" data-id="${HtmlHelpers.escapeHtml(id)}"${sel}>${HtmlHelpers.escapeHtml(label)}</option>`);
             });
             if (selected && !found) {
-                optsArr.push(`<option value="${HtmlHelpers.escapeHtml(selected)}" selected>${HtmlHelpers.escapeHtml(selected)}</option>`);
+                optsArr.push(`<option value="" selected>${HtmlHelpers.escapeHtml(selected)} (sin ID)</option>`);
             }
             const opts = optsArr.join("");
             const disabledAttr = disabled ? "disabled" : "";
@@ -349,13 +355,15 @@
         function attachRowEvents() {
             rootEl.querySelectorAll('[data-role="cliente"]').forEach(el => {
                 el.addEventListener("change", function () {
-                    updateRow(this.dataset.uid, "cliente", this.value);
+                    const opt = this.selectedOptions ? this.selectedOptions[0] : null;
+                    updateRow(this.dataset.uid, "cliente", this.value, opt && opt.dataset ? opt.dataset.id : "");
                 });
             });
 
             rootEl.querySelectorAll('[data-role="empleado"]').forEach(el => {
                 el.addEventListener("change", function () {
-                    updateRow(this.dataset.uid, "empleado", this.value);
+                    const opt = this.selectedOptions ? this.selectedOptions[0] : null;
+                    updateRow(this.dataset.uid, "empleado", this.value, opt && opt.dataset ? opt.dataset.id : "");
                 });
             });
 
@@ -384,15 +392,15 @@
             });
         }
 
-        function updateRow(uid, field, value) {
+        function updateRow(uid, field, value, idValue) {
             const row = state.rows.find(r => r.uid === uid);
             if (!row) return;
             row[field] = value;
             if (field === "cliente") {
-                row.idCliente = "";
+                row.idCliente = idValue || "";
             }
             if (field === "empleado") {
-                row.idEmpleado = "";
+                row.idEmpleado = idValue || "";
             }
             updateSummary();
         }
@@ -585,11 +593,6 @@
             if (!GridManager || !FormManager) return;
             pendingFecha = fecha;
 
-            const formatoSelect = document.getElementById("formato");
-            if (formatoSelect) {
-                formatoSelect.value = "ASISTENCIA";
-            }
-
             GridManager.openModal("Asistencia del día", function () {
                 FormManager.renderForm("ASISTENCIA");
             });
@@ -624,6 +627,11 @@
             const filaIncompleta = state.rows.find(r => !r.cliente || !r.empleado);
             if (filaIncompleta) {
                 if (Alerts) Alerts.showAlert("Completá cliente y empleado en todas las filas.", "warning");
+                return;
+            }
+            const filaSinId = state.rows.find(r => !r.idCliente || !r.idEmpleado);
+            if (filaSinId) {
+                if (Alerts) Alerts.showAlert("Seleccioná cliente y empleado desde la lista para guardar IDs.", "warning");
                 return;
             }
 

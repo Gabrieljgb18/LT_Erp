@@ -301,7 +301,7 @@
                         const uniqueClientes = [];
                         const seen = new Set();
                         clientes.forEach(c => {
-                            const key = c.idCliente || c.cliente || c.razonSocial || '';
+                            const key = c.idCliente ? String(c.idCliente).trim() : '';
                             if (!key || seen.has(key)) return;
                             seen.add(key);
                             uniqueClientes.push(c);
@@ -729,11 +729,12 @@
                     empleadosList.forEach(emp => {
                         const id = emp && emp.id != null ? String(emp.id).trim() : '';
                         const nombre = emp && emp.nombre ? String(emp.nombre).trim() : '';
+                        if (!id || !nombre) return;
                         const opt = document.createElement('option');
-                        opt.value = id || nombre;
-                        opt.textContent = nombre || id || 'Sin nombre';
+                        opt.value = id;
+                        opt.textContent = nombre;
                         opt.dataset.id = id;
-                        opt.dataset.nombre = nombre || id;
+                        opt.dataset.nombre = nombre;
                         select.appendChild(opt);
                     });
                 })
@@ -750,12 +751,14 @@
                             select.appendChild(allOpt);
 
                             refData.empleados.forEach(emp => {
+                                const nombre = typeof emp === 'string' ? String(emp).trim() : String(emp.nombre || '').trim();
+                                const id = emp && typeof emp === 'object' && emp.id != null ? String(emp.id).trim() : '';
+                                if (!id || !nombre) return;
                                 const opt = document.createElement('option');
-                                const nombre = String(emp || '').trim();
-                                opt.value = nombre;
+                                opt.value = id;
                                 opt.textContent = nombre;
                                 opt.dataset.nombre = nombre;
-                                opt.dataset.id = '';
+                                opt.dataset.id = id;
                                 select.appendChild(opt);
                             });
                         }

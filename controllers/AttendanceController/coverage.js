@@ -11,14 +11,15 @@ const AttendanceCoverage = (function () {
      * @param {string} dayName - Nombre del día (LUNES, MARTES, etc.)
      * @returns {Object} required, planned, diff
      */
-    function getClientDayCoverage(clienteLabel, dayName) {
+    function getClientDayCoverage(clienteLabel, dayName, idCliente) {
         const result = {
             required: 0,
             planned: 0,
             diff: 0
         };
 
-        if (!clienteLabel || !dayName) return result;
+        const targetId = idCliente != null && idCliente !== '' ? String(idCliente).trim() : '';
+        if (!targetId || !dayName) return result;
 
         // Obtener horas requeridas del cliente
         const clientesSheet = DatabaseService.getDbSheetForFormat('CLIENTES');
@@ -27,8 +28,7 @@ const AttendanceCoverage = (function () {
         if (lastRowCli >= 2 && lastColCli > 0) {
             const headersCli = clientesSheet.getRange(1, 1, 1, lastColCli).getValues()[0];
 
-            const idxNombre = headersCli.indexOf('NOMBRE');
-            const idxRazon = headersCli.indexOf('RAZON SOCIAL');
+            const idxId = headersCli.indexOf('ID');
             const idxLunes = headersCli.indexOf('LUNES HS');
             const idxMartes = headersCli.indexOf('MARTES HS');
             const idxMiercoles = headersCli.indexOf('MIERCOLES HS');
@@ -55,17 +55,14 @@ const AttendanceCoverage = (function () {
 
                 for (let i = 0; i < dataCli.length; i++) {
                     const row = dataCli[i];
-                    const nombre = idxNombre > -1 ? row[idxNombre] : '';
-                    const razon = idxRazon > -1 ? row[idxRazon] : '';
-
-                    if (clienteLabel === razon || clienteLabel === nombre) {
-                        const raw = row[idxDay];
-                        const num = (raw === '' || raw == null) ? 0 : Number(raw);
-                        if (!isNaN(num)) {
-                            result.required = num;
-                        }
-                        break;
+                    const rowId = idxId > -1 ? String(row[idxId] || '').trim() : '';
+                    if (!rowId || rowId !== targetId) continue;
+                    const raw = row[idxDay];
+                    const num = (raw === '' || raw == null) ? 0 : Number(raw);
+                    if (!isNaN(num)) {
+                        result.required = num;
                     }
+                    break;
                 }
             }
         }
@@ -77,12 +74,12 @@ const AttendanceCoverage = (function () {
         if (lastRowPlan >= 2 && lastColPlan > 0) {
             const headersPlan = planSheet.getRange(1, 1, 1, lastColPlan).getValues()[0];
 
-            const idxClientePlan = headersPlan.indexOf('CLIENTE');
+            const idxIdClientePlan = headersPlan.indexOf('ID_CLIENTE');
             const idxDiaSemanaPlan = headersPlan.indexOf('DIA SEMANA');
             const idxHorasPlan = headersPlan.indexOf('HORAS PLAN');
             const idxActivo = headersPlan.indexOf('ACTIVO');
 
-            if (idxClientePlan > -1 && idxDiaSemanaPlan > -1 && idxHorasPlan > -1) {
+            if (idxIdClientePlan > -1 && idxDiaSemanaPlan > -1 && idxHorasPlan > -1) {
                 const dataPlan = planSheet
                     .getRange(2, 1, lastRowPlan - 1, lastColPlan)
                     .getValues();
@@ -90,11 +87,11 @@ const AttendanceCoverage = (function () {
                 let totalPlan = 0;
 
                 dataPlan.forEach(function (row) {
-                    const clienteRow = row[idxClientePlan];
+                    const clienteRowId = String(row[idxIdClientePlan] || '').trim();
                     const diaRow = (row[idxDiaSemanaPlan] || '').toString().trim().toUpperCase();
 
-                    if (!clienteRow || diaRow !== dayName) return;
-                    if (clienteRow !== clienteLabel) return;
+                    if (!clienteRowId || diaRow !== dayName) return;
+                    if (clienteRowId !== targetId) return;
 
                     let activo = true;
                     if (idxActivo > -1) {
@@ -122,8 +119,9 @@ const AttendanceCoverage = (function () {
      * @param {string} clienteLabel - Nombre del cliente
      * @returns {Object|null} Objeto con horas por día de la semana
      */
-    function getClientWeeklyRequestedHours(clienteLabel) {
-        if (!clienteLabel) return null;
+    function getClientWeeklyRequestedHours(clienteLabel, idCliente) {
+        const targetId = idCliente != null && idCliente !== '' ? String(idCliente).trim() : '';
+        if (!targetId) return null;
 
         const sheet = DatabaseService.getDbSheetForFormat('CLIENTES');
         const data = sheet.getDataRange().getValues();
@@ -132,8 +130,7 @@ const AttendanceCoverage = (function () {
         const header = data[0];
         const rows = data.slice(1);
 
-        const idxNombre = header.indexOf('NOMBRE');
-        const idxRazon = header.indexOf('RAZON SOCIAL');
+        const idxId = header.indexOf('ID');
         const idxLunes = header.indexOf('LUNES HS');
         const idxMartes = header.indexOf('MARTES HS');
         const idxMiercoles = header.indexOf('MIERCOLES HS');
@@ -143,7 +140,7 @@ const AttendanceCoverage = (function () {
         const idxDomingo = header.indexOf('DOMINGO HS');
 
         if (
-            idxNombre === -1 || idxRazon === -1 ||
+            idxId === -1 ||
             idxLunes === -1 || idxMartes === -1 ||
             idxMiercoles === -1 || idxJueves === -1 ||
             idxViernes === -1 || idxSabado === -1 ||
@@ -154,9 +151,8 @@ const AttendanceCoverage = (function () {
 
         let rowCli = null;
         rows.forEach(function (row) {
-            const nombre = row[idxNombre];
-            const razon = row[idxRazon];
-            if (nombre === clienteLabel || razon === clienteLabel) {
+            const rowId = String(row[idxId] || '').trim();
+            if (rowId && rowId === targetId) {
                 rowCli = row;
             }
         });
@@ -169,7 +165,7 @@ const AttendanceCoverage = (function () {
         }
 
         const result = {
-            cliente: clienteLabel,
+            cliente: clienteLabel || '',
             lunes: num(rowCli[idxLunes]),
             martes: num(rowCli[idxMartes]),
             miercoles: num(rowCli[idxMiercoles]),

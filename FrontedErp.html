@@ -33,13 +33,56 @@
     <!-- Sidebar -->
     <aside id="app-sidebar" class="sidebar">
       <div class="sidebar-header">
-        <a href="#" class="sidebar-brand">LT ERP</a>
+        <a href="#" class="sidebar-brand" title="LT ERP">
+          <span class="sidebar-brand-text">LT ERP</span>
+          <span class="sidebar-brand-mini">LT</span>
+        </a>
       </div>
       <nav class="sidebar-nav">
-        <a class="nav-link active" data-target="registro">
-          <i class="bi bi-ui-checks-grid nav-icon"></i>
-          <span>Formularios</span>
-        </a>
+        <div class="nav-item-group">
+          <a class="nav-link-parent expanded active" data-toggle-submenu="submenu-clientes">
+            <div class="d-flex align-items-center gap-2">
+              <i class="bi bi-building nav-icon"></i>
+              <span>Clientes</span>
+            </div>
+            <i class="bi bi-chevron-right nav-arrow"></i>
+          </a>
+          <div id="submenu-clientes" class="nav-submenu show">
+            <a class="nav-link active" data-target="clientes">
+              <i class="bi bi-journal-text nav-icon"></i>
+              <span>Diccionario de clientes</span>
+            </a>
+            <a class="nav-link" data-target="reportes-clientes">
+              <i class="bi bi-bar-chart-line nav-icon"></i>
+              <span>Reporte de clientes</span>
+            </a>
+          </div>
+        </div>
+
+        <div class="nav-item-group">
+          <a class="nav-link-parent" data-toggle-submenu="submenu-empleados">
+            <div class="d-flex align-items-center gap-2">
+              <i class="bi bi-people nav-icon"></i>
+              <span>Empleados</span>
+            </div>
+            <i class="bi bi-chevron-right nav-arrow"></i>
+          </a>
+          <div id="submenu-empleados" class="nav-submenu">
+            <a class="nav-link" data-target="empleados">
+              <i class="bi bi-journal-text nav-icon"></i>
+              <span>Diccionario de empleados</span>
+            </a>
+            <a class="nav-link" data-target="adelantos">
+              <i class="bi bi-cash-coin nav-icon"></i>
+              <span>Adelantos de sueldo</span>
+            </a>
+            <a class="nav-link" data-target="reportes">
+              <i class="bi bi-bar-chart-line nav-icon"></i>
+              <span>Reporte de empleados</span>
+            </a>
+          </div>
+        </div>
+
         <div class="nav-item-group">
           <a class="nav-link-parent" data-toggle-submenu="submenu-asistencia">
             <div class="d-flex align-items-center gap-2">
@@ -67,17 +110,14 @@
             </a>
           </div>
         </div>
-        <a class="nav-link" data-target="reportes">
-          <i class="bi bi-people nav-icon"></i>
-          <span>Reporte Empleados</span>
-        </a>
-        <a class="nav-link" data-target="reportes-clientes">
-          <i class="bi bi-building nav-icon"></i>
-          <span>Reporte Clientes</span>
-        </a>
+
         <a class="nav-link" data-target="facturacion">
           <i class="bi bi-receipt nav-icon"></i>
           <span>Facturación</span>
+        </a>
+        <a class="nav-link" data-target="pagos">
+          <i class="bi bi-wallet2 nav-icon"></i>
+          <span>Pagos</span>
         </a>
         <a class="nav-link" data-target="configuracion">
           <i class="bi bi-sliders nav-icon"></i>
@@ -93,10 +133,10 @@
     <main class="main-content">
       <!-- Top Header -->
       <header class="top-header">
-        <button id="sidebar-toggle" class="sidebar-toggle">
-          ☰
+        <button id="sidebar-toggle" class="sidebar-toggle" title="Colapsar menú">
+          <i class="bi bi-layout-sidebar-inset"></i>
         </button>
-        <h5 class="m-0" id="page-title">Formularios</h5>
+        <h5 class="m-0" id="page-title">Diccionario de clientes</h5>
         <div id="global-loading" class="ms-auto d-none"></div>
       </header>
 
@@ -108,18 +148,15 @@
           <!-- View: Registro (Default) -->
           <div id="view-registro" class="view-section">
             <div class="lt-surface lt-surface--subtle p-3 mb-3">
-              <!-- Opciones -->
-              <div class="row g-2 align-items-end">
-                <div class="col-12 col-md-4">
-                  <label for="formato" class="form-label small mb-1 fw-semibold d-flex align-items-center gap-2">
-                    <i class="bi bi-sliders2-vertical text-primary"></i>
-                    <span>Opciones</span>
-                  </label>
-                  <select id="formato" class="form-select">
-                    <option value="">Cargando...</option>
-                  </select>
+              <!-- Encabezado -->
+              <div class="row g-2 align-items-center">
+                <div class="col-12 col-md-6">
+                  <div class="small text-muted d-flex align-items-center gap-2">
+                    <i class="bi bi-folder2-open text-primary"></i>
+                    <span id="registro-context-label">Diccionario de clientes</span>
+                  </div>
                 </div>
-                <div class="col-12 col-md-8">
+                <div class="col-12 col-md-6">
                   <div class="d-flex gap-2 justify-content-end">
                     <button id="btn-nuevo" type="button" class="btn btn-primary d-flex align-items-center gap-2">
                       <i class="bi bi-plus-lg"></i>
@@ -153,7 +190,7 @@
                     <tbody id="grid-body">
                       <tr>
                         <td class="text-center text-muted py-5">
-                          Selecciona un formato para ver los registros
+                          Selecciona una sección del menú para ver los registros
                         </td>
                       </tr>
                     </tbody>
@@ -211,6 +248,11 @@
             <div id="client-calendar-panel"></div>
           </div>
 
+          <!-- View: Pagos -->
+          <div id="view-pagos" class="view-section d-none">
+            <div id="payments-panel"></div>
+          </div>
+
           <!-- View: Reportes -->
           <div id="view-reportes" class="view-section d-none">
             <!-- Resumen mensual -->
@@ -235,7 +277,8 @@
 
           <!-- View: Configuración -->
           <div id="view-configuracion" class="view-section d-none">
-            <div id="bulk-values-panel"></div>
+            <div id="bulk-values-panel" class="mb-3"></div>
+            <div id="dropdown-config-panel"></div>
           </div>
 
         </div>

@@ -18,7 +18,8 @@ const AttendancePlanVsReal = (function () {
         }
 
         const fecha = (fechaStr || '').toString().trim();
-        if (!fecha || (!cliente && !idCliente)) return [];
+        const targetIdCliente = idCliente != null ? String(idCliente).trim() : '';
+        if (!fecha || !targetIdCliente) return [];
 
         const dayName = DateUtils.getDayNameFromDateString(fecha);
         if (!dayName) return [];
@@ -47,26 +48,13 @@ const AttendancePlanVsReal = (function () {
         const dataPlan = planSheet.getRange(2, 1, lastRowPlan - 1, lastColPlan).getValues();
         const planRows = [];
 
-        const foundTargetCliente = (!idCliente && cliente) ? DatabaseService.findClienteByNombreORazon(cliente) : null;
-        const targetIdCliente = idCliente
-            ? String(idCliente)
-            : (foundTargetCliente && foundTargetCliente.id ? String(foundTargetCliente.id) : '');
-
         dataPlan.forEach(function (row) {
             const cli = row[idxClientePlan];
             const rowIdCliente = idxIdClientePlan > -1 ? String(row[idxIdClientePlan] || '').trim() : '';
             const dia = (row[idxDiaSemanaPlan] || '').toString().trim().toUpperCase();
 
             if (!cli || !dia) return;
-            if (targetIdCliente) {
-                if (rowIdCliente) {
-                    if (rowIdCliente !== targetIdCliente) return;
-                } else if (cli !== cliente) {
-                    return;
-                }
-            } else if (cli !== cliente) {
-                return;
-            }
+            if (!rowIdCliente || rowIdCliente !== targetIdCliente) return;
             if (dia !== dayName) return;
 
             let activo = true;
@@ -77,7 +65,7 @@ const AttendancePlanVsReal = (function () {
 
             const emp = row[idxEmpleadoPlan];
             const rowIdEmpleado = idxIdEmpleadoPlan > -1 ? row[idxIdEmpleadoPlan] : '';
-            if (!emp) return;
+            if (!emp || !rowIdEmpleado) return;
 
             planRows.push({
                 empleado: emp,
@@ -123,19 +111,14 @@ const AttendancePlanVsReal = (function () {
                     const rowIdCli = idxIdCliAsis > -1 ? String(row[idxIdCliAsis] || '').trim() : '';
                     const rowIdEmp = idxIdEmpAsis > -1 ? String(row[idxIdEmpAsis] || '').trim() : '';
                     if (!cliRow || !empRow) return;
-                    if (targetIdCliente) {
-                        if (rowIdCli) {
-                            if (rowIdCli !== targetIdCliente) return;
-                        } else if (cliRow !== cliente) {
-                            return;
-                        }
-                    } else if (cliRow !== cliente) {
+                    if (!rowIdCli || rowIdCli !== targetIdCliente) {
                         return;
                     }
 
                     const asistio = idxAsist > -1 ? DataUtils.isTruthy(row[idxAsist]) : false;
 
-                    const empKey = rowIdEmp || empRow;
+                    if (!rowIdEmp) return;
+                    const empKey = rowIdEmp;
                     realMap[empKey] = {
                         rowNumber: i + 2,
                         empleado: empRow,
@@ -150,12 +133,12 @@ const AttendancePlanVsReal = (function () {
         }
 
         const empleados = planRows
-            .map(function (r) { return r.idEmpleado || r.empleado; })
-            .filter(function (v, i, arr) { return arr.indexOf(v) === i; })
+            .map(function (r) { return r.idEmpleado; })
+            .filter(function (v, i, arr) { return v && arr.indexOf(v) === i; })
             .sort();
 
         return empleados.map(function (empKey) {
-            const p = planRows.find(function (x) { return (x.idEmpleado || x.empleado) === empKey; });
+            const p = planRows.find(function (x) { return x.idEmpleado === empKey; });
             const r = realMap[empKey];
             const empName = p ? p.empleado : (r ? r.empleado : empKey);
 
@@ -185,27 +168,20 @@ const AttendancePlanVsReal = (function () {
             idCliente = cliente.idCliente || cliente.ID_CLIENTE || idCliente;
             cliente = cliente.cliente || cliente.clientName || cliente.label || '';
         }
-        if (!fechaStr || (!cliente && !idCliente) || !Array.isArray(items)) return;
+        const clienteId = idCliente != null ? String(idCliente).trim() : '';
+        if (!fechaStr || !clienteId || !Array.isArray(items)) return;
 
         const fecha = fechaStr.toString().trim();
-
-        const clienteId = idCliente || (DatabaseService.findClienteByNombreORazon(cliente) || {}).id || '';
-        const empIdCache = {};
-
-        function resolveEmpId(nombre) {
-            if (!nombre) return '';
-            if (empIdCache[nombre] !== undefined) return empIdCache[nombre];
-            const found = DatabaseService.findEmpleadoByNombre(nombre);
-            const val = found && found.id ? found.id : '';
-            empIdCache[nombre] = val;
-            return val;
+        const missingEmp = items.find(it => it && (it.empleado || it.idEmpleado) && !it.idEmpleado);
+        if (missingEmp) {
+            throw new Error('Falta ID_EMPLEADO en la asistencia real.');
         }
 
         items.forEach(function (it) {
             if (!it.empleado) return;
 
             const record = {
-                'ID_EMPLEADO': it.idEmpleado || resolveEmpId(it.empleado),
+                'ID_EMPLEADO': it.idEmpleado || '',
                 'EMPLEADO': it.empleado,
                 'ID_CLIENTE': it.idCliente || clienteId,
                 'CLIENTE': cliente,

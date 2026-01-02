@@ -5,7 +5,9 @@
 const Sidebar = (() => {
     // State
     let isOpen = false;
+    let isCollapsed = false;
     let activeItem = null;
+    const storageKey = 'lt-erp-sidebar-collapsed';
 
     // DOM Elements
     const elements = {
@@ -24,6 +26,11 @@ const Sidebar = (() => {
         elements.toggleBtn = document.getElementById('sidebar-toggle');
 
         if (!elements.sidebar) return;
+
+        hydrateCollapsedState();
+        syncResponsiveState();
+
+        window.addEventListener('resize', syncResponsiveState);
 
         // Setup event listeners
         if (elements.toggleBtn) {
@@ -48,6 +55,16 @@ const Sidebar = (() => {
                 }
             });
             elements.menuItems.push(link);
+        });
+
+        // Tooltip labels for collapsed state
+        const titledLinks = elements.sidebar.querySelectorAll('.nav-link, .nav-link-parent');
+        titledLinks.forEach(link => {
+            const label = link.querySelector('span');
+            const text = label ? label.textContent.trim() : '';
+            if (text && !link.getAttribute('title')) {
+                link.setAttribute('title', text);
+            }
         });
 
         // Setup submenu toggles
@@ -75,8 +92,12 @@ const Sidebar = (() => {
      * Toggle sidebar state
      */
     function toggle() {
-        isOpen = !isOpen;
-        updateState();
+        if (window.innerWidth < 992) {
+            isOpen = !isOpen;
+            updateState();
+            return;
+        }
+        setCollapsed(!isCollapsed);
     }
 
     /**
@@ -103,6 +124,36 @@ const Sidebar = (() => {
             document.body.classList.add('sidebar-open');
         } else {
             document.body.classList.remove('sidebar-open');
+        }
+    }
+
+    function hydrateCollapsedState() {
+        try {
+            const saved = localStorage.getItem(storageKey);
+            isCollapsed = saved === '1';
+        } catch (e) {
+            isCollapsed = false;
+        }
+    }
+
+    function setCollapsed(value) {
+        isCollapsed = Boolean(value);
+        try {
+            localStorage.setItem(storageKey, isCollapsed ? '1' : '0');
+        } catch (e) {
+            // ignore storage errors
+        }
+        syncResponsiveState();
+    }
+
+    function syncResponsiveState() {
+        const isMobile = window.innerWidth < 992;
+        if (isMobile) {
+            document.body.classList.remove('sidebar-collapsed');
+        } else {
+            document.body.classList.toggle('sidebar-collapsed', isCollapsed);
+            document.body.classList.remove('sidebar-open');
+            isOpen = false;
         }
     }
 

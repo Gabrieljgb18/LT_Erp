@@ -196,10 +196,27 @@ var ClientReportPanel = (function () {
     function formatClientLabel(cli) {
         if (!cli) return '';
         if (typeof cli === 'string') return cli;
-        // Preferir razón social, luego nombre; agregar CUIT si está disponible
+        // Preferir razón social, luego nombre; agregar documento si está disponible
         const base = cli.razonSocial || cli.nombre || '';
-        const cuit = cli.cuit ? ` (${cli.cuit})` : '';
-        return (base + cuit).trim();
+        const id = cli.id != null ? String(cli.id).trim() : '';
+        const docLabel = getClientDocLabel_(cli);
+        const meta = [];
+        if (id) meta.push(`ID: ${id}`);
+        if (docLabel) meta.push(docLabel);
+        const metaSuffix = meta.length ? ` (${meta.join(' | ')})` : '';
+        return (base + metaSuffix).trim();
+    }
+
+    function getClientDocLabel_(cli) {
+        if (!cli || typeof cli !== 'object') return '';
+        const docType = (cli.docType || cli["TIPO DOCUMENTO"] || '').toString().trim();
+        const rawDoc = cli.docNumber || cli["NUMERO DOCUMENTO"] || cli.cuit || '';
+        if (!rawDoc) return '';
+        const fallbackType = docType || (cli.cuit ? 'CUIT' : '');
+        if (typeof InputUtils !== 'undefined' && InputUtils && typeof InputUtils.formatDocLabel === 'function') {
+            return InputUtils.formatDocLabel(fallbackType, rawDoc);
+        }
+        return (fallbackType ? (fallbackType + ' ') : '') + rawDoc;
     }
 
     function populateClientList(clients) {
@@ -218,9 +235,6 @@ var ClientReportPanel = (function () {
                 const id = raw && typeof raw === 'object' && raw.id != null ? String(raw.id) : '';
                 if (id) {
                     clientIdMap.set(item.label, id);
-                    clientIdMap.set(cleanClientValue(item.label), id);
-                    if (raw.razonSocial) clientIdMap.set(String(raw.razonSocial).trim(), id);
-                    if (raw.nombre) clientIdMap.set(String(raw.nombre).trim(), id);
                 }
                 const opt = document.createElement('option');
                 opt.value = item.label;
@@ -228,15 +242,14 @@ var ClientReportPanel = (function () {
             });
     }
 
-    function cleanClientValue(raw) {
-        if (!raw) return '';
-        const idx = raw.indexOf('(');
-        return idx > 0 ? raw.slice(0, idx).trim() : raw.trim();
+    function extractClientIdFromLabel_(label) {
+        const match = String(label || '').match(/ID\\s*:\\s*([^|)]+)/i);
+        return match ? match[1].trim() : '';
     }
 
     function getClientIdFromLabel(label) {
         if (!label) return '';
-        return clientIdMap.get(label) || clientIdMap.get(cleanClientValue(label)) || '';
+        return clientIdMap.get(label) || extractClientIdFromLabel_(label);
     }
 
     function getFilters() {
@@ -261,8 +274,11 @@ var ClientReportPanel = (function () {
         toggleLoading(true);
         const clientRaw = filters.client;
         const idCliente = getClientIdFromLabel(clientRaw);
-        const clientClean = cleanClientValue(clientRaw);
-        ApiService.call('getHoursByClient', filters.start, filters.end, clientClean, idCliente)
+        if (!idCliente) {
+            Alerts && Alerts.showAlert('Seleccioná un cliente válido de la lista.', 'warning');
+            return;
+        }
+        ApiService.call('getHoursByClient', filters.start, filters.end, clientRaw, idCliente)
             .then(res => {
                 const rows = res && res.rows ? res.rows : [];
                 const summary = res && res.summary ? res.summary : {};
@@ -296,8 +312,18 @@ var ClientReportPanel = (function () {
             btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Descargando...';
         }
 
+        const idCliente = getClientIdFromLabel(filters.client);
+        if (!idCliente) {
+            Alerts && Alerts.showAlert('Seleccioná un cliente válido de la lista.', 'warning');
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = originalContent;
+            }
+            return;
+        }
+
         UiState && UiState.setGlobalLoading(true, 'Generando PDF...');
-        ApiService.call('generateClientHoursPdf', filters.start, filters.end, cleanClientValue(filters.client))
+        ApiService.call('generateClientHoursPdf', filters.start, filters.end, '', idCliente)
             .then(res => {
                 if (!res || !res.base64) throw new Error('No se pudo generar PDF');
                 const link = document.createElement('a');
@@ -416,7 +442,7 @@ var ClientReportPanel = (function () {
         list.forEach(item => {
             const tr = document.createElement('tr');
             tr.innerHTML = `
-                <td>${item.empleado}</td>
+                <td>${escapeHtml(item.empleado)}</td>
                 <td class="text-center fw-bold">${formatNumber(item.horas)}</td>
                 <td class="text-center">${formatNumber(item.dias, 0)}</td>
                 <td class="text-center">${formatNumber(item.registros, 0)}</td>
@@ -449,10 +475,10 @@ var ClientReportPanel = (function () {
                 : '<span class="badge bg-success-subtle text-success">Sí</span>';
             tr.innerHTML = `
                 <td>${r.fecha || ''}</td>
-                <td>${r.empleado || ''}</td>
+                <td>${escapeHtml(r.empleado || '')}</td>
                 <td class="text-center fw-bold">${formatNumber(r.horas)}</td>
                 <td class="text-center">${asistenciaBadge}</td>
-                <td class="text-muted small">${r.observaciones || '-'}</td>
+                <td class="text-muted small">${escapeHtml(r.observaciones || '-')}</td>
             `;
             if (r.asistencia === false) {
                 tr.classList.add('table-warning');
@@ -486,6 +512,18 @@ var ClientReportPanel = (function () {
     function formatCurrency(val) {
         const num = Number(val);
         return num.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2 });
+    }
+
+    function escapeHtml(value) {
+        if (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.escapeHtml === 'function') {
+            return HtmlHelpers.escapeHtml(value);
+        }
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
     }
 
     return {

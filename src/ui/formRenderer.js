@@ -200,6 +200,44 @@
       field.type === "phone" || field.type === "dni" ? "text" : field.type;
     if (field.step) input.step = field.step;
     if (field.placeholder) input.placeholder = field.placeholder;
+    if (field.type === "phone") {
+      input.inputMode = "tel";
+    }
+
+    wrapper.appendChild(label);
+    wrapper.appendChild(input);
+    return wrapper;
+  }
+
+  function renderDocType(field) {
+    const fallback = field.options || ["DNI", "CUIL", "CUIT"];
+    const options = global.DropdownConfig && typeof global.DropdownConfig.getOptions === "function"
+      ? global.DropdownConfig.getOptions(field.id, fallback)
+      : fallback;
+    return renderDeclarativeSelect(
+      Object.assign({}, field, { options: options }),
+      options.map(opt => ({ value: opt, label: opt }))
+    );
+  }
+
+  function renderDocNumber(field) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "mb-1";
+
+    const label = document.createElement("label");
+    label.className = "form-label mb-1";
+    label.htmlFor = "field-" + field.id;
+    label.textContent = field.label;
+
+    const input = document.createElement("input");
+    input.id = "field-" + field.id;
+    input.className = "form-control form-control-sm";
+    input.type = "text";
+    input.inputMode = "numeric";
+    if (field.placeholder) input.placeholder = field.placeholder;
+    if (field.docTypeField) input.dataset.docTypeField = field.docTypeField;
+    if (field.docTypeValue) input.dataset.docTypeValue = field.docTypeValue;
+    input.dataset.docNumber = "1";
 
     wrapper.appendChild(label);
     wrapper.appendChild(input);
@@ -220,26 +258,45 @@
             (referenceData.clientes || []).map((cli) => ({
               value: cli.razonSocial || cli.nombre,
               label: cli.razonSocial || cli.nombre,
-              dataset: { cuit: cli.cuit || "" }
+              dataset: {
+                id: cli.id != null ? String(cli.id) : "",
+                cuit: cli.cuit || ""
+              }
             })) || [];
           return renderDeclarativeSelect(field, options);
         }
         case "empleado": {
           const options =
-            (referenceData.empleados || []).map((emp) => ({
-              value: emp,
-              label: emp
-            })) || [];
+            (referenceData.empleados || []).map((emp) => {
+              const label =
+                typeof emp === "string"
+                  ? emp
+                  : (emp.nombre || emp.empleado || emp.label || "");
+              return {
+                value: label,
+                label: label,
+                dataset: {
+                  id: emp && typeof emp === "object" && emp.id != null ? String(emp.id) : ""
+                }
+              };
+            }) || [];
           return renderDeclarativeSelect(field, options);
         }
         case "select": {
           // Select con opciones definidas en el campo
-          const options = (field.options || []).map(opt => ({
+          const configured = global.DropdownConfig && typeof global.DropdownConfig.getOptions === "function"
+            ? global.DropdownConfig.getOptions(field.id, field.options || [])
+            : (field.options || []);
+          const options = (configured || []).map(opt => ({
             value: opt,
             label: opt
           }));
           return renderDeclarativeSelect(field, options);
         }
+        case "docType":
+          return renderDocType(field);
+        case "docNumber":
+          return renderDocNumber(field);
         case "tags":
           return renderTags(field);
         case "textarea": {

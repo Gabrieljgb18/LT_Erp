@@ -48,23 +48,19 @@ var InvoiceController = (function () {
         const idxEstado = getColIdx_(colMap, ['ESTADO']);
         const idxFecha = getColIdx_(colMap, ['FECHA']);
 
+        if (searchClient && !searchIdCliente) {
+            return [];
+        }
+
         for (let i = 0; i < data.length; i++) {
             const row = data[i];
 
             // 1. Filter Logic (on RAW values)
 
-            // Client (ID-first, con fallback por nombre si la fila no tiene ID_CLIENTE)
+            // Client: solo por ID
             if (searchIdCliente && idxIdCliente > -1) {
                 const rowIdCliente = normalizeIdString_(row[idxIdCliente]);
-                if (rowIdCliente !== searchIdCliente) {
-                    // Facturas legacy pueden no tener ID_CLIENTE: si hay cliente, matchear por nombre.
-                    if (!(rowIdCliente === '' && searchClient && idxCliente > -1)) continue;
-                    const cliNorm = normalizeClientSearch_(row[idxCliente] || '');
-                    if (cliNorm.indexOf(searchClient) === -1) continue;
-                }
-            } else if (searchClient && idxCliente > -1) {
-                const cliNorm = normalizeClientSearch_(row[idxCliente] || '');
-                if (cliNorm.indexOf(searchClient) === -1) continue;
+                if (!rowIdCliente || rowIdCliente !== searchIdCliente) continue;
             }
 
             // Period
@@ -157,8 +153,8 @@ var InvoiceController = (function () {
         }
         const clienteNombre = (cliente || '').toString().trim();
         const idClienteStr = (idCliente != null) ? String(idCliente).trim() : '';
-        if (!clienteNombre && !idClienteStr) {
-            throw new Error('Falta el cliente para generar la factura.');
+        if (!idClienteStr) {
+            throw new Error('Falta el ID del cliente para generar la factura.');
         }
 
         const start = parseDateSafe_(fechaDesdeStr);
@@ -169,7 +165,7 @@ var InvoiceController = (function () {
         // Cerrar end al final del día
         end.setHours(23, 59, 59, 999);
 
-        const clienteData = resolveClienteData_(clienteNombre, idClienteStr);
+        const clienteData = resolveClienteData_(idClienteStr, clienteNombre);
         const asistenciaData = getAsistenciaData_(clienteData, start, end);
 
         if (asistenciaData.totalHoras <= 0) {
@@ -214,48 +210,48 @@ var InvoiceController = (function () {
         return isNaN(d) ? null : d;
     }
 
-    function resolveClienteData_(clienteNombre, idCliente) {
+    function resolveClienteData_(idCliente, clienteNombre) {
         const idStr = (idCliente != null) ? String(idCliente).trim() : '';
-        if (idStr && DatabaseService.findClienteById) {
+        if (!idStr) {
+            return {
+                id: '',
+                razonSocial: clienteNombre || '',
+                docType: '',
+                docNumber: '',
+                cuit: ''
+            };
+        }
+        if (DatabaseService.findClienteById) {
             const byId = DatabaseService.findClienteById(idStr);
             if (byId) {
                 return {
                     id: byId.id || idStr,
                     razonSocial: byId.razonSocial || byId.nombre || clienteNombre || '',
-                    cuit: byId.cuit || ''
+                    docType: byId.docType || '',
+                    docNumber: byId.docNumber || '',
+                    cuit: resolveCuitFromClient_(byId)
                 };
             }
         }
 
-        const ref = DatabaseService.getClientesActivos() || [];
-        const normTarget = normalize_(clienteNombre);
-        let found = null;
-        if (normTarget) {
-            ref.forEach(c => {
-                const n1 = normalize_(c.nombre || '');
-                const n2 = normalize_(c.razonSocial || '');
-                if (n1 === normTarget || n2 === normTarget) {
-                    found = c;
-                }
-            });
-        }
-
-        if (found) {
-            return {
-                id: found.id || '',
-                razonSocial: found.razonSocial || found.nombre || clienteNombre,
-                cuit: found.cuit || ''
-            };
-        }
-
-        const byName = clienteNombre ? DatabaseService.findClienteByNombreORazon(clienteNombre) : null;
         return {
-            id: byName && byName.id ? byName.id : idStr || '',
-            razonSocial: byName && (byName.razonSocial || byName.nombre)
-                ? (byName.razonSocial || byName.nombre)
-                : (clienteNombre || ''),
+            id: idStr,
+            razonSocial: clienteNombre || '',
+            docType: '',
+            docNumber: '',
             cuit: ''
         };
+    }
+
+    function resolveCuitFromClient_(client) {
+        if (!client) return '';
+        const docType = normalizeDocType_(client.docType || client['TIPO DOCUMENTO'] || '');
+        const docNumber = String(client.docNumber || client['NUMERO DOCUMENTO'] || '').trim();
+        if (docNumber && (docType === 'CUIT' || docType === 'CUIL')) {
+            return docNumber;
+        }
+        const legacy = client.cuit || client.CUIT || '';
+        return String(legacy || '').trim();
     }
 
     function getAsistenciaData_(clienteData, start, end) {
@@ -281,22 +277,15 @@ var InvoiceController = (function () {
         let totalHoras = 0;
         let totalImporte = 0;
         const targetId = normalizeIdString_(clienteData.id);
-        const targetNorm = normalize_(clienteData.razonSocial || '');
         const resolveRateAtDate = buildClientRateResolver_(clienteData.razonSocial || '');
 
         data.forEach(row => {
             const fecha = row[idxFecha] instanceof Date ? row[idxFecha] : new Date(row[idxFecha]);
             if (isNaN(fecha) || fecha < start || fecha > end) return;
 
-            let matches = false;
-            if (targetId && idxIdCliente > -1) {
-                matches = normalizeIdString_(row[idxIdCliente]) === targetId;
-            }
-            if (!matches) {
-                const cliNorm = normalize_(row[idxCliente] || '');
-                matches = cliNorm === targetNorm || cliNorm.indexOf(targetNorm) !== -1 || targetNorm.indexOf(cliNorm) !== -1;
-            }
-            if (!matches) return;
+            if (!targetId || idxIdCliente === -1) return;
+            const rowId = normalizeIdString_(row[idxIdCliente]);
+            if (!rowId || rowId !== targetId) return;
 
             const asistencia = idxAsistencia > -1 ? DataUtils.isTruthy(row[idxAsistencia]) : true;
             if (!asistencia) return;
@@ -418,6 +407,14 @@ var InvoiceController = (function () {
             .trim();
     }
 
+    function normalizeDocType_(val) {
+        const raw = String(val || '').trim().toUpperCase();
+        if (raw === 'DNI') return 'DNI';
+        if (raw === 'CUIL') return 'CUIL';
+        if (raw === 'CUIT') return 'CUIT';
+        return '';
+    }
+
     function normalizeIdString_(val) {
         if (val == null) return '';
         const s = String(val).trim();
@@ -532,19 +529,11 @@ var InvoiceController = (function () {
 
         const data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
         const targetId = clienteData.id ? String(clienteData.id) : '';
-        const targetNorm = normalize_(clienteData.razonSocial || '');
-
         return data.some(row => {
             const periodoRow = row[idxPeriodo];
             if (periodoRow !== periodoLabel) return false;
 
-            if (targetId && idxIdCliente > -1 && String(row[idxIdCliente]) === targetId) return true;
-
-            if (idxCliente > -1) {
-                const cliNorm = normalize_(row[idxCliente]);
-                if (cliNorm === targetNorm) return true;
-            }
-            return false;
+            return targetId && idxIdCliente > -1 && String(row[idxIdCliente]) === targetId;
         });
     }
 
@@ -924,9 +913,9 @@ var InvoiceController = (function () {
             if (horas <= 0) return;
 
             const idCliente = idxIdCliente > -1 ? normalizeIdString_(row[idxIdCliente]) : '';
+            if (!idCliente) return;
             const clienteRaw = String(row[idxCliente] || '').trim();
-            const key = idCliente ? ('id:' + idCliente) : ('name:' + normalize_(clienteRaw));
-            if (!key || key === 'name:') return;
+            const key = 'id:' + idCliente;
 
             let group = result.get(key);
             if (!group) {
@@ -984,9 +973,9 @@ var InvoiceController = (function () {
             if (!invoiceMatchesMonth_(period, idxPeriodo > -1 ? row[idxPeriodo] : null, idxFecha > -1 ? row[idxFecha] : null)) return;
 
             const idCliente = idxIdCliente > -1 ? normalizeIdString_(row[idxIdCliente]) : '';
+            if (!idCliente) return;
             const clienteRaw = idxCliente > -1 ? String(row[idxCliente] || '').trim() : '';
-            const key = idCliente ? ('id:' + idCliente) : ('name:' + normalize_(clienteRaw));
-            if (!key || key === 'name:') return;
+            const key = 'id:' + idCliente;
 
             const invId = idxId > -1 ? row[idxId] : row[0];
             const numero = idxNumero > -1 ? String(row[idxNumero] || '').trim() : '';

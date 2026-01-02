@@ -3,6 +3,7 @@
  */
 var AccountStatementPanel = (function () {
     const containerId = 'account-statement-panel';
+    const defaultPaymentMethods = ["Uala", "Mercado Pago", "Efectivo", "Santander"];
 
     function render() {
         const container = document.getElementById(containerId);
@@ -146,6 +147,13 @@ var AccountStatementPanel = (function () {
                                 <input type="number" step="0.01" id="acc-pay-monto" class="form-control">
                             </div>
                             <div class="mb-3">
+                                <label class="form-label small text-muted">Medio de pago</label>
+                                <select id="acc-pay-medio" class="form-select">
+                                    <option value="">Seleccionar...</option>
+                                    ${buildPaymentMethodOptionsHtml_()}
+                                </select>
+                            </div>
+                            <div class="mb-3">
                                 <label class="form-label small text-muted">Observaciones</label>
                                 <textarea id="acc-pay-obs" class="form-control" rows="2"></textarea>
                             </div>
@@ -168,8 +176,10 @@ var AccountStatementPanel = (function () {
             const emps = ReferenceService.get().empleados || [];
             datalist.innerHTML = '';
             emps.forEach(e => {
+                const label = typeof e === 'string' ? e : (e.nombre || e.empleado || '');
+                if (!label) return;
                 const opt = document.createElement('option');
-                opt.value = e;
+                opt.value = label;
                 datalist.appendChild(opt);
             });
         }
@@ -185,6 +195,7 @@ var AccountStatementPanel = (function () {
                 const fecha = document.getElementById('acc-pay-fecha').value;
                 const concepto = document.getElementById('acc-pay-concepto').value;
                 const monto = document.getElementById('acc-pay-monto').value;
+                const medioPago = document.getElementById('acc-pay-medio')?.value || '';
                 const obs = document.getElementById('acc-pay-obs').value;
 
                 if (!emp || !monto) {
@@ -193,7 +204,7 @@ var AccountStatementPanel = (function () {
                 }
 
                 UiState && UiState.setGlobalLoading(true, 'Guardando pago...');
-                ApiService.call('recordEmployeePayment', fecha, emp, concepto, monto, obs)
+                ApiService.call('recordEmployeePayment', fecha, emp, concepto, monto, medioPago, obs)
                     .then(() => {
                         Alerts && Alerts.showAlert('Pago registrado', 'success');
                         modal.hide();
@@ -232,6 +243,28 @@ var AccountStatementPanel = (function () {
         const m = String(now.getMonth() + 1).padStart(2, '0');
         const d = String(now.getDate()).padStart(2, '0');
         return `${y}-${m}-${d}`;
+    }
+
+    function getPaymentMethods_() {
+        if (typeof DropdownConfig !== "undefined" && DropdownConfig && typeof DropdownConfig.getOptions === "function") {
+            const list = DropdownConfig.getOptions("MEDIO DE PAGO", defaultPaymentMethods);
+            if (Array.isArray(list) && list.length) return list;
+        }
+        return defaultPaymentMethods.slice();
+    }
+
+    function buildPaymentMethodOptionsHtml_() {
+        return getPaymentMethods_()
+            .map((method) => {
+                const safe = String(method || '')
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+                return `<option value="${safe}">${safe}</option>`;
+            })
+            .join('');
     }
 
     return { render };

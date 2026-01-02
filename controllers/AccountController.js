@@ -392,30 +392,25 @@ var AccountController = (function () {
         return totalDebitos - totalCreditos;
     }
 
-    function getClientId_(clientName) {
-        const found = DatabaseService.findClienteByNombreORazon(clientName);
-        return found && found.id ? normalizeIdString_(found.id) : '';
-    }
-
     function normalizeClientFilter_(clientName, idCliente) {
         if (clientName && typeof clientName === 'object' && !Array.isArray(clientName)) {
             idCliente = clientName.idCliente || clientName.ID_CLIENTE || idCliente;
             clientName = clientName.cliente || clientName.clientName || clientName.label || '';
         }
         const targetId = (idCliente != null && idCliente !== '') ? normalizeIdString_(idCliente) : '';
-        if (!clientName && targetId && DatabaseService.findClienteById) {
+        if (!targetId) return { clientName: '', idCliente: '' };
+        if (!clientName && DatabaseService.findClienteById) {
             const cli = DatabaseService.findClienteById(targetId);
             if (cli && (cli.razonSocial || cli.nombre)) {
                 clientName = cli.razonSocial || cli.nombre;
             }
         }
-        const resolvedId = targetId || getClientId_(clientName);
-        return { clientName: clientName || '', idCliente: resolvedId || '' };
+        return { clientName: clientName || '', idCliente: targetId };
     }
 
     function getInvoicesForClient_(filter, startDate, endDate) {
         if (typeof InvoiceController === 'undefined' || !InvoiceController.getInvoices) return [];
-        const base = { cliente: filter.clientName, idCliente: filter.idCliente };
+        const base = { idCliente: filter.idCliente };
         const invoices = InvoiceController.getInvoices({
             ...base,
             fechaDesde: startDate || '',
@@ -466,23 +461,11 @@ var AccountController = (function () {
         return (invoices || []).map(inv => mapInvoiceToDebit_(inv)).filter(Boolean);
     }
 
-    function normalizeClientName_(name) {
-        if (!name) return '';
-        return String(name)
-            .normalize('NFD') // Remover acentos
-            .replace(/[\u0300-\u036f]/g, '')
-            .toLowerCase()
-            .replace(/\s+/g, ' ')
-            .replace(/\./g, '')
-            .replace(/s\.?a\.?$/i, 'sa')
-            .replace(/s\.?r\.?l\.?$/i, 'srl')
-            .trim();
-    }
-
     function getClientPayments(clientName, startDate, endDate, idCliente) {
         const filter = normalizeClientFilter_(clientName, idCliente);
         const sheet = DatabaseService.getDbSheetForFormat('PAGOS_CLIENTES');
         if (!sheet) return [];
+        if (!filter.idCliente) return [];
 
         const lastRow = sheet.getLastRow();
         if (lastRow < 2) return [];
@@ -501,8 +484,7 @@ var AccountController = (function () {
         if (idxFecha === -1 || idxMonto === -1) return [];
 
         const data = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
-        const targetClient = normalizeClientName_(filter.clientName);
-        const targetId = normalizeIdString_(filter.idCliente || getClientId_(filter.clientName));
+        const targetId = normalizeIdString_(filter.idCliente);
 
         const from = toStartOfDay_(startDate);
         const to = toEndOfDay_(endDate);
@@ -514,17 +496,8 @@ var AccountController = (function () {
             if (from && fecha < from) return null;
             if (to && fecha > to) return null;
 
-            let matches = false;
-            if (targetId && idxIdCliente > -1) {
-                matches = normalizeIdString_(row[idxIdCliente]) === targetId;
-            }
-            if (!matches && idxCliente > -1 && targetClient) {
-                const rowClient = normalizeClientName_(row[idxCliente]);
-                matches = rowClient === targetClient ||
-                    rowClient.indexOf(targetClient) !== -1 ||
-                    targetClient.indexOf(rowClient) !== -1;
-            }
-            if (!matches) return null;
+            if (!targetId || idxIdCliente === -1) return null;
+            if (normalizeIdString_(row[idxIdCliente]) !== targetId) return null;
 
             const monto = toNumber_(row[idxMonto]);
             const idFactura = idxFactura > -1 ? row[idxFactura] : '';
@@ -549,6 +522,185 @@ var AccountController = (function () {
                 facturaNumero: facturaNum
             };
         }).filter(Boolean);
+    }
+
+    function getUnappliedClientPayments(clientName, idCliente) {
+        const filter = normalizeClientFilter_(clientName, idCliente);
+        if (!filter.idCliente) return [];
+
+        const sheet = DatabaseService.getDbSheetForFormat('PAGOS_CLIENTES');
+        if (!sheet) return [];
+
+        const lastRow = sheet.getLastRow();
+        const lastCol = sheet.getLastColumn();
+        if (lastRow < 2 || lastCol === 0) return [];
+
+        const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+        const colMap = {};
+        headers.forEach((h, i) => { colMap[normalizeHeaderKey_(h)] = i; });
+        const idxId = getIdx_(colMap, ['ID']);
+        const idxFecha = getIdx_(colMap, ['FECHA']);
+        const idxCliente = getIdx_(colMap, ['RAZÓN SOCIAL', 'RAZON SOCIAL', 'CLIENTE']);
+        const idxIdCliente = getIdx_(colMap, ['ID_CLIENTE', 'ID CLIENTE']);
+        const idxMonto = getIdx_(colMap, ['MONTO']);
+        const idxDet = getIdx_(colMap, ['DETALLE', 'OBSERVACIONES']);
+        const idxFactura = getIdx_(colMap, ['ID_FACTURA', 'ID FACTURA']);
+        const idxFacturaNum = getIdx_(colMap, ['FACTURA_NUMERO', 'FACTURA NÚMERO']);
+        const idxMedio = getIdx_(colMap, ['MEDIO DE PAGO', 'MEDIO PAGO']);
+        const idxNro = getIdx_(colMap, ['N° COMPROBANTE', 'NUMERO COMPROBANTE', 'NRO COMPROBANTE']);
+
+        if (idxMonto === -1) return [];
+
+        const data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+        const targetId = normalizeIdString_(filter.idCliente);
+        const tz = 'GMT';
+
+        const list = data.map(row => {
+            if (!targetId || idxIdCliente === -1) return null;
+            if (normalizeIdString_(row[idxIdCliente]) !== targetId) return null;
+
+            const idFactura = idxFactura > -1 ? row[idxFactura] : '';
+            const facturaNum = idxFacturaNum > -1 ? row[idxFacturaNum] : '';
+            if (normalizeIdString_(idFactura) || String(facturaNum || '').trim()) return null;
+
+            const monto = toNumber_(row[idxMonto]);
+            if (monto <= 0) return null;
+
+            const fecha = idxFecha > -1 ? parseDateFlexible_(row[idxFecha]) : null;
+            const fechaStr = (fecha && !isNaN(fecha.getTime())) ? Utilities.formatDate(fecha, tz, 'yyyy-MM-dd') : '';
+
+            return {
+                id: idxId > -1 ? row[idxId] : '',
+                fecha: fechaStr,
+                monto: monto,
+                detalle: idxDet > -1 ? row[idxDet] : '',
+                medioPago: idxMedio > -1 ? row[idxMedio] : '',
+                numeroComprobante: idxNro > -1 ? row[idxNro] : ''
+            };
+        }).filter(Boolean);
+
+        return list.sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
+    }
+
+    function applyClientPayment(paymentId, allocations) {
+        if (!paymentId) throw new Error('Pago no encontrado.');
+        if (!Array.isArray(allocations) || allocations.length === 0) {
+            throw new Error('No hay montos para aplicar.');
+        }
+
+        const sheet = DatabaseService.getDbSheetForFormat('PAGOS_CLIENTES');
+        if (!sheet) throw new Error('Sheet PAGOS_CLIENTES no encontrado');
+
+        const rowNumber = DatabaseService.findRowById(sheet, paymentId);
+        if (!rowNumber) throw new Error('Pago no encontrado.');
+
+        const lastCol = sheet.getLastColumn();
+        const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+        const colMap = {};
+        headers.forEach((h, i) => { colMap[normalizeHeaderKey_(h)] = i; });
+        const idxId = getIdx_(colMap, ['ID']);
+        const idxFecha = getIdx_(colMap, ['FECHA']);
+        const idxCliente = getIdx_(colMap, ['RAZÓN SOCIAL', 'RAZON SOCIAL', 'CLIENTE']);
+        const idxIdCliente = getIdx_(colMap, ['ID_CLIENTE', 'ID CLIENTE']);
+        const idxMonto = getIdx_(colMap, ['MONTO']);
+        const idxDet = getIdx_(colMap, ['DETALLE', 'OBSERVACIONES']);
+        const idxFactura = getIdx_(colMap, ['ID_FACTURA', 'ID FACTURA']);
+        const idxFacturaNum = getIdx_(colMap, ['FACTURA_NUMERO', 'FACTURA NÚMERO']);
+        const idxMedio = getIdx_(colMap, ['MEDIO DE PAGO', 'MEDIO PAGO']);
+        const idxNro = getIdx_(colMap, ['N° COMPROBANTE', 'NUMERO COMPROBANTE', 'NRO COMPROBANTE']);
+        const idxCuit = getIdx_(colMap, ['CUIT']);
+
+        const row = sheet.getRange(rowNumber, 1, 1, lastCol).getValues()[0];
+        const montoOriginal = idxMonto > -1 ? toNumber_(row[idxMonto]) : 0;
+        if (montoOriginal <= 0) throw new Error('El pago no tiene saldo disponible.');
+
+        const idFacturaActual = idxFactura > -1 ? row[idxFactura] : '';
+        const facturaNumActual = idxFacturaNum > -1 ? row[idxFacturaNum] : '';
+        if (normalizeIdString_(idFacturaActual) || String(facturaNumActual || '').trim()) {
+            throw new Error('El pago ya está asociado a una factura.');
+        }
+
+        const clientName = idxCliente > -1 ? row[idxCliente] : '';
+        const idCliente = idxIdCliente > -1 ? row[idxIdCliente] : '';
+        const filter = normalizeClientFilter_(clientName, idCliente);
+        const invoices = getClientInvoicesForPayment(filter.clientName, filter.idCliente);
+
+        const normalized = allocations.map(item => {
+            return {
+                id: normalizeIdString_(item.invoiceId || item.idFactura || item.id || ''),
+                amount: toNumber_(item.amount || item.monto || item.value || 0)
+            };
+        }).filter(a => a.id && a.amount > 0);
+
+        if (!normalized.length) {
+            throw new Error('No hay montos para aplicar.');
+        }
+
+        let totalApplied = 0;
+        const rowsToAppend = [];
+        normalized.forEach(a => {
+            const inv = invoices.find(i => normalizeIdString_(i.id) === a.id);
+            if (!inv) {
+                throw new Error('Factura no encontrada: ' + a.id);
+            }
+            const saldo = toNumber_(inv.saldo);
+            if (a.amount > saldo + 0.01) {
+                throw new Error('El monto supera el saldo de la factura ' + (inv.numero || inv.id));
+            }
+            totalApplied += a.amount;
+            rowsToAppend.push({ inv: inv, amount: a.amount });
+        });
+
+        if (totalApplied > montoOriginal + 0.01) {
+            throw new Error('El monto total aplicado supera el saldo disponible.');
+        }
+
+        const remaining = Math.max(0, montoOriginal - totalApplied);
+
+        if (idxMonto > -1) {
+            sheet.getRange(rowNumber, idxMonto + 1).setValue(remaining);
+        }
+        if (idxDet > -1) {
+            const baseDet = String(row[idxDet] || '').trim();
+            const facturasTxt = rowsToAppend.map(r => (r.inv.numero || r.inv.id)).join(', ');
+            const suffix = remaining > 0
+                ? `Aplicado a facturas ${facturasTxt}. Saldo pendiente ${remaining}.`
+                : `Aplicado a facturas ${facturasTxt}.`;
+            sheet.getRange(rowNumber, idxDet + 1).setValue(baseDet ? (baseDet + ' | ' + suffix) : suffix);
+        }
+
+        let nextId = DatabaseService.getNextId(sheet);
+        rowsToAppend.forEach(r => {
+            const newRow = new Array(headers.length).fill('');
+            if (idxId > -1) {
+                newRow[idxId] = nextId;
+            } else {
+                newRow[0] = nextId;
+            }
+            if (idxFecha > -1) newRow[idxFecha] = row[idxFecha] || new Date();
+            if (idxCliente > -1) newRow[idxCliente] = filter.clientName || row[idxCliente] || '';
+            if (idxIdCliente > -1) newRow[idxIdCliente] = filter.idCliente || row[idxIdCliente] || '';
+            if (idxCuit > -1) newRow[idxCuit] = row[idxCuit] || '';
+            if (idxMonto > -1) newRow[idxMonto] = r.amount;
+            if (idxFactura > -1) newRow[idxFactura] = r.inv.id || '';
+            if (idxFacturaNum > -1) newRow[idxFacturaNum] = r.inv.numero || '';
+            if (idxMedio > -1) newRow[idxMedio] = row[idxMedio] || '';
+            if (idxNro > -1) newRow[idxNro] = row[idxNro] || '';
+            if (idxDet > -1) {
+                const baseDet = String(row[idxDet] || '').trim();
+                newRow[idxDet] = baseDet
+                    ? `Aplicación de pago #${paymentId}: ${baseDet}`
+                    : `Aplicación de pago #${paymentId}`;
+            }
+            sheet.appendRow(newRow);
+            nextId += 1;
+
+            if (r.inv && r.inv.id) {
+                tryUpdateInvoiceStatusIfPaid_(r.inv.id);
+            }
+        });
+
+        return { ok: true, applied: totalApplied, remaining: remaining };
     }
 
     function recordClientPayment(payload) {
@@ -703,6 +855,8 @@ var AccountController = (function () {
         getClientAccountStatement: getClientAccountStatement,
         recordClientPayment: recordClientPayment,
         getClientInvoices: getClientInvoices,
-        getClientInvoicesForPayment: getClientInvoicesForPayment
+        getClientInvoicesForPayment: getClientInvoicesForPayment,
+        getUnappliedClientPayments: getUnappliedClientPayments,
+        applyClientPayment: applyClientPayment
     };
 })();

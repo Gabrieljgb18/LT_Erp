@@ -26,18 +26,7 @@
   // ===== Bootstrap Application =====
 
   function initApp() {
-    // 1. Load formats immediately
-    if (FormManager) {
-      FormManager.loadFormats().then(function () {
-        // Después de cargar los formatos, disparar evento change para cargar la vista inicial correcta
-        const formatoSelect = document.getElementById("formato");
-        if (formatoSelect && formatoSelect.value) {
-          formatoSelect.dispatchEvent(new Event('change'));
-        }
-      });
-    }
-
-    // 2. Load reference data
+    // 1. Load reference data
     ReferenceService.load()
       .then(function () {
         const refData = ReferenceService.get();
@@ -57,111 +46,88 @@
         console.error("Error loading reference data:", err);
       });
 
+    if (typeof DropdownConfig !== "undefined" && DropdownConfig && typeof DropdownConfig.load === "function") {
+      DropdownConfig.load().then(() => {
+        if (FormManager && typeof FormManager.refreshCurrent === "function") {
+          FormManager.refreshCurrent();
+        }
+        const factView = document.getElementById("view-facturacion");
+        if (InvoicePanel && factView && !factView.classList.contains("d-none")) {
+          InvoicePanel.render();
+        }
+      });
+    }
+
     // Setup event handlers
     setupEventHandlers();
   }
 
-  function setupEventHandlers() {
-    // Format selector - Cargar grilla en lugar de formulario
-    const formatoSelect = document.getElementById("formato");
-    if (formatoSelect) {
-      formatoSelect.addEventListener("change", function () {
-        const tipoFormato = this.value;
-        if (!tipoFormato) return;
+  const registroViews = {
+    clientes: { format: "CLIENTES", title: "Diccionario de clientes" },
+    empleados: { format: "EMPLEADOS", title: "Diccionario de empleados" },
+    adelantos: { format: "ADELANTOS", title: "Adelantos de sueldo" }
+  };
+  let currentRegistroFormat = "CLIENTES";
 
-        // Actualizar título de la página
-        const pageTitle = document.getElementById('page-title');
-        const selectedOption = this.options[this.selectedIndex];
-        if (pageTitle && selectedOption) {
-          pageTitle.textContent = selectedOption.text;
-        }
+  function setRegistroContext(title) {
+    const label = document.getElementById("registro-context-label");
+    if (label && title) label.textContent = title;
+  }
 
-        // CASO ESPECIAL: Plan Semanal
-        if (tipoFormato === 'ASISTENCIA_PLAN' && typeof WeeklyPlanPanel !== 'undefined') {
-          // Ocultar grilla estándar
-          const gridContainer = document.getElementById('data-grid-container');
-          if (gridContainer) gridContainer.classList.add('d-none');
+  function setRegistroFormat(tipoFormato, title) {
+    currentRegistroFormat = tipoFormato;
+    if (title) setRegistroContext(title);
 
-          // Ocultar búsqueda y botón nuevo (ya que el panel tiene su propio botón nuevo)
-          const searchInput = document.getElementById('search-query');
-          if (searchInput) searchInput.parentElement.classList.add('d-none');
+    const gridContainer = document.getElementById("data-grid-container");
+    if (gridContainer) gridContainer.classList.remove("d-none");
 
-          const btnNuevo = document.getElementById('btn-nuevo');
-          if (btnNuevo) btnNuevo.classList.add('d-none');
+    const searchInput = document.getElementById("search-query");
+    if (searchInput) searchInput.parentElement.classList.remove("d-none");
 
-          const btnRefresh = document.getElementById('btn-refresh');
-          if (btnRefresh) btnRefresh.classList.add('d-none');
+    const btnNuevo = document.getElementById("btn-nuevo");
+    if (btnNuevo) btnNuevo.classList.remove("d-none");
 
-          // Crear o mostrar contenedor del panel personalizado
-          let customPanel = document.getElementById('custom-view-panel');
-          if (!customPanel) {
-            customPanel = document.createElement('div');
-            customPanel.id = 'custom-view-panel';
-            customPanel.className = 'mt-3';
-            // Insertar en view-registro
-            const viewRegistro = document.getElementById('view-registro');
-            if (viewRegistro) viewRegistro.appendChild(customPanel);
-          }
-          customPanel.classList.remove('d-none');
+    const btnRefresh = document.getElementById("btn-refresh");
+    if (btnRefresh) btnRefresh.classList.remove("d-none");
 
-          // Mostrar loading
-          customPanel.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary" role="status"></div><div class="mt-2">Cargando planes...</div></div>';
+    const customPanel = document.getElementById("custom-view-panel");
+    if (customPanel) customPanel.classList.add("d-none");
 
-          // Cargar registros para la lista
-          ApiService.call("searchRecords", tipoFormato, "")
-            .then(function (records) {
-              WeeklyPlanPanel.renderList(customPanel, records || []);
-            })
-            .catch(function (err) {
-              console.error("Error cargando lista de planes:", err);
-              customPanel.innerHTML = '<div class="alert alert-danger">Error al cargar los planes: ' + (err.message || err) + '</div>';
-            });
-
-          return;
-        }
-
-        // Restaurar vista estándar para otros formatos
-        const gridContainer = document.getElementById('data-grid-container');
-        if (gridContainer) gridContainer.classList.remove('d-none');
-
-        const searchInput = document.getElementById('search-query');
-        if (searchInput) searchInput.parentElement.classList.remove('d-none');
-
-        const btnNuevo = document.getElementById('btn-nuevo');
-        if (btnNuevo) btnNuevo.classList.remove('d-none');
-
-        const btnRefresh = document.getElementById('btn-refresh');
-        if (btnRefresh) btnRefresh.classList.remove('d-none');
-
-        const customPanel = document.getElementById('custom-view-panel');
-        if (customPanel) customPanel.classList.add('d-none');
-
-        // Cargar registros y mostrar en grilla
-        ApiService.call("searchRecords", tipoFormato, "")
-          .then(function (records) {
-            if (GridManager) {
-              GridManager.renderGrid(tipoFormato, records || []);
-            }
-          })
-          .catch(function (err) {
-            console.error("Error cargando registros:", err);
-            if (GridManager) {
-              GridManager.renderGrid(tipoFormato, []);
-            }
-          });
-      });
+    if (GridManager && typeof GridManager.renderLoading === "function") {
+      GridManager.renderLoading(tipoFormato, "Cargando registros...");
     }
+
+    ApiService.call("searchRecords", tipoFormato, "")
+      .then(function (records) {
+        if (GridManager) {
+          GridManager.renderGrid(tipoFormato, records || []);
+        }
+      })
+      .catch(function (err) {
+        console.error("Error cargando registros:", err);
+        if (GridManager) {
+          GridManager.renderGrid(tipoFormato, []);
+        }
+      });
+  }
+
+  function setupEventHandlers() {
+    document.addEventListener("reference-data:updated", function () {
+      const registroView = document.getElementById("view-registro");
+      if (registroView && !registroView.classList.contains("d-none") && GridManager) {
+        GridManager.refreshGrid();
+      }
+    });
 
     // Search input - Filtrar grilla
     const searchInput = document.getElementById("search-query");
     if (searchInput) {
       searchInput.addEventListener("input", function () {
-        const formatoSelect = document.getElementById("formato");
-        const tipoFormato = formatoSelect ? formatoSelect.value : null;
+        const tipoFormato = currentRegistroFormat;
 
         if (!tipoFormato) {
           if (this.value.length > 0 && Alerts) {
-            Alerts.showAlert("Selecciona un formato primero para buscar", "warning");
+            Alerts.showAlert("Selecciona una sección primero para buscar", "warning");
           }
           return;
         }
@@ -183,12 +149,11 @@
     const btnNuevo = document.getElementById("btn-nuevo");
     if (btnNuevo) {
       btnNuevo.addEventListener("click", function () {
-        const formatoSelect = document.getElementById("formato");
-        const tipoFormato = formatoSelect ? formatoSelect.value : null;
+        const tipoFormato = currentRegistroFormat;
 
         if (!tipoFormato) {
           if (Alerts) {
-            Alerts.showAlert("Selecciona un formato primero", "warning");
+            Alerts.showAlert("Selecciona una sección primero", "warning");
           }
           return;
         }
@@ -240,14 +205,29 @@
     if (btnGuardarModal) {
       btnGuardarModal.addEventListener("click", function () {
         if (RecordManager) {
-          RecordManager.saveRecord();
-          // Cerrar modal después de guardar
-          setTimeout(() => {
-            if (GridManager) {
-              GridManager.closeModal();
-              GridManager.refreshGrid();
-            }
-          }, 500);
+          const result = RecordManager.saveRecord();
+          const handleClose = (ok) => {
+            if (!ok) return;
+            setTimeout(() => {
+              if (GridManager) {
+                GridManager.closeModal();
+                const currentFormat = FormManager && typeof FormManager.getCurrentFormat === "function"
+                  ? FormManager.getCurrentFormat()
+                  : null;
+                const meta = typeof DomainMeta !== "undefined" && DomainMeta && typeof DomainMeta.getMeta === "function"
+                  ? DomainMeta.getMeta(currentFormat)
+                  : null;
+                if (!meta || !meta.refreshReference) {
+                  GridManager.refreshGrid();
+                }
+              }
+            }, 500);
+          };
+          if (result && typeof result.then === "function") {
+            result.then(handleClose);
+          } else {
+            handleClose(result === true);
+          }
         }
       });
     }
@@ -262,7 +242,15 @@
           setTimeout(() => {
             if (GridManager) {
               GridManager.closeModal();
-              GridManager.refreshGrid();
+              const currentFormat = FormManager && typeof FormManager.getCurrentFormat === "function"
+                ? FormManager.getCurrentFormat()
+                : null;
+              const meta = typeof DomainMeta !== "undefined" && DomainMeta && typeof DomainMeta.getMeta === "function"
+                ? DomainMeta.getMeta(currentFormat)
+                : null;
+              if (!meta || !meta.refreshReference) {
+                GridManager.refreshGrid();
+              }
             }
           }, 500);
         }
@@ -370,7 +358,11 @@
         const viewId = e.detail.view;
         const pageTitle = document.getElementById('page-title');
         const titles = {
-          registro: 'Formularios',
+          registro: 'Diccionario',
+          clientes: 'Diccionario de clientes',
+          empleados: 'Diccionario de empleados',
+          adelantos: 'Adelantos de sueldo',
+          pagos: 'Pagos',
           'asistencia-plan': 'Plan Semanal',
           'asistencia-diaria': 'Tomar Asistencia',
           'asistencia-calendario': 'Calendario Empleado',
@@ -381,9 +373,13 @@
           configuracion: 'Configuración'
         };
 
+        const registroConfig = registroViews[viewId] || (viewId === 'registro' ? registroViews.clientes : null);
+        const targetViewId = registroConfig ? 'registro' : viewId;
+
         // Update Title
         if (pageTitle) {
-          pageTitle.textContent = titles[viewId] || viewId.charAt(0).toUpperCase() + viewId.slice(1);
+          const title = titles[viewId] || viewId.charAt(0).toUpperCase() + viewId.slice(1);
+          pageTitle.textContent = title;
         }
 
         // Hide all views
@@ -392,9 +388,14 @@
         });
 
         // Show target view
-        const targetView = document.getElementById(`view-${viewId}`);
+        const targetView = document.getElementById(`view-${targetViewId}`);
         if (targetView) {
           targetView.classList.remove('d-none');
+        }
+
+        if (registroConfig) {
+          setRegistroFormat(registroConfig.format, registroConfig.title);
+          return;
         }
 
         // Initialize view-specific content
@@ -440,13 +441,23 @@
           }
           ClientReportPanel.render();
         }
-        if (viewId === 'configuracion' && BulkValuesPanel) {
-          BulkValuesPanel.render();
+        if (viewId === 'configuracion') {
+          if (BulkValuesPanel) BulkValuesPanel.render();
+          if (typeof DropdownConfigPanel !== 'undefined' && DropdownConfigPanel) {
+            DropdownConfigPanel.render();
+          }
         }
         if (viewId === 'facturacion' && typeof InvoicePanel !== 'undefined') {
           InvoicePanel.render();
         }
+        if (viewId === 'pagos' && typeof PaymentsPanel !== 'undefined') {
+          PaymentsPanel.render();
+        }
       });
+
+      if (Sidebar.setActive) {
+        Sidebar.setActive('clientes');
+      }
     }
   }
 

@@ -156,8 +156,38 @@ var DatabaseService = (function () {
   }
 
   // ====== CLIENTES ACTIVOS (OBJETOS) ======
-  // Devuelve: [{ nombre, razonSocial, cuit }, ...]
+  // Devuelve: [{ nombre, razonSocial, docType, docNumber, cuit }, ...]
   // Esto es lo que usa la UI (referenceData.clientes)
+
+  function normalizeDocType_(value) {
+    const raw = String(value || '').trim().toUpperCase();
+    if (raw === 'DNI') return 'DNI';
+    if (raw === 'CUIL') return 'CUIL';
+    if (raw === 'CUIT') return 'CUIT';
+    return '';
+  }
+
+  function normalizeDocNumber_(value) {
+    if (value === null || value === undefined) return '';
+    return String(value).trim();
+  }
+
+  function extractClientDoc_(row, idxDocType, idxDocNumber, idxCuit) {
+    let docType = normalizeDocType_(idxDocType > -1 ? row[idxDocType] : '');
+    let docNumber = normalizeDocNumber_(idxDocNumber > -1 ? row[idxDocNumber] : '');
+    const legacyCuit = normalizeDocNumber_(idxCuit > -1 ? row[idxCuit] : '');
+
+    if (!docNumber && legacyCuit && !docType) {
+      docNumber = legacyCuit;
+      docType = 'CUIT';
+    }
+
+    const cuit = (docType === 'CUIT' || docType === 'CUIL')
+      ? (docNumber || legacyCuit)
+      : legacyCuit;
+
+    return { docType: docType, docNumber: docNumber, cuit: cuit };
+  }
 
   function getClientesActivos() {
     const ss = getDbSpreadsheet();
@@ -168,11 +198,15 @@ var DatabaseService = (function () {
     const lastCol = sheet.getLastColumn();
     if (lastRow < 2) return []; // solo encabezados
 
-    const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0]
+      .map(h => String(h || '').trim().toUpperCase());
 
     const idxId = headers.indexOf('ID');
     const idxNombre = headers.indexOf('NOMBRE');
-    const idxRazon = headers.indexOf('RAZON SOCIAL');
+    let idxRazon = headers.indexOf('RAZON SOCIAL');
+    if (idxRazon === -1) idxRazon = headers.indexOf('RAZÓN SOCIAL');
+    const idxDocType = headers.indexOf('TIPO DOCUMENTO');
+    const idxDocNumber = headers.indexOf('NUMERO DOCUMENTO');
     const idxCuit = headers.indexOf('CUIT');
     const idxEstado = headers.indexOf('ESTADO');
 
@@ -182,7 +216,7 @@ var DatabaseService = (function () {
     data.forEach(row => {
       const nombre = idxNombre > -1 ? row[idxNombre] : '';
       const razon = idxRazon > -1 ? row[idxRazon] : '';
-      const cuit = idxCuit > -1 ? row[idxCuit] : '';
+      const docData = extractClientDoc_(row, idxDocType, idxDocNumber, idxCuit);
 
       let isActive = true;
       if (idxEstado > -1) {
@@ -194,7 +228,9 @@ var DatabaseService = (function () {
           id: idxId > -1 ? row[idxId] : '',
           nombre: nombre,
           razonSocial: razon,
-          cuit: cuit
+          docType: docData.docType,
+          docNumber: docData.docNumber,
+          cuit: docData.cuit
         });
       }
     });
@@ -291,10 +327,46 @@ var DatabaseService = (function () {
     return getClientHourlyRate(clientName);
   }
 
-  // ====== EMPLEADOS ACTIVOS (STRINGS) ======
+  // ====== EMPLEADOS ACTIVOS (OBJETOS) ======
 
   function getEmpleadosActivos() {
-    return getActiveNames_('EMPLEADOS_DB', 'EMPLEADO', 'ESTADO');
+    const ss = getDbSpreadsheet();
+    const sheet = ss.getSheetByName('EMPLEADOS_DB');
+    if (!sheet) return [];
+
+    const lastRow = sheet.getLastRow();
+    const lastCol = sheet.getLastColumn();
+    if (lastRow < 2) return [];
+
+    const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0]
+      .map(h => String(h || '').trim().toUpperCase());
+
+    const idxId = headers.indexOf('ID');
+    const idxNombre = headers.indexOf('EMPLEADO');
+    const idxEstado = headers.indexOf('ESTADO');
+    if (idxNombre === -1) return [];
+
+    const data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+    const result = [];
+
+    data.forEach(row => {
+      const nombre = idxNombre > -1 ? row[idxNombre] : '';
+      if (!nombre) return;
+
+      let isActive = true;
+      if (idxEstado > -1) {
+        isActive = DataUtils ? DataUtils.isTruthy(row[idxEstado]) : !!row[idxEstado];
+      }
+
+      if (isActive) {
+        result.push({
+          id: idxId > -1 ? row[idxId] : '',
+          nombre: nombre
+        });
+      }
+    });
+
+    return result;
   }
 
   // ====== CONFIG (clave/valor) ======
@@ -409,6 +481,72 @@ var DatabaseService = (function () {
     return merged;
   }
 
+  // ====== DROPDOWN OPTIONS ======
+
+  function normalizeDropdownOptionsInput_(input) {
+    if (!input) return [];
+    if (Array.isArray(input)) return input;
+
+    const raw = String(input).trim();
+    if (!raw) return [];
+
+    if (raw[0] === '[') {
+      try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (e) {
+        // fallback to split
+      }
+    }
+
+    return raw.split(',').map(s => s.trim()).filter(Boolean);
+  }
+
+  function uniqueDropdownOptions_(options) {
+    const out = [];
+    const seen = new Set();
+    (options || []).forEach(opt => {
+      const clean = String(opt || '').trim().replace(/\s+/g, ' ');
+      if (!clean) return;
+      const key = clean.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push(clean);
+    });
+    return out;
+  }
+
+  function normalizeDropdownOptionsMap_(map) {
+    const out = {};
+    if (!map || typeof map !== 'object') return out;
+    Object.keys(map).forEach(key => {
+      const normalized = uniqueDropdownOptions_(normalizeDropdownOptionsInput_(map[key]));
+      out[String(key)] = normalized;
+    });
+    return out;
+  }
+
+  function getDropdownOptions() {
+    const config = getConfig();
+    const raw = config['DROPDOWN_OPTIONS'];
+    if (!raw) return {};
+    let parsed = raw;
+    if (typeof raw === 'string') {
+      try {
+        parsed = JSON.parse(raw);
+      } catch (e) {
+        return {};
+      }
+    }
+    return normalizeDropdownOptionsMap_(parsed);
+  }
+
+  function saveDropdownOptions(optionsMap) {
+    const normalized = normalizeDropdownOptionsMap_(optionsMap);
+    upsertConfig({ DROPDOWN_OPTIONS: JSON.stringify(normalized) });
+    return normalized;
+  }
+
   function normalizeClientName_(name) {
     if (!name) return '';
     return String(name)
@@ -446,6 +584,15 @@ var DatabaseService = (function () {
         const dt = new Date(y, mo, d);
         if (!isNaN(dt.getTime())) return dt;
       }
+      // soportar yyyy-mm-dd (input date)
+      const m2 = val.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (m2) {
+        const y = Number(m2[1]);
+        const mo = Number(m2[2]) - 1;
+        const d = Number(m2[3]);
+        const dt = new Date(y, mo, d);
+        if (!isNaN(dt.getTime())) return dt;
+      }
     }
     const parsed = new Date(val);
     return isNaN(parsed.getTime()) ? null : parsed;
@@ -463,7 +610,11 @@ var DatabaseService = (function () {
     const headers = data[0].map(h => String(h || '').trim().toUpperCase());
     const idxId = headers.indexOf('ID');
     const idxNombre = headers.indexOf('NOMBRE');
-    const idxRazon = headers.indexOf('RAZON SOCIAL');
+    let idxRazon = headers.indexOf('RAZON SOCIAL');
+    if (idxRazon === -1) idxRazon = headers.indexOf('RAZÓN SOCIAL');
+    const idxDocType = headers.indexOf('TIPO DOCUMENTO');
+    const idxDocNumber = headers.indexOf('NUMERO DOCUMENTO');
+    const idxCuit = headers.indexOf('CUIT');
     if (idxId === -1 || (idxNombre === -1 && idxRazon === -1)) return null;
 
     const targetNorm = normalizeClientName_(nombreORazon);
@@ -477,10 +628,14 @@ var DatabaseService = (function () {
       const normNombre = normalizeClientName_(nombre);
       const normRazon = normalizeClientName_(razon);
       if (normNombre === targetNorm || normRazon === targetNorm) {
+        const docData = extractClientDoc_(row, idxDocType, idxDocNumber, idxCuit);
         return {
           id: row[idxId],
           nombre: nombre,
           razonSocial: razon,
+          docType: docData.docType,
+          docNumber: docData.docNumber,
+          cuit: docData.cuit,
           rowNumber: i + 2
         };
       }
@@ -500,14 +655,21 @@ var DatabaseService = (function () {
 
     const idxId = headers.indexOf('ID');
     const idxNombre = headers.indexOf('NOMBRE');
-    const idxRazon = headers.indexOf('RAZON SOCIAL');
+    let idxRazon = headers.indexOf('RAZON SOCIAL');
+    if (idxRazon === -1) idxRazon = headers.indexOf('RAZÓN SOCIAL');
+    const idxDocType = headers.indexOf('TIPO DOCUMENTO');
+    const idxDocNumber = headers.indexOf('NUMERO DOCUMENTO');
     const idxCuit = headers.indexOf('CUIT');
+
+    const docData = extractClientDoc_(row, idxDocType, idxDocNumber, idxCuit);
 
     return {
       id: idxId > -1 ? row[idxId] : row[0],
       nombre: idxNombre > -1 ? row[idxNombre] : '',
       razonSocial: idxRazon > -1 ? row[idxRazon] : '',
-      cuit: idxCuit > -1 ? row[idxCuit] : '',
+      docType: docData.docType,
+      docNumber: docData.docNumber,
+      cuit: docData.cuit,
       rowNumber: rowNumber
     };
   }
@@ -630,28 +792,13 @@ var DatabaseService = (function () {
         changed = true;
       }
 
-      // Normalizar/Completar ID_EMPLEADO (por nombre) si falta o quedó como Date (serial)
-      const empleadoNameNow = String(row[idxEmpleado] || '').trim();
-      if (empleadoNameNow) {
-        const currIdEmp = row[idxIdEmp];
-        const currIdEmpIsDate = (currIdEmp instanceof Date) && !isNaN(currIdEmp.getTime());
-        const currIdEmpIsNumeric =
-          (typeof currIdEmp === 'number' && !isNaN(currIdEmp)) ||
-          (/^\s*\d+\s*$/.test(String(currIdEmp || '')));
-
-        if (currIdEmpIsDate || !currIdEmpIsNumeric) {
-          const emp = findEmpleadoByNombre(empleadoNameNow);
-          if (emp && emp.id != null && emp.id !== '') {
-            const asNum = Number(emp.id);
-            row[idxIdEmp] = isNaN(asNum) ? String(emp.id) : asNum;
-            changed = true;
-          }
-        } else if (typeof currIdEmp === 'string' && currIdEmp.trim() !== '') {
-          const asNum = Number(currIdEmp);
-          if (!isNaN(asNum)) {
-            row[idxIdEmp] = asNum;
-            changed = true;
-          }
+      // Normalizar ID_EMPLEADO (sin inferir por nombre)
+      const currIdEmp = row[idxIdEmp];
+      if (typeof currIdEmp === 'string' && currIdEmp.trim() !== '') {
+        const asNum = Number(currIdEmp);
+        if (!isNaN(asNum)) {
+          row[idxIdEmp] = asNum;
+          changed = true;
         }
       }
 
@@ -672,8 +819,8 @@ var DatabaseService = (function () {
 
   function getReferenceData() {
     return {
-      clientes: getClientesActivos(),    // objetos {nombre, razonSocial, cuit}
-      empleados: getEmpleadosActivos()   // array de strings
+      clientes: getClientesActivos(),    // objetos {id, nombre, razonSocial, docType, docNumber, cuit}
+      empleados: getEmpleadosActivos()   // objetos {id, nombre}
     };
   }
 
@@ -695,6 +842,8 @@ var DatabaseService = (function () {
     appendHoraLogEmpleado: appendHoraLogEmpleado,
     getClientTags: getClientTags,
     upsertClientTags: upsertClientTags,
+    getDropdownOptions: getDropdownOptions,
+    saveDropdownOptions: saveDropdownOptions,
     getNextId: getNextId,
     findRowById: findRowById,
     getDbSpreadsheet: getDbSpreadsheet

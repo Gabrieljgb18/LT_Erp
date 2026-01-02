@@ -136,10 +136,6 @@ const AttendanceEmployeeSchedule = (function () {
             cliente = DatabaseService.findClienteById(cleanId);
         }
 
-        if (!cliente && nombreCliente) {
-            cliente = DatabaseService.findClienteByNombreORazon(nombreCliente);
-        }
-
         if (!cliente) {
             return {
                 id: cleanId,
@@ -191,19 +187,7 @@ const AttendanceEmployeeSchedule = (function () {
         };
     }
 
-    function resolveEmpleadoIdFromName_(nombre) {
-        if (!nombre) return '';
-        if (!DatabaseService || !DatabaseService.findEmpleadoByNombre) return '';
-        const found = DatabaseService.findEmpleadoByNombre(nombre);
-        return found && found.id ? String(found.id).trim() : '';
-    }
-
-    function resolveClienteIdFromName_(nombre) {
-        if (!nombre) return '';
-        if (!DatabaseService || !DatabaseService.findClienteByNombreORazon) return '';
-        const found = DatabaseService.findClienteByNombreORazon(nombre);
-        return found && found.id ? String(found.id).trim() : '';
-    }
+    // Sin fallback por nombre: IDs deben venir desde la fuente.
 
     /**
      * Obtiene la agenda semanal de un empleado con datos completos de clientes
@@ -265,27 +249,26 @@ const AttendanceEmployeeSchedule = (function () {
         const idxVigHasta = headers.indexOf('VIGENTE HASTA');
         const idxObs = headers.indexOf('OBSERVACIONES');
 
-        const targetEmpleado = String(empleado || '').trim().toLowerCase();
         const targetIdEmpleado = idEmpleado != null && idEmpleado !== '' ? String(idEmpleado).trim() : '';
+        if (!targetIdEmpleado) {
+            const diasOut = sanitizeDays_(diasMap);
+            return {
+                semana: {
+                    start: formatDate(weekStart),
+                    end: formatDate(weekEnd),
+                    label: `${formatDateShort(weekStart)} - ${formatDateShort(weekEnd)}`
+                },
+                dias: diasOut,
+                resumen: { totalHoras: 0, totalClientes: 0, diasTrabajo: 0 }
+            };
+        }
 
         let totalHoras = 0;
         const clientesSet = new Set();
 
         rows.forEach(row => {
-            const rowEmpleadoRaw = idxEmpleado > -1 ? String(row[idxEmpleado] || '').trim() : '';
-            const rowEmpleado = rowEmpleadoRaw.toLowerCase();
             const rowIdEmpleado = idxIdEmpleado > -1 ? String(row[idxIdEmpleado] || '').trim() : '';
-
-            if (targetIdEmpleado) {
-                if (rowIdEmpleado) {
-                    if (rowIdEmpleado !== targetIdEmpleado) return;
-                } else {
-                    const resolvedId = resolveEmpleadoIdFromName_(rowEmpleadoRaw);
-                    if (!resolvedId || resolvedId !== targetIdEmpleado) return;
-                }
-            } else if (!targetEmpleado || rowEmpleado !== targetEmpleado) {
-                return;
-            }
+            if (!rowIdEmpleado || rowIdEmpleado !== targetIdEmpleado) return;
 
             const diaSemana = normalizeDayName_(row[idxDiaSemana]);
             const dayEntry = diasMap[diaSemana];
@@ -301,7 +284,7 @@ const AttendanceEmployeeSchedule = (function () {
             const horaEntrada = formatHoraEntrada_(row[idxHoraEntrada]);
             const horas = Number(row[idxHorasPlan]) || 0;
             totalHoras += horas;
-            clientesSet.add(clienteData.id || nombreCliente || '');
+            if (clienteData.id) clientesSet.add(clienteData.id);
 
             dayEntry.clientes.push({
                 idPlan: idxId > -1 ? row[idxId] : '',
@@ -399,22 +382,14 @@ const AttendanceEmployeeSchedule = (function () {
             const idCliente = idxIdCliente > -1 ? row[idxIdCliente] : '';
             const nombreCliente = row[idxCliente] || '';
             const cleanId = idCliente != null ? String(idCliente).trim() : '';
-            let matchClient = true;
-            if (targetClientId) {
-                if (cleanId) {
-                    matchClient = cleanId === targetClientId;
-                } else {
-                    const resolvedId = resolveClienteIdFromName_(nombreCliente);
-                    matchClient = resolvedId && resolvedId === targetClientId;
-                }
-            }
-            if (!matchClient) return;
+            if (!cleanId) return;
+            if (targetClientId && cleanId !== targetClientId) return;
 
             const clienteData = getClienteData(cleanId, nombreCliente);
             const horaEntrada = formatHoraEntrada_(row[idxHoraEntrada]);
             const horas = Number(row[idxHorasPlan]) || 0;
 
-            const key = clienteData.id ? `id:${clienteData.id}` : `name:${clienteData.nombre || nombreCliente}`;
+            const key = `id:${cleanId}`;
             if (!dayEntry._clientesMap) dayEntry._clientesMap = {};
             if (!dayEntry._clientesMap[key]) {
                 dayEntry._clientesMap[key] = {
@@ -440,7 +415,7 @@ const AttendanceEmployeeSchedule = (function () {
             });
 
             totalHoras += horas;
-            clientesSet.add(clienteData.id || clienteData.nombre || nombreCliente || '');
+            clientesSet.add(cleanId);
         });
 
         ORDEN_DIAS.forEach(dia => {
@@ -528,21 +503,14 @@ const AttendanceEmployeeSchedule = (function () {
             const fechaDia = dayEntry.dateObj;
             if (!isDateWithinRange_(fechaDia, row[idxVigDesde], row[idxVigHasta])) return;
 
-            const rowEmpleadoRaw = idxEmpleado > -1 ? String(row[idxEmpleado] || '').trim() : '';
             const rowIdEmpleado = idxIdEmpleado > -1 ? String(row[idxIdEmpleado] || '').trim() : '';
 
-            if (targetEmployeeId) {
-                if (rowIdEmpleado) {
-                    if (rowIdEmpleado !== targetEmployeeId) return;
-                } else {
-                    const resolvedId = resolveEmpleadoIdFromName_(rowEmpleadoRaw);
-                    if (!resolvedId || resolvedId !== targetEmployeeId) return;
-                }
-            }
+            if (!rowIdEmpleado) return;
+            if (targetEmployeeId && rowIdEmpleado !== targetEmployeeId) return;
 
-            const empleadoId = rowIdEmpleado || resolveEmpleadoIdFromName_(rowEmpleadoRaw) || '';
-            const empleadoNombre = rowEmpleadoRaw || 'Sin asignar';
-            const key = empleadoId ? `id:${empleadoId}` : `name:${empleadoNombre}`;
+            const empleadoId = rowIdEmpleado;
+            const empleadoNombre = (idxEmpleado > -1 ? String(row[idxEmpleado] || '').trim() : '') || 'Sin asignar';
+            const key = `id:${empleadoId}`;
 
             if (!dayEntry._empleadosMap) dayEntry._empleadosMap = {};
             if (!dayEntry._empleadosMap[key]) {
@@ -555,6 +523,8 @@ const AttendanceEmployeeSchedule = (function () {
             }
 
             const idCliente = idxIdCliente > -1 ? row[idxIdCliente] : '';
+            const cleanClientId = idCliente != null ? String(idCliente).trim() : '';
+            if (!cleanClientId) return;
             const nombreCliente = row[idxCliente] || '';
             const clienteData = getClienteData(idCliente, nombreCliente);
             const horaEntrada = formatHoraEntrada_(row[idxHoraEntrada]);
@@ -562,7 +532,7 @@ const AttendanceEmployeeSchedule = (function () {
 
             dayEntry._empleadosMap[key].totalHoras += horas;
             dayEntry._empleadosMap[key].clientes.push({
-                idCliente: clienteData.id || idCliente,
+                idCliente: cleanClientId,
                 cliente: clienteData.nombre || nombreCliente,
                 razonSocial: clienteData.razonSocial || '',
                 horaEntrada: horaEntrada,
@@ -572,7 +542,7 @@ const AttendanceEmployeeSchedule = (function () {
             });
 
             totalHoras += horas;
-            empleadosSet.add(empleadoId || empleadoNombre);
+            empleadosSet.add(empleadoId);
         });
 
         ORDEN_DIAS.forEach(dia => {

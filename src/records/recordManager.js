@@ -8,6 +8,27 @@
         let currentMode = "create"; // "create" | "edit"
         let selectedRowNumber = null;
 
+        function refreshReferencesIfNeeded(tipoFormato) {
+            if (!global.DomainMeta || typeof global.DomainMeta.getMeta !== "function") return;
+            const meta = global.DomainMeta.getMeta(tipoFormato);
+            if (!meta || !meta.refreshReference) return;
+            if (!global.ReferenceService) return;
+
+            const refreshFn = typeof global.ReferenceService.refresh === "function"
+                ? global.ReferenceService.refresh
+                : global.ReferenceService.load;
+
+            refreshFn()
+                .then(function (refData) {
+                    if (global.FormManager && typeof global.FormManager.updateReferenceData === "function") {
+                        global.FormManager.updateReferenceData(refData || global.ReferenceService.get());
+                    }
+                })
+                .catch(function (err) {
+                    console.warn("No se pudieron actualizar referencias:", err);
+                });
+        }
+
         function enterCreateMode(clear = true) {
             currentMode = "create";
             selectedRowNumber = null;
@@ -70,26 +91,45 @@
             if (global.ClientTagsField && typeof global.ClientTagsField.syncFromValue === "function") {
                 global.ClientTagsField.syncFromValue();
             }
+            if (global.FormManager && typeof global.FormManager.applyInputMasks === "function") {
+                global.FormManager.applyInputMasks();
+            }
         }
 
         function saveRecord() {
             const tipoFormato = global.FormManager ? global.FormManager.getCurrentFormat() : null;
             if (!tipoFormato) {
                 if (Alerts) Alerts.showAlert("No hay formato seleccionado.", "warning");
-                return;
+                return Promise.resolve(false);
             }
 
             // Flujo custom para asistencia diaria (plan vs real)
             if (tipoFormato === "ASISTENCIA" && global.AttendanceDailyUI) {
                 global.AttendanceDailyUI.save();
-                return;
+                return Promise.resolve(false);
             }
 
             const formDef = FORM_DEFINITIONS[tipoFormato];
-            if (!formDef) return;
+            if (!formDef) return Promise.resolve(false);
 
             const record = {};
             let hasErrors = false;
+            const errorFields = [];
+            const inputUtils = global.InputUtils || {};
+
+            function shouldSkipValidation(field, input) {
+                if (!field || !input) return true;
+                if (field.hidden || input.type === "hidden") return true;
+                if (input.closest && input.closest(".d-none")) return true;
+                return false;
+            }
+
+            function registerError(field, input) {
+                if (!field || !input) return;
+                input.classList.add("is-invalid");
+                errorFields.push(field.label || field.id);
+                hasErrors = true;
+            }
 
             formDef.fields.forEach(function (field) {
                 const input = document.getElementById("field-" + field.id);
@@ -107,49 +147,112 @@
                 record[field.id] = value;
             });
 
+            formDef.fields.forEach(function (field) {
+                const input = document.getElementById("field-" + field.id);
+                if (!input) return;
+                if (shouldSkipValidation(field, input)) return;
+                const value = record[field.id];
+                const hasValue = value !== null && value !== undefined && String(value).trim() !== "";
+
+                if (field.type === "phone" && hasValue) {
+                    if (typeof inputUtils.isValidPhone === "function") {
+                        if (!inputUtils.isValidPhone(value)) {
+                            registerError(field, input);
+                        }
+                    }
+                }
+
+                if (field.type === "email" && hasValue) {
+                    if (typeof inputUtils.isValidEmail === "function") {
+                        if (!inputUtils.isValidEmail(value)) {
+                            registerError(field, input);
+                        }
+                    }
+                }
+
+                if (field.type === "docNumber" && hasValue) {
+                    const docTypeField = field.docTypeField || "TIPO DOCUMENTO";
+                    const docType = field.docTypeValue || record[docTypeField] || "";
+                    if (typeof inputUtils.isValidDocNumber === "function") {
+                        if (!inputUtils.isValidDocNumber(value, docType)) {
+                            registerError(field, input);
+                        }
+                    }
+                }
+
+                if (field.type === "number" && hasValue) {
+                    const num = Number(value);
+                    if (isNaN(num)) {
+                        registerError(field, input);
+                    }
+                }
+
+                if (typeof input.checkValidity === "function" && !input.checkValidity()) {
+                    registerError(field, input);
+                }
+            });
+
+            const idRules = [
+                { idField: "ID_CLIENTE", labelField: "CLIENTE", label: "Cliente" },
+                { idField: "ID_CLIENTE", labelField: "RAZÓN SOCIAL", label: "Razón social" },
+                { idField: "ID_EMPLEADO", labelField: "EMPLEADO", label: "Empleado" }
+            ];
+
+            idRules.forEach(rule => {
+                if (!record.hasOwnProperty(rule.idField)) return;
+                const labelValue = record[rule.labelField];
+                const idValue = record[rule.idField];
+                const hasLabel = labelValue != null && String(labelValue).trim() !== "";
+                const hasId = idValue != null && String(idValue).trim() !== "";
+                if (hasLabel && !hasId) {
+                    const input = document.getElementById("field-" + rule.labelField);
+                    if (input) {
+                        input.classList.add("is-invalid");
+                    }
+                    errorFields.push(rule.label || rule.labelField);
+                    hasErrors = true;
+                }
+            });
+
             if (hasErrors) {
-                if (Alerts) Alerts.showAlert("Por favor completá los campos requeridos.", "warning");
-                return;
+                const unique = Array.from(new Set(errorFields)).filter(Boolean);
+                const msg = unique.length
+                    ? "Revisá los campos: " + unique.join(", ")
+                    : "Por favor completá los campos requeridos.";
+                if (Alerts) Alerts.showAlert(msg, "warning");
+                return Promise.resolve(false);
             }
 
             UiState.setGlobalLoading(true, "Guardando...");
 
             if (currentMode === "edit" && selectedRowNumber) {
                 // Update existing (selectedRowNumber now contains ID)
-                ApiService.call('updateRecord', tipoFormato, selectedRowNumber, record)
+                return ApiService.call('updateRecord', tipoFormato, selectedRowNumber, record)
                     .then(function () {
                         if (Alerts) Alerts.showAlert("✅ Registro actualizado correctamente.", "success");
                         enterCreateMode(true);
-                        if (ReferenceService) {
-                            ReferenceService.load().then(function () {
-                                if (global.FormManager) {
-                                    global.FormManager.updateReferenceData(ReferenceService.get());
-                                }
-                            });
-                        }
+                        refreshReferencesIfNeeded(tipoFormato);
+                        return true;
                     })
                     .catch(function (err) {
                         if (Alerts) Alerts.showAlert("Error al actualizar: " + err.message, "danger");
+                        return false;
                     })
                     .finally(function () {
                         UiState.setGlobalLoading(false);
                     });
             } else {
                 // Create new
-                ApiService.call('saveFormRecord', tipoFormato, record)
+                return ApiService.call('saveFormRecord', tipoFormato, record)
                     .then(function () {
                         if (Alerts) Alerts.showAlert("✅ Registro guardado correctamente.", "success");
                         enterCreateMode(true);
-                        if (ReferenceService) {
-                            ReferenceService.load().then(function () {
-                                if (global.FormManager) {
-                                    global.FormManager.updateReferenceData(ReferenceService.get());
-                                }
-                            });
-                        }
+                        refreshReferencesIfNeeded(tipoFormato);
+                        return true;
                     })
                     .catch(function (err) {
                         if (Alerts) Alerts.showAlert("Error al guardar: " + err.message, "danger");
+                        return false;
                     })
                     .finally(function () {
                         UiState.setGlobalLoading(false);
@@ -188,13 +291,7 @@
                 .then(function () {
                     if (Alerts) Alerts.showAlert("✅ Registro eliminado correctamente.", "success");
                     enterCreateMode(true);
-                    if (ReferenceService) {
-                        ReferenceService.load().then(function () {
-                            if (global.FormManager) {
-                                global.FormManager.updateReferenceData(ReferenceService.get());
-                            }
-                        });
-                    }
+                    refreshReferencesIfNeeded(tipoFormato);
                 })
                 .catch(function (err) {
                     if (Alerts) Alerts.showAlert("Error al eliminar: " + err.message, "danger");

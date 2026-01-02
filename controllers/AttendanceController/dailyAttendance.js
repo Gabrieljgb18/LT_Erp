@@ -41,6 +41,9 @@ const AttendanceDailyAttendance = (function () {
         if (idxClientePlan === -1 || idxEmpleadoPlan === -1 || idxDiaSemanaPlan === -1) {
             return [];
         }
+        if (idxIdClientePlan === -1 || idxIdEmpleadoPlan === -1) {
+            return [];
+        }
 
         const dataPlan = planSheet
             .getRange(2, 1, lastRowPlan - 1, lastColPlan)
@@ -74,6 +77,9 @@ const AttendanceDailyAttendance = (function () {
 
             const cliente = row[idxClientePlan];
             const empleado = row[idxEmpleadoPlan];
+            const idCliente = idxIdClientePlan > -1 ? String(row[idxIdClientePlan] || '').trim() : '';
+            const idEmpleado = idxIdEmpleadoPlan > -1 ? String(row[idxIdEmpleadoPlan] || '').trim() : '';
+            if (!idCliente || !idEmpleado) return;
             if (!cliente || !empleado) return;
 
             const horasPlanVal = idxHorasPlan > -1 ? row[idxHorasPlan] : '';
@@ -86,8 +92,8 @@ const AttendanceDailyAttendance = (function () {
                 horaPlan: idxHoraEntrada > -1 ? row[idxHoraEntrada] : '',
                 horasPlan: horasPlanVal,
                 observacionesPlan: idxObsPlan > -1 ? row[idxObsPlan] : '',
-                idCliente: idxIdClientePlan > -1 ? row[idxIdClientePlan] : '',
-                idEmpleado: idxIdEmpleadoPlan > -1 ? row[idxIdEmpleadoPlan] : ''
+                idCliente: idCliente,
+                idEmpleado: idEmpleado
             });
         });
 
@@ -100,9 +106,8 @@ const AttendanceDailyAttendance = (function () {
 
         const planMap = new Map();
         planRows.forEach(function (p) {
-            const cliKey = p.idCliente || p.cliente;
-            const empKey = p.idEmpleado || p.empleado;
-            const key = cliKey + '||' + empKey;
+            if (!p.idCliente || !p.idEmpleado) return;
+            const key = String(p.idCliente) + '||' + String(p.idEmpleado);
             planMap.set(key, p);
         });
 
@@ -124,7 +129,9 @@ const AttendanceDailyAttendance = (function () {
             if (
                 idxEmpleadoAsis > -1 &&
                 idxClienteAsis > -1 &&
-                idxFechaAsis > -1
+                idxFechaAsis > -1 &&
+                idxIdClienteAsis > -1 &&
+                idxIdEmpleadoAsis > -1
             ) {
                 const dataAsis = asisSheet
                     .getRange(2, 1, lastRowAsis - 1, lastColAsis)
@@ -136,20 +143,21 @@ const AttendanceDailyAttendance = (function () {
 
                     const clienteRow = row[idxClienteAsis];
                     const empleadoRow = row[idxEmpleadoAsis];
+                    const rowIdCliente = String(row[idxIdClienteAsis] || '').trim();
+                    const rowIdEmpleado = String(row[idxIdEmpleadoAsis] || '').trim();
                     if (!clienteRow || !empleadoRow) return;
+                    if (!rowIdCliente || !rowIdEmpleado) return;
 
                     const asistio = idxAsist > -1 ? DataUtils.isTruthy(row[idxAsist]) : false;
-                    const cliKey = (idxIdClienteAsis > -1 && row[idxIdClienteAsis]) ? row[idxIdClienteAsis] : clienteRow;
-                    const empKey = (idxIdEmpleadoAsis > -1 && row[idxIdEmpleadoAsis]) ? row[idxIdEmpleadoAsis] : empleadoRow;
-                    const key = cliKey + '||' + empKey;
+                    const key = rowIdCliente + '||' + rowIdEmpleado;
                     const planData = planMap.get(key);
 
                     attendanceRows.push({
                         cliente: clienteRow,
                         empleado: empleadoRow,
                         idAsistencia: idxIdAsis > -1 ? row[idxIdAsis] : '',
-                        idCliente: idxIdClienteAsis > -1 ? row[idxIdClienteAsis] : '',
-                        idEmpleado: idxIdEmpleadoAsis > -1 ? row[idxIdEmpleadoAsis] : '',
+                        idCliente: rowIdCliente,
+                        idEmpleado: rowIdEmpleado,
                         horaPlan: planData ? planData.horaPlan : '',
                         horasPlan: planData ? planData.horasPlan : '',
                         asistenciaRowNumber: i + 2,
@@ -233,34 +241,18 @@ const AttendanceDailyAttendance = (function () {
         const fecha = (fechaStr || '').toString().trim();
         if (!fecha || !Array.isArray(rows)) return;
 
-        const clienteIdCache = {};
-        const empleadoIdCache = {};
-
-        function resolveClienteId(nombre) {
-            if (!nombre) return '';
-            if (clienteIdCache[nombre] !== undefined) return clienteIdCache[nombre];
-            const found = DatabaseService.findClienteByNombreORazon(nombre);
-            const val = found && found.id ? found.id : '';
-            clienteIdCache[nombre] = val;
-            return val;
-        }
-
-        function resolveEmpleadoId(nombre) {
-            if (!nombre) return '';
-            if (empleadoIdCache[nombre] !== undefined) return empleadoIdCache[nombre];
-            const found = DatabaseService.findEmpleadoByNombre(nombre);
-            const val = found && found.id ? found.id : '';
-            empleadoIdCache[nombre] = val;
-            return val;
+        const missingId = rows.find(item => item && ((!item.idCliente && item.cliente) || (!item.idEmpleado && item.empleado)));
+        if (missingId) {
+            throw new Error('Faltan IDs de cliente o empleado en la asistencia. Seleccioná los registros nuevamente.');
         }
 
         rows.forEach(function (item) {
             if (!item || !item.cliente || !item.empleado) return;
 
             const record = {
-                'ID_EMPLEADO': item.idEmpleado || resolveEmpleadoId(item.empleado),
+                'ID_EMPLEADO': item.idEmpleado || '',
                 'EMPLEADO': item.empleado,
-                'ID_CLIENTE': item.idCliente || resolveClienteId(item.cliente),
+                'ID_CLIENTE': item.idCliente || '',
                 'CLIENTE': item.cliente,
                 'FECHA': fecha,
                 'ASISTENCIA': !!item.asistencia,

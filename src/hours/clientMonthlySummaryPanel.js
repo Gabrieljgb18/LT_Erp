@@ -100,14 +100,17 @@ var ClientMonthlySummaryPanel = (function () {
 
         rows.forEach(row => {
             const tr = document.createElement('tr');
+            const idCliente = row.idCliente != null ? String(row.idCliente).trim() : '';
+            const clienteNombre = row.cliente || '';
+            const clienteFallbackLabel = buildFallbackClientLabel_(clienteNombre, idCliente);
             tr.innerHTML = `
-                <td>${row.cliente}</td>
+                <td>${escapeHtml_(clienteNombre || '-')}</td>
                 <td class="text-center fw-bold">${formatNumber(row.horas)}</td>
-                <td class="text-center">${row.dias || 0}</td>
-                <td class="text-center">${formatCurrency(row.valorHora)}</td>
-                <td class="text-center fw-bold text-success">${formatCurrency(row.totalFacturacion)}</td>
+                <td class="text-center">${escapeHtml_(String(row.dias || 0))}</td>
+                <td class="text-center">${escapeHtml_(formatCurrency(row.valorHora))}</td>
+                <td class="text-center fw-bold text-success">${escapeHtml_(formatCurrency(row.totalFacturacion))}</td>
                 <td class="text-end">
-                    <button class="btn btn-sm btn-outline-primary cms-view-detail" data-cliente="${HtmlHelpers.escapeHtml(row.cliente)}">
+                    <button class="btn btn-sm btn-outline-primary cms-view-detail" data-id-cliente="${escapeHtml_(idCliente)}" data-cliente-label="${escapeHtml_(clienteFallbackLabel)}">
                         <i class="bi bi-eye"></i> Detalle
                     </button>
                 </td>
@@ -118,7 +121,9 @@ var ClientMonthlySummaryPanel = (function () {
         // detalle -> cambia a Reporte Clientes con filtros del mes
         document.querySelectorAll('.cms-view-detail').forEach(btn => {
             btn.addEventListener('click', function () {
-                const cliente = this.getAttribute('data-cliente');
+                const idCliente = this.getAttribute('data-id-cliente') || '';
+                const fallbackLabel = this.getAttribute('data-cliente-label') || '';
+                const cliente = getClientLabelById_(idCliente) || fallbackLabel;
                 if (!cliente) return;
                 const monthInput = document.getElementById('cms-month');
                 const val = monthInput ? monthInput.value : '';
@@ -164,6 +169,60 @@ var ClientMonthlySummaryPanel = (function () {
     function formatCurrency(v) {
         const n = Number(v);
         return n.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2 });
+    }
+
+    function escapeHtml_(value) {
+        if (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.escapeHtml === 'function') {
+            return HtmlHelpers.escapeHtml(value);
+        }
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function buildFallbackClientLabel_(nombre, idCliente) {
+        const name = String(nombre || '').trim();
+        const id = String(idCliente || '').trim();
+        if (!name && !id) return '';
+        if (!id) return name;
+        return name ? `${name} (ID: ${id})` : `ID: ${id}`;
+    }
+
+    function formatClientLabel_(cli) {
+        if (!cli) return '';
+        if (typeof cli === 'string') return cli;
+        const base = cli.razonSocial || cli.nombre || '';
+        const id = cli.id != null ? String(cli.id).trim() : '';
+        const docLabel = getClientDocLabel_(cli);
+        const meta = [];
+        if (id) meta.push(`ID: ${id}`);
+        if (docLabel) meta.push(docLabel);
+        const metaSuffix = meta.length ? ` (${meta.join(' | ')})` : '';
+        return (base + metaSuffix).trim();
+    }
+
+    function getClientDocLabel_(cli) {
+        if (!cli || typeof cli !== 'object') return '';
+        const docType = (cli.docType || cli["TIPO DOCUMENTO"] || '').toString().trim();
+        const rawDoc = cli.docNumber || cli["NUMERO DOCUMENTO"] || cli.cuit || '';
+        if (!rawDoc) return '';
+        const fallbackType = docType || (cli.cuit ? 'CUIT' : '');
+        if (typeof InputUtils !== 'undefined' && InputUtils && typeof InputUtils.formatDocLabel === 'function') {
+            return InputUtils.formatDocLabel(fallbackType, rawDoc);
+        }
+        return (fallbackType ? (fallbackType + ' ') : '') + rawDoc;
+    }
+
+    function getClientLabelById_(idCliente) {
+        const idStr = String(idCliente || '').trim();
+        if (!idStr || !ReferenceService || typeof ReferenceService.get !== 'function') return '';
+        const refs = ReferenceService.get();
+        const clientes = refs && refs.clientes ? refs.clientes : [];
+        const match = clientes.find(c => c && typeof c === 'object' && String(c.id || '').trim() === idStr);
+        return match ? formatClientLabel_(match) : '';
     }
 
     return { render };

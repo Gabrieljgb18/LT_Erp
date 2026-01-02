@@ -151,12 +151,13 @@
                 const nombre = c && typeof c === 'object'
                     ? (c.razonSocial || c.nombre || '')
                     : String(c || '');
+                if (!id || !nombre) return;
 
                 const opt = document.createElement('option');
-                opt.value = id ? String(id) : nombre;
-                opt.textContent = nombre || String(id || '');
-                opt.dataset.id = id ? String(id) : '';
-                opt.dataset.nombre = nombre || String(id || '');
+                opt.value = String(id);
+                opt.textContent = nombre;
+                opt.dataset.id = String(id);
+                opt.dataset.nombre = nombre;
                 select.appendChild(opt);
             });
         }

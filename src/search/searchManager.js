@@ -31,6 +31,18 @@
             // Additional context field
             if (record["RAZON SOCIAL"]) {
                 parts.push(`<strong>RAZÓN SOCIAL:</strong> ${record["RAZON SOCIAL"]}`);
+            } else if (record["TIPO DOCUMENTO"] || record["NUMERO DOCUMENTO"]) {
+                const docType = record["TIPO DOCUMENTO"] || "";
+                const docNumber = record["NUMERO DOCUMENTO"] || "";
+                let docLabel = "";
+                if (global.InputUtils && typeof global.InputUtils.formatDocLabel === "function") {
+                    docLabel = global.InputUtils.formatDocLabel(docType, docNumber);
+                } else {
+                    docLabel = (docType ? (docType + " ") : "") + docNumber;
+                }
+                if (docLabel.trim()) {
+                    parts.push(`<strong>DOCUMENTO:</strong> ${docLabel}`);
+                }
             } else if (record.CUIT) {
                 parts.push(`<strong>CUIT:</strong> ${record.CUIT}`);
             } else if (record.CUIL) {

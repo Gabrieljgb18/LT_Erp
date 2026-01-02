@@ -131,8 +131,8 @@ function saveDailyAttendance(fechaStr, rows) {
 /**
  * Calcula la cobertura de horas para un cliente en un día
  */
-function getClientDayCoverage(clienteLabel, dayName) {
-  return AttendanceCoverage.getClientDayCoverage(clienteLabel, dayName);
+function getClientDayCoverage(clienteLabel, dayName, idCliente) {
+  return AttendanceCoverage.getClientDayCoverage(clienteLabel, dayName, idCliente);
 }
 
 /**
@@ -145,8 +145,8 @@ function buildWeeklyTemplateFromClient(cliente, idCliente) {
 /**
  * Obtiene las horas semanales contratadas para un cliente
  */
-function getClientWeeklyRequestedHours(clienteLabel) {
-  return AttendanceCoverage.getClientWeeklyRequestedHours(clienteLabel);
+function getClientWeeklyRequestedHours(clienteLabel, idCliente) {
+  return AttendanceCoverage.getClientWeeklyRequestedHours(clienteLabel, idCliente);
 }
 
 /**
@@ -175,6 +175,20 @@ function applyMassValues(payload) {
  */
 function getConfig() {
   return DatabaseService.getConfig ? DatabaseService.getConfig() : {};
+}
+
+/**
+ * Devuelve opciones de desplegables configuradas
+ */
+function getDropdownOptions() {
+  return DatabaseService.getDropdownOptions ? DatabaseService.getDropdownOptions() : {};
+}
+
+/**
+ * Guarda opciones de desplegables configuradas
+ */
+function saveDropdownOptions(optionsMap) {
+  return DatabaseService.saveDropdownOptions ? DatabaseService.saveDropdownOptions(optionsMap) : {};
 }
 
 /**
@@ -227,6 +241,20 @@ function getClientInvoicesForPayment(clientName, idCliente) {
 }
 
 /**
+ * Lista pagos a cuenta pendientes de aplicar
+ */
+function getUnappliedClientPayments(clientName, idCliente) {
+  return AccountController.getUnappliedClientPayments(clientName, idCliente);
+}
+
+/**
+ * Aplica un pago a cuenta a una o más facturas
+ */
+function applyClientPayment(paymentId, allocations) {
+  return AccountController.applyClientPayment(paymentId, allocations);
+}
+
+/**
  * Registra un cobro de cliente
  */
 function recordClientPayment(payload) {
@@ -236,15 +264,22 @@ function recordClientPayment(payload) {
 /**
  * Genera PDF de horas por empleado
  */
-function generateHoursPdf(startDateStr, endDateStr, employeeName) {
-  return PdfController.generateHoursPdf(startDateStr, endDateStr, employeeName);
+function generateHoursPdf(startDateStr, endDateStr, employeeName, idEmpleado) {
+  return PdfController.generateHoursPdf(startDateStr, endDateStr, employeeName, idEmpleado);
 }
 
 /**
  * Genera PDF de horas por cliente
  */
-function generateClientHoursPdf(startDateStr, endDateStr, clientName) {
-  return PdfController.generateClientHoursPdf(startDateStr, endDateStr, clientName);
+function generateClientHoursPdf(startDateStr, endDateStr, clientName, idCliente) {
+  return PdfController.generateClientHoursPdf(startDateStr, endDateStr, clientName, idCliente);
+}
+
+/**
+ * Genera PDF de cuenta corriente de cliente
+ */
+function generateClientAccountStatementPdf(clientName, startDateStr, endDateStr, idCliente) {
+  return PdfController.generateClientAccountStatementPdf(clientName, startDateStr, endDateStr, idCliente);
 }
 
 /**
@@ -257,8 +292,8 @@ function getMonthlySummaryByClient(year, month) {
 /**
  * Guarda pago de empleado
  */
-function recordEmployeePayment(fecha, empleado, concepto, monto, obs) {
-  return RecordController.recordEmployeePayment(fecha, empleado, concepto, monto, obs);
+function recordEmployeePayment(fecha, empleado, concepto, monto, medioPago, obs) {
+  return RecordController.recordEmployeePayment(fecha, empleado, concepto, monto, medioPago, obs);
 }
 
 /**
@@ -267,21 +302,6 @@ function recordEmployeePayment(fecha, empleado, concepto, monto, obs) {
 function getEmployeeAccountStatement(year, month) {
   return AccountController.getEmployeeAccountStatement(year, month);
 }
-
-/**
- * Cuenta corriente mensual por cliente
- */
-function getClientMonthlyAccountStatement(year, month) {
-  return ClientAccountController.getClientAccountStatement(year, month);
-}
-
-/**
- * Registrar cobro de cliente
- */
-function recordClientMonthlyPayment(fecha, cliente, concepto, monto, obs) {
-  return ClientAccountController.recordClientPayment(fecha, cliente, concepto, monto, obs);
-}
-
 
 // ===================== FACTURACIÓN API =====================
 

@@ -5,6 +5,8 @@ var ClientAccountPanel = (function () {
     const containerId = 'client-account-panel';
     const clientIdMap = new Map();
     let lastQuery = null;
+    const defaultPaymentMethods = ["Uala", "Mercado Pago", "Efectivo", "Santander"];
+    let referenceListenerBound = false;
 
     function render() {
         // Find or create container
@@ -48,8 +50,8 @@ var ClientAccountPanel = (function () {
                             <button class="btn btn-primary btn-sm flex-fill d-flex align-items-center justify-content-center gap-1" id="client-acc-search">
                                 <i class="bi bi-search"></i> Consultar
                             </button>
-                            <button class="btn btn-outline-secondary btn-sm flex-fill d-flex align-items-center justify-content-center gap-1" id="client-acc-open-invoices" title="Abrir facturas del cliente">
-                                <i class="bi bi-receipt"></i> Ver facturas
+                            <button class="btn btn-danger btn-sm flex-fill d-flex align-items-center justify-content-center gap-1" id="client-acc-pdf" title="Descargar PDF">
+                                <i class="bi bi-file-earmark-pdf-fill"></i> PDF
                             </button>
                             <button class="btn btn-success btn-sm flex-fill d-flex align-items-center justify-content-center gap-1" id="client-acc-pay">
                                 <i class="bi bi-cash-coin"></i> Registrar Pago
@@ -95,6 +97,7 @@ var ClientAccountPanel = (function () {
         loadClients();
         setDefaultDates();
         attachEvents();
+        bindReferenceListener_();
     }
 
     function loadClients() {
@@ -111,7 +114,6 @@ var ClientAccountPanel = (function () {
                 const id = (c && typeof c === 'object' && c.id) ? c.id : '';
                 if (label && id) {
                     clientIdMap.set(label, id);
-                    clientIdMap.set(cleanClientValue(label), id);
                 }
                 const opt = document.createElement('option');
                 opt.value = label;
@@ -120,31 +122,58 @@ var ClientAccountPanel = (function () {
         });
     }
 
+    function bindReferenceListener_() {
+        if (referenceListenerBound || typeof document === "undefined") return;
+        referenceListenerBound = true;
+        document.addEventListener("reference-data:updated", function () {
+            const view = document.getElementById("view-reportes-clientes");
+            if (view && !view.classList.contains("d-none")) {
+                loadClients();
+            }
+        });
+    }
+
     function formatClientLabel(cli) {
         if (!cli) return '';
         if (typeof cli === 'string') return cli;
         const base = cli.razonSocial || cli.nombre || '';
-        const cuit = cli.cuit ? ` (${cli.cuit})` : '';
-        return (base + cuit).trim();
+        const id = cli.id != null ? String(cli.id).trim() : '';
+        const docLabel = getClientDocLabel_(cli);
+        const meta = [];
+        if (id) meta.push(`ID: ${id}`);
+        if (docLabel) meta.push(docLabel);
+        const metaSuffix = meta.length ? ` (${meta.join(' | ')})` : '';
+        return (base + metaSuffix).trim();
     }
 
-    function cleanClientValue(raw) {
-        if (!raw) return '';
-        const idx = raw.indexOf('(');
-        return idx > 0 ? raw.slice(0, idx).trim() : raw.trim();
+    function getClientDocLabel_(cli) {
+        if (!cli || typeof cli !== 'object') return '';
+        const docType = (cli.docType || cli["TIPO DOCUMENTO"] || '').toString().trim();
+        const rawDoc = cli.docNumber || cli["NUMERO DOCUMENTO"] || cli.cuit || '';
+        if (!rawDoc) return '';
+        const fallbackType = docType || (cli.cuit ? 'CUIT' : '');
+        if (typeof InputUtils !== 'undefined' && InputUtils && typeof InputUtils.formatDocLabel === 'function') {
+            return InputUtils.formatDocLabel(fallbackType, rawDoc);
+        }
+        return (fallbackType ? (fallbackType + ' ') : '') + rawDoc;
+    }
+
+    function extractClientIdFromLabel_(label) {
+        const match = String(label || '').match(/ID\\s*:\\s*([^|)]+)/i);
+        return match ? match[1].trim() : '';
     }
 
     function getClientIdFromLabel(label) {
         if (!label) return '';
-        return clientIdMap.get(label) || clientIdMap.get(cleanClientValue(label)) || '';
+        return clientIdMap.get(label) || extractClientIdFromLabel_(label);
     }
 
     function attachEvents() {
         const searchBtn = document.getElementById('client-acc-search');
         if (searchBtn) searchBtn.addEventListener('click', handleSearch);
 
-        const openInvBtn = document.getElementById('client-acc-open-invoices');
-        if (openInvBtn) openInvBtn.addEventListener('click', openInvoicesView);
+        const pdfBtn = document.getElementById('client-acc-pdf');
+        if (pdfBtn) pdfBtn.addEventListener('click', handleExportPdf);
 
         const payBtn = document.getElementById('client-acc-pay');
         if (payBtn) payBtn.addEventListener('click', openPaymentModal);
@@ -163,13 +192,16 @@ var ClientAccountPanel = (function () {
 
     function handleSearch() {
         const clientRaw = document.getElementById('client-acc-input').value;
-        const client = cleanClientValue(clientRaw);
         const idCliente = getClientIdFromLabel(clientRaw);
         const startDate = document.getElementById('client-acc-start').value;
         const endDate = document.getElementById('client-acc-end').value;
 
-        if (!client) {
+        if (!clientRaw) {
             Alerts && Alerts.showAlert('Seleccioná un cliente', 'warning');
+            return;
+        }
+        if (!idCliente) {
+            Alerts && Alerts.showAlert('Seleccioná un cliente válido de la lista.', 'warning');
             return;
         }
 
@@ -178,10 +210,10 @@ var ClientAccountPanel = (function () {
             return;
         }
 
-        lastQuery = { clientRaw, client, idCliente, startDate, endDate };
+        lastQuery = { clientRaw, idCliente, startDate, endDate };
 
         toggleLoading(true);
-        ApiService.call('getClientAccountStatement', client, startDate, endDate, idCliente)
+        ApiService.call('getClientAccountStatement', clientRaw, startDate, endDate, idCliente)
             .then((data) => {
                 renderTable(data);
                 setDebug({ query: lastQuery, response: data }, false);
@@ -189,7 +221,7 @@ var ClientAccountPanel = (function () {
                 const rows = data && data.movimientos ? data.movimientos : [];
                 const saldoInicial = data && typeof data.saldoInicial === 'number' ? data.saldoInicial : 0;
                 if (rows.length === 0 && saldoInicial === 0) {
-                    ApiService.call('getInvoices', { cliente: client, idCliente: idCliente, fechaDesde: startDate, fechaHasta: endDate })
+                    ApiService.call('getInvoices', { idCliente: idCliente, fechaDesde: startDate, fechaHasta: endDate })
                         .then((invs) => {
                             const count = Array.isArray(invs) ? invs.length : 0;
                             const empty = document.getElementById('client-acc-empty');
@@ -212,32 +244,53 @@ var ClientAccountPanel = (function () {
             .finally(() => toggleLoading(false));
     }
 
-    function openInvoicesView() {
-        const q = lastQuery || {
-            clientRaw: document.getElementById('client-acc-input')?.value || '',
-            startDate: document.getElementById('client-acc-start')?.value || '',
-            endDate: document.getElementById('client-acc-end')?.value || ''
-        };
+    function handleExportPdf() {
+        const clientRaw = document.getElementById('client-acc-input').value;
+        const idCliente = getClientIdFromLabel(clientRaw);
+        const startDate = document.getElementById('client-acc-start').value;
+        const endDate = document.getElementById('client-acc-end').value;
 
-        const evt = new CustomEvent('view-change', { detail: { view: 'facturacion' } });
-        document.dispatchEvent(evt);
+        if (!clientRaw) {
+            Alerts && Alerts.showAlert('Seleccioná un cliente', 'warning');
+            return;
+        }
+        if (!idCliente) {
+            Alerts && Alerts.showAlert('Seleccioná un cliente válido de la lista.', 'warning');
+            return;
+        }
+        if (!startDate || !endDate) {
+            Alerts && Alerts.showAlert('Seleccioná un rango de fechas', 'warning');
+            return;
+        }
 
-        setTimeout(() => {
-            const collapseEl = document.getElementById('invoice-history-collapse');
-            if (collapseEl && typeof bootstrap !== 'undefined' && bootstrap.Collapse) {
-                try {
-                    bootstrap.Collapse.getOrCreateInstance(collapseEl, { toggle: false }).show();
-                } catch (e) { /* ignore */ }
-            }
-            const cli = document.getElementById('invoice-filter-client');
-            const from = document.getElementById('invoice-filter-from');
-            const to = document.getElementById('invoice-filter-to');
-            if (cli && q.clientRaw) cli.value = q.clientRaw;
-            if (from && q.startDate) from.value = q.startDate;
-            if (to && q.endDate) to.value = q.endDate;
-            const btn = document.getElementById('invoice-search-btn');
-            if (btn) btn.click();
-        }, 250);
+        const btn = document.getElementById('client-acc-pdf');
+        const originalContent = btn ? btn.innerHTML : '';
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Descargando...';
+        }
+
+        UiState && UiState.setGlobalLoading(true, 'Generando PDF...');
+        ApiService.call('generateClientAccountStatementPdf', clientRaw, startDate, endDate, idCliente)
+            .then(res => {
+                if (!res || !res.base64) throw new Error('No se pudo generar PDF');
+                const link = document.createElement('a');
+                link.href = 'data:application/pdf;base64,' + res.base64;
+                link.download = res.filename || 'cuenta_corriente_cliente.pdf';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            })
+            .catch(err => {
+                Alerts && Alerts.showAlert('Error generando PDF: ' + err.message, 'danger');
+            })
+            .finally(() => {
+                UiState && UiState.setGlobalLoading(false);
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = originalContent;
+                }
+            });
     }
 
     function renderTable(data) {
@@ -329,7 +382,7 @@ var ClientAccountPanel = (function () {
 
             tr.innerHTML = `
                 <td class="ps-3">${dateStr}</td>
-                <td>${r.concepto}</td>
+                <td>${escapeHtml(r.concepto)}</td>
                 <td class="text-end text-danger">${r.debe > 0 ? formatCurrency(r.debe) : '-'}</td>
                 <td class="text-end text-success">${r.haber > 0 ? formatCurrency(r.haber) : '-'}</td>
                 <td class="text-end fw-bold pe-3 ${saldoClass}">${formatCurrency(r.saldo)}</td>
@@ -343,10 +396,14 @@ var ClientAccountPanel = (function () {
 
     function openPaymentModal() {
         const clientRaw = document.getElementById('client-acc-input').value;
-        const client = cleanClientValue(clientRaw);
         const idCliente = getClientIdFromLabel(clientRaw);
-        if (!client) {
+        const clientLabel = clientRaw;
+        if (!clientRaw) {
             Alerts && Alerts.showAlert('Seleccioná un cliente primero', 'warning');
+            return;
+        }
+        if (!idCliente) {
+            Alerts && Alerts.showAlert('Seleccioná un cliente válido de la lista.', 'warning');
             return;
         }
 
@@ -364,7 +421,7 @@ var ClientAccountPanel = (function () {
                         <div class="modal-body">
                             <div class="mb-3">
                                 <label class="form-label small text-muted fw-bold">Cliente</label>
-                                <input type="text" class="form-control" value="${client}" disabled>
+                                <input type="text" class="form-control" value="${escapeHtml(clientRaw)}" disabled>
                             </div>
                             <div class="mb-3">
                                 <label class="form-label small text-muted fw-bold">Fecha</label>
@@ -373,6 +430,13 @@ var ClientAccountPanel = (function () {
                             <div class="mb-3">
                                 <label class="form-label small text-muted fw-bold">Monto</label>
                                 <input type="number" id="cp-monto" class="form-control" step="0.01">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label small text-muted fw-bold">Medio de pago</label>
+                                <select id="cp-medio" class="form-select">
+                                    <option value="">Seleccionar...</option>
+                                    ${buildPaymentMethodOptionsHtml_()}
+                                </select>
                             </div>
                             <div class="mb-3">
                                 <label class="form-label small text-muted fw-bold">Factura (opcional)</label>
@@ -404,7 +468,7 @@ var ClientAccountPanel = (function () {
         modal.show();
 
         // Cargar facturas pendientes del cliente (para vincular el pago)
-        ApiService.call('getClientInvoicesForPayment', client, idCliente)
+        ApiService.call('getClientInvoicesForPayment', '', idCliente)
             .then(list => {
                 const select = document.getElementById('cp-factura');
                 if (!select) return;
@@ -449,6 +513,7 @@ var ClientAccountPanel = (function () {
                 const fecha = document.getElementById('cp-fecha').value;
                 const monto = document.getElementById('cp-monto').value;
                 const obs = document.getElementById('cp-obs').value;
+                const medioPago = document.getElementById('cp-medio')?.value || '';
                 const facturaSelect = document.getElementById('cp-factura');
                 const facturaId = facturaSelect ? facturaSelect.value : '';
                 const facturaNumero = facturaSelect && facturaSelect.selectedOptions[0] ? (facturaSelect.selectedOptions[0].dataset.numero || '') : '';
@@ -461,10 +526,11 @@ var ClientAccountPanel = (function () {
                 UiState.setGlobalLoading(true, 'Guardando pago...');
                 ApiService.call('recordClientPayment', {
                     fecha: fecha,
-                    cliente: client,
+                    cliente: clientLabel,
                     idCliente: idCliente,
                     monto: monto,
                     detalle: obs,
+                    medioPago: medioPago,
                     idFactura: facturaId || '',
                     facturaNumero: facturaNumero
                 })
@@ -514,6 +580,35 @@ var ClientAccountPanel = (function () {
         }
         const d = new Date(v);
         return isNaN(d.getTime()) ? String(v) : d.toLocaleDateString('es-AR');
+    }
+
+    function getPaymentMethods_() {
+        if (typeof DropdownConfig !== "undefined" && DropdownConfig && typeof DropdownConfig.getOptions === "function") {
+            const list = DropdownConfig.getOptions("MEDIO DE PAGO", defaultPaymentMethods);
+            if (Array.isArray(list) && list.length) return list;
+        }
+        return defaultPaymentMethods.slice();
+    }
+
+    function buildPaymentMethodOptionsHtml_() {
+        return getPaymentMethods_()
+            .map((method) => {
+                const safe = escapeHtml(method);
+                return `<option value="${safe}">${safe}</option>`;
+            })
+            .join('');
+    }
+
+    function escapeHtml(value) {
+        if (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.escapeHtml === 'function') {
+            return HtmlHelpers.escapeHtml(value);
+        }
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
     }
 
     function setDebug(payload, show) {

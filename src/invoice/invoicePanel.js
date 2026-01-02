@@ -28,6 +28,71 @@ var InvoicePanel = (function () {
             .replace(/'/g, '&#39;');
     }
 
+    function buildOnClick_(fnName, arg) {
+        const safeArg = JSON.stringify(arg == null ? '' : String(arg));
+        return escapeHtml_(`${fnName}(${safeArg})`);
+    }
+
+    function getInvoiceStatusOptions_() {
+        const defaults = ["Pendiente", "Pagada", "Anulada", "Vencida"];
+        if (typeof DropdownConfig !== "undefined" && DropdownConfig && typeof DropdownConfig.getOptions === "function") {
+            return DropdownConfig.getOptions("INVOICE_ESTADO", defaults);
+        }
+        return defaults;
+    }
+
+    function getInvoiceComprobanteOptions_() {
+        const defaults = [
+            "Factura A",
+            "Factura B",
+            "Factura C",
+            "Nota de Crédito",
+            "Nota de Débito",
+            "Recibo"
+        ];
+        if (typeof DropdownConfig !== "undefined" && DropdownConfig && typeof DropdownConfig.getOptions === "function") {
+            return DropdownConfig.getOptions("INVOICE_COMPROBANTE", defaults);
+        }
+        return defaults;
+    }
+
+    function buildOptionsHtml_(options, selected, includeEmpty, emptyLabel) {
+        const opts = Array.isArray(options) ? options.slice() : [];
+        const sel = selected != null ? String(selected) : "";
+        if (sel && opts.indexOf(sel) === -1) {
+            opts.unshift(sel);
+        }
+        let html = "";
+        if (includeEmpty) {
+            html += `<option value="">${escapeHtml_(emptyLabel || "Todos")}</option>`;
+        }
+        opts.forEach((opt) => {
+            const safe = escapeHtml_(opt);
+            const isSelected = sel && opt === sel ? " selected" : "";
+            html += `<option value="${safe}"${isSelected}>${safe}</option>`;
+        });
+        return html;
+    }
+
+    function buildStatusOptionsHtml_(includeAll, selected) {
+        return buildOptionsHtml_(getInvoiceStatusOptions_(), selected, includeAll, "Todos");
+    }
+
+    function buildComprobanteOptionsHtml_(selected) {
+        return buildOptionsHtml_(getInvoiceComprobanteOptions_(), selected, false, "");
+    }
+
+    function ensureSelectOption_(selectEl, value) {
+        if (!selectEl || value == null || value === "") return;
+        const val = String(value);
+        const exists = Array.from(selectEl.options || []).some(opt => opt.value === val);
+        if (exists) return;
+        const opt = document.createElement("option");
+        opt.value = val;
+        opt.textContent = val;
+        selectEl.appendChild(opt);
+    }
+
 	    function render() {
 	        const container = document.getElementById(containerId);
 	        if (!container) return;
@@ -66,11 +131,7 @@ var InvoicePanel = (function () {
                         <div class="col-md-2">
                             <label class="form-label small text-muted fw-bold mb-1">Estado</label>
                             <select id="invoice-filter-status" class="form-select form-select-sm">
-                                <option value="">Todos</option>
-                                <option value="Pendiente">Pendiente</option>
-                                <option value="Pagada">Pagada</option>
-                                <option value="Anulada">Anulada</option>
-                                <option value="Vencida">Vencida</option>
+                                ${buildStatusOptionsHtml_(true)}
                             </select>
                         </div>
                         <div class="col-md-2">
@@ -265,22 +326,14 @@ var InvoicePanel = (function () {
                                     <div class="col-md-4">
                                         <label class="form-label">Estado</label>
                                         <select class="form-select" id="invoice-estado">
-                                            <option value="Pendiente">Pendiente</option>
-                                            <option value="Pagada">Pagada</option>
-                                            <option value="Anulada">Anulada</option>
-                                            <option value="Vencida">Vencida</option>
+                                            ${buildStatusOptionsHtml_(false, "Pendiente")}
                                         </select>
                                     </div>
                                     
                                     <div class="col-md-6">
                                         <label class="form-label">Comprobante</label>
                                         <select class="form-select" id="invoice-comprobante">
-                                            <option value="Factura A">Factura A</option>
-                                            <option value="Factura B" selected>Factura B</option>
-                                            <option value="Factura C">Factura C</option>
-                                            <option value="Nota de Crédito">Nota de Crédito</option>
-                                            <option value="Nota de Débito">Nota de Débito</option>
-                                            <option value="Recibo">Recibo</option>
+                                            ${buildComprobanteOptionsHtml_("Factura B")}
                                         </select>
                                     </div>
                                     <div class="col-md-6">
@@ -369,9 +422,7 @@ var InvoicePanel = (function () {
                                 <div class="col-md-6">
                                     <label class="form-label">Comprobante</label>
                                     <select class="form-select" id="invoice-att-comp">
-                                        <option value="Factura B" selected>Factura B</option>
-                                        <option value="Factura A">Factura A</option>
-                                        <option value="Factura C">Factura C</option>
+                                        ${buildComprobanteOptionsHtml_("Factura B")}
                                     </select>
                                 </div>
                                 <div class="col-md-6">
@@ -436,6 +487,26 @@ var InvoicePanel = (function () {
         const razonSocialInput = document.getElementById('invoice-razon-social');
         if (razonSocialInput) {
             razonSocialInput.addEventListener('change', autocompleteCUIT);
+        }
+
+        const cuitInput = document.getElementById('invoice-cuit');
+        if (cuitInput) {
+            cuitInput.inputMode = 'numeric';
+            if (typeof InputUtils !== 'undefined' && InputUtils && typeof InputUtils.formatDocNumber === 'function') {
+                const applyMask = () => {
+                    cuitInput.value = InputUtils.formatDocNumber(cuitInput.value, 'CUIT');
+                };
+                if (!cuitInput.dataset.maskDoc) {
+                    cuitInput.dataset.maskDoc = '1';
+                    cuitInput.addEventListener('input', applyMask);
+                    cuitInput.addEventListener('blur', applyMask);
+                }
+                applyMask();
+            }
+            if (typeof InputUtils !== 'undefined' && InputUtils && typeof InputUtils.docPlaceholder === 'function') {
+                const ph = InputUtils.docPlaceholder('CUIT');
+                if (ph) cuitInput.placeholder = ph;
+            }
         }
 
         const covSearchBtn = document.getElementById('invoice-cov-search');
@@ -571,11 +642,13 @@ var InvoicePanel = (function () {
                 : `<span class="text-muted">—</span>`;
 
             const totalLabel = r.facturado ? formatCurrency(r.facturaTotal || 0) : '—';
+            const editOnclick = buildOnClick_('InvoicePanel.editInvoice', r.facturaId);
+            const pdfOnclick = buildOnClick_('InvoicePanel.downloadPdf', r.facturaId);
             const actions = r.facturado
-                ? `<button class="btn btn-sm btn-outline-primary lt-btn-icon me-1" onclick="InvoicePanel.editInvoice('${r.facturaId}')" title="Abrir factura">
+                ? `<button class="btn btn-sm btn-outline-primary lt-btn-icon me-1" onclick="${editOnclick}" title="Abrir factura">
                         <i class="bi bi-pencil-fill"></i>
                    </button>
-                   <button class="btn btn-sm btn-outline-danger lt-btn-icon" onclick="InvoicePanel.downloadPdf('${r.facturaId}')" title="PDF">
+                   <button class="btn btn-sm btn-outline-danger lt-btn-icon" onclick="${pdfOnclick}" title="PDF">
                         <i class="bi bi-file-earmark-pdf-fill"></i>
                    </button>`
                 : `<button class="btn btn-sm btn-primary invoice-cov-generate" data-id-cliente="${escapeHtml_(String(r.idCliente || ''))}" data-cliente="${escapeHtml_(String(r.cliente || ''))}" data-period="${escapeHtml_(String(period || ''))}">
@@ -693,8 +766,43 @@ var InvoicePanel = (function () {
         if (!cli) return '';
         if (typeof cli === 'string') return cli;
         const base = cli.razonSocial || cli.nombre || '';
-        const cuit = cli.cuit ? ` (${cli.cuit})` : '';
-        return (base + cuit).trim();
+        const id = cli.id != null ? String(cli.id).trim() : '';
+        const docLabel = getClientDocLabel_(cli);
+        const meta = [];
+        if (id) meta.push(`ID: ${id}`);
+        if (docLabel) meta.push(docLabel);
+        const metaSuffix = meta.length ? ` (${meta.join(' | ')})` : '';
+        return (base + metaSuffix).trim();
+    }
+
+    function getClientLabelById_(idCliente) {
+        const idStr = idCliente != null ? String(idCliente).trim() : '';
+        if (!idStr) return '';
+
+        for (const entry of clientIdMap.entries()) {
+            const label = entry[0];
+            const idVal = entry[1];
+            if (String(idVal) === idStr) {
+                return label;
+            }
+        }
+
+        const refs = ReferenceService && ReferenceService.get ? ReferenceService.get() : null;
+        const clientes = refs && refs.clientes ? refs.clientes : [];
+        const match = clientes.find(c => c && typeof c === 'object' && String(c.id || '').trim() === idStr);
+        return match ? formatClientLabel(match) : '';
+    }
+
+    function getClientDocLabel_(cli) {
+        if (!cli || typeof cli !== 'object') return '';
+        const docType = (cli.docType || cli["TIPO DOCUMENTO"] || '').toString().trim();
+        const rawDoc = cli.docNumber || cli["NUMERO DOCUMENTO"] || cli.cuit || '';
+        if (!rawDoc) return '';
+        const fallbackType = docType || (cli.cuit ? 'CUIT' : '');
+        if (typeof InputUtils !== 'undefined' && InputUtils && typeof InputUtils.formatDocLabel === 'function') {
+            return InputUtils.formatDocLabel(fallbackType, rawDoc);
+        }
+        return (fallbackType ? (fallbackType + ' ') : '') + rawDoc;
     }
 
     function autocompleteCUIT() {
@@ -710,14 +818,21 @@ var InvoicePanel = (function () {
 
         const cliente = clientes.find(c => {
             const label = formatClientLabel(c);
-            return label === selectedClient ||
-                (c.razonSocial && c.razonSocial === selectedClient) ||
-                (c.nombre && c.nombre === selectedClient);
+            return label === selectedClient;
         });
 
         if (cliente) {
-            if (cliente.cuit) {
-                cuitInput.value = cliente.cuit;
+            const docType = (cliente.docType || cliente["TIPO DOCUMENTO"] || '').toString().trim().toUpperCase();
+            const docNumber = cliente.docNumber || cliente["NUMERO DOCUMENTO"] || cliente.cuit || '';
+            const shouldFill = docType === 'CUIT' || docType === 'CUIL' || (!!cliente.cuit);
+            if (shouldFill && docNumber) {
+                if (typeof InputUtils !== 'undefined' && InputUtils && typeof InputUtils.formatDocNumber === 'function') {
+                    cuitInput.value = InputUtils.formatDocNumber(docNumber, docType || 'CUIT');
+                } else {
+                    cuitInput.value = docNumber;
+                }
+            } else {
+                cuitInput.value = '';
             }
             // Guardar el ID del cliente
             if (cliente.id && idClienteInput) {
@@ -732,24 +847,32 @@ var InvoicePanel = (function () {
         return idx > 0 ? raw.slice(0, idx).trim() : raw.trim();
     }
 
+    function extractClientIdFromLabel_(label) {
+        const match = String(label || '').match(/ID\\s*:\\s*([^|)]+)/i);
+        return match ? match[1].trim() : '';
+    }
+
     function getClientIdFromLabel(label) {
         if (!label) return '';
-        return clientIdMap.get(label) || '';
+        return clientIdMap.get(label) || extractClientIdFromLabel_(label);
     }
 
     function searchClientHours() {
         const clientInput = document.getElementById('invoice-gen-client');
         const clienteRaw = clientInput ? clientInput.value.trim() : '';
-        const cliente = cleanClientValue(clienteRaw);
-        if (!cliente) {
+        if (!clienteRaw) {
             Alerts && Alerts.showAlert('Elegí un cliente para buscar.', 'warning');
+            return;
+        }
+        const idCliente = getClientIdFromLabel(clienteRaw);
+        if (!idCliente) {
+            Alerts && Alerts.showAlert('Seleccioná un cliente válido de la lista.', 'warning');
             return;
         }
         const desde = document.getElementById('invoice-gen-desde')?.value || '';
         const hasta = document.getElementById('invoice-gen-hasta')?.value || '';
-        const idCliente = getClientIdFromLabel(clienteRaw || cliente);
 
-        lastGeneratorFilters = { cliente, clienteLabel: clienteRaw || cliente, idCliente: idCliente, fechaDesde: desde, fechaHasta: hasta };
+        lastGeneratorFilters = { cliente: clienteRaw, clienteLabel: clienteRaw, idCliente: idCliente, fechaDesde: desde, fechaHasta: hasta };
         fetchGeneratorHours();
     }
 
@@ -758,6 +881,11 @@ var InvoicePanel = (function () {
         const cliente = clientInput ? clientInput.value.trim() : '';
         if (!cliente) {
             Alerts && Alerts.showAlert('Elegí un cliente para facturar.', 'warning');
+            return;
+        }
+        const idCliente = getClientIdFromLabel(cliente);
+        if (!idCliente) {
+            Alerts && Alerts.showAlert('Seleccioná un cliente válido de la lista.', 'warning');
             return;
         }
         const desde = document.getElementById('invoice-gen-desde')?.value || '';
@@ -771,7 +899,7 @@ var InvoicePanel = (function () {
         const clientRaw = document.getElementById('invoice-filter-client')?.value || '';
         const idCliente = getClientIdFromLabel(clientRaw);
         return {
-            cliente: cleanClientValue(clientRaw),
+            cliente: clientRaw,
             idCliente: idCliente,
             periodo: document.getElementById('invoice-filter-period')?.value || '',
             estado: document.getElementById('invoice-filter-status')?.value || '',
@@ -782,6 +910,10 @@ var InvoicePanel = (function () {
 
     function handleSearch() {
         const filters = getFilters();
+        if (filters.cliente && !filters.idCliente) {
+            Alerts && Alerts.showAlert('Seleccioná un cliente válido de la lista.', 'warning');
+            return;
+        }
         toggleLoading(true);
 
         selectedInvoiceIds.clear();
@@ -828,16 +960,22 @@ var InvoicePanel = (function () {
 
 	        pageItems.forEach(item => {
 	            const tr = document.createElement('tr');
+	            const fecha = escapeHtml_(item.fecha || '-');
+	            const empleado = escapeHtml_(item.empleado || '-');
+	            const horas = escapeHtml_(String(item.horas != null ? item.horas : 0));
+	            const observaciones = escapeHtml_(item.observaciones || '');
+	            const editOnclick = buildOnClick_('InvoicePanel.editAttendance', item.id);
+	            const deleteOnclick = buildOnClick_('InvoicePanel.deleteAttendance', item.id);
 	            tr.innerHTML = `
-	                <td class="ps-3">${item.fecha || '-'}</td>
-	                <td>${item.empleado || '-'}</td>
-	                <td>${item.horas || 0}</td>
-	                <td>${item.observaciones || ''}</td>
+	                <td class="ps-3">${fecha}</td>
+	                <td>${empleado}</td>
+	                <td>${horas}</td>
+	                <td>${observaciones}</td>
 	                <td class="text-center">
-	                    <button class="btn btn-sm btn-outline-primary lt-btn-icon me-1" onclick="InvoicePanel.editAttendance(${item.id})" title="Editar">
+	                    <button class="btn btn-sm btn-outline-primary lt-btn-icon me-1" onclick="${editOnclick}" title="Editar">
 	                        <i class="bi bi-pencil-fill"></i>
 	                    </button>
-	                    <button class="btn btn-sm btn-outline-danger lt-btn-icon" onclick="InvoicePanel.deleteAttendance(${item.id})" title="Eliminar">
+	                    <button class="btn btn-sm btn-outline-danger lt-btn-icon" onclick="${deleteOnclick}" title="Eliminar">
 	                        <i class="bi bi-trash"></i>
 	                    </button>
 	                </td>
@@ -877,22 +1015,32 @@ var InvoicePanel = (function () {
             const tr = document.createElement('tr');
             const estado = inv['ESTADO'] || 'Pendiente';
             const estadoBadge = getEstadoBadge(estado);
+            const idStr = inv.ID != null ? String(inv.ID) : '';
+            const safeIdAttr = escapeHtml_(idStr);
+            const toggleOnclick = escapeHtml_(`InvoicePanel.toggleInvoiceSelection(${JSON.stringify(idStr)}, this.checked)`);
+            const editOnclick = buildOnClick_('InvoicePanel.editInvoice', idStr);
+            const deleteOnclick = buildOnClick_('InvoicePanel.deleteInvoice', idStr);
+            const fecha = escapeHtml_(inv['FECHA'] || '-');
+            const periodo = escapeHtml_(periodLabel || '-');
+            const numero = escapeHtml_(inv['NUMERO'] || 'S/N');
+            const razon = escapeHtml_(inv['RAZÓN SOCIAL'] || '-');
+            const total = escapeHtml_(formatCurrency(inv['TOTAL']));
 
 	            tr.innerHTML = `
                 <td class="ps-3">
-                    <input type="checkbox" class="invoice-select" data-id="${inv.ID}" ${selectedInvoiceIds.has(String(inv.ID)) ? 'checked' : ''} onclick="InvoicePanel.toggleInvoiceSelection('${inv.ID}', this.checked)">
+                    <input type="checkbox" class="invoice-select" data-id="${safeIdAttr}" ${selectedInvoiceIds.has(String(inv.ID)) ? 'checked' : ''} onclick="${toggleOnclick}">
                 </td>
-                <td class="ps-3">${inv['FECHA'] || '-'}</td>
-                <td>${periodLabel || '-'}</td>
-                <td><span class="badge bg-light text-dark border">${inv['NUMERO'] || 'S/N'}</span></td>
-                <td>${inv['RAZÓN SOCIAL'] || '-'}</td>
-                <td class="text-end fw-bold">${formatCurrency(inv['TOTAL'])}</td>
+                <td class="ps-3">${fecha}</td>
+                <td>${periodo}</td>
+                <td><span class="badge bg-light text-dark border">${numero}</span></td>
+                <td>${razon}</td>
+                <td class="text-end fw-bold">${total}</td>
 	                <td class="text-center">${estadoBadge}</td>
 	                <td class="text-center">
-	                    <button class="btn btn-sm btn-outline-primary lt-btn-icon me-1" onclick="InvoicePanel.editInvoice('${inv.ID}')" title="Editar">
+	                    <button class="btn btn-sm btn-outline-primary lt-btn-icon me-1" onclick="${editOnclick}" title="Editar">
 	                        <i class="bi bi-pencil-fill"></i>
 	                    </button>
-	                    <button class="btn btn-sm btn-outline-danger lt-btn-icon" onclick="InvoicePanel.deleteInvoice('${inv.ID}')" title="Anular">
+	                    <button class="btn btn-sm btn-outline-danger lt-btn-icon" onclick="${deleteOnclick}" title="Anular">
 	                        <i class="bi bi-x-circle-fill"></i>
 	                    </button>
 	                </td>
@@ -913,7 +1061,9 @@ var InvoicePanel = (function () {
             'Anulada': '<span class="badge bg-danger">Anulada</span>',
             'Vencida': '<span class="badge bg-dark">Vencida</span>'
         };
-        return badges[estado] || '<span class="badge bg-secondary">' + estado + '</span>';
+        if (badges[estado]) return badges[estado];
+        const safeEstado = escapeHtml_(estado || '');
+        return '<span class="badge bg-secondary">' + safeEstado + '</span>';
     }
 
     function renderInvoicePagination(totalPages) {
@@ -1000,12 +1150,18 @@ var InvoicePanel = (function () {
 
         if (invoiceData) {
             document.getElementById('invoice-id').value = invoiceData.ID || '';
-            document.getElementById('invoice-id-cliente').value = invoiceData['ID_CLIENTE'] || '';
+            const idCliente = invoiceData['ID_CLIENTE'] || '';
+            const clienteLabel = idCliente ? getClientLabelById_(idCliente) : '';
+            document.getElementById('invoice-id-cliente').value = idCliente;
             document.getElementById('invoice-fecha').value = invoiceData['FECHA'] || '';
             document.getElementById('invoice-periodo').value = invoiceData['PERIODO'] || '';
-            document.getElementById('invoice-comprobante').value = invoiceData['COMPROBANTE'] || 'Factura B';
+            const compSelect = document.getElementById('invoice-comprobante');
+            if (compSelect) {
+                ensureSelectOption_(compSelect, invoiceData['COMPROBANTE']);
+                compSelect.value = invoiceData['COMPROBANTE'] || 'Factura B';
+            }
             document.getElementById('invoice-numero').value = invoiceData['NUMERO'] || '';
-            document.getElementById('invoice-razon-social').value = invoiceData['RAZÓN SOCIAL'] || '';
+            document.getElementById('invoice-razon-social').value = clienteLabel || invoiceData['RAZÓN SOCIAL'] || '';
             document.getElementById('invoice-cuit').value = invoiceData['CUIT'] || '';
             document.getElementById('invoice-concepto').value = invoiceData['CONCEPTO'] || '';
             document.getElementById('invoice-horas').value = invoiceData['HORAS'] || '';
@@ -1013,13 +1169,18 @@ var InvoicePanel = (function () {
             document.getElementById('invoice-importe').value = invoiceData['IMPORTE'] || '';
             document.getElementById('invoice-subtotal').value = invoiceData['SUBTOTAL'] || '';
             document.getElementById('invoice-total').value = invoiceData['TOTAL'] || '';
-            document.getElementById('invoice-estado').value = invoiceData['ESTADO'] || 'Pendiente';
+            const estadoSelect = document.getElementById('invoice-estado');
+            if (estadoSelect) {
+                ensureSelectOption_(estadoSelect, invoiceData['ESTADO']);
+                estadoSelect.value = invoiceData['ESTADO'] || 'Pendiente';
+            }
             document.getElementById('invoice-observaciones').value = invoiceData['OBSERVACIONES'] || '';
         } else {
             // Valores por defecto para nueva factura
             const today = new Date().toISOString().split('T')[0];
             document.getElementById('invoice-fecha').value = today;
-            document.getElementById('invoice-estado').value = 'Pendiente';
+            const estadoSelect = document.getElementById('invoice-estado');
+            if (estadoSelect) estadoSelect.value = 'Pendiente';
         }
 
         // Completar CUIT e ID si existe en referencias
@@ -1078,6 +1239,12 @@ var InvoicePanel = (function () {
 
         const id = document.getElementById('invoice-id').value;
         const idCliente = document.getElementById('invoice-id-cliente').value;
+        if (!idCliente) {
+            Alerts && Alerts.showAlert('Seleccioná un cliente válido de la lista.', 'warning');
+            return;
+        }
+        const razonRaw = document.getElementById('invoice-razon-social').value;
+        const razonSocial = cleanClientValue(razonRaw) || razonRaw;
 
         const data = {
             'ID_CLIENTE': idCliente || '',
@@ -1085,7 +1252,7 @@ var InvoicePanel = (function () {
             'PERIODO': document.getElementById('invoice-periodo').value,
             'COMPROBANTE': document.getElementById('invoice-comprobante').value,
             'NUMERO': document.getElementById('invoice-numero').value,
-            'RAZÓN SOCIAL': document.getElementById('invoice-razon-social').value,
+            'RAZÓN SOCIAL': razonSocial,
             'CUIT': document.getElementById('invoice-cuit').value,
             'CONCEPTO': document.getElementById('invoice-concepto').value,
             'HORAS': document.getElementById('invoice-horas').value,
@@ -1163,9 +1330,12 @@ var InvoicePanel = (function () {
 
         const clienteRaw = clienteInput ? clienteInput.value.trim() : '';
         const idCliente = getClientIdFromLabel(clienteRaw);
-        const cliente = cleanClientValue(clienteRaw);
         if (!clienteRaw) {
             Alerts && Alerts.showAlert('Elegí un cliente', 'warning');
+            return;
+        }
+        if (!idCliente) {
+            Alerts && Alerts.showAlert('Seleccioná un cliente válido de la lista.', 'warning');
             return;
         }
 
@@ -1173,7 +1343,7 @@ var InvoicePanel = (function () {
         const fechaHasta = hastaInput && hastaInput.value ? hastaInput.value : '';
 
         UiState && UiState.setGlobalLoading(true, 'Generando factura desde asistencia...');
-        ApiService.call('createInvoiceFromAttendance', cliente, fechaDesde, fechaHasta, {
+        ApiService.call('createInvoiceFromAttendance', clienteRaw, fechaDesde, fechaHasta, {
             comprobante: compInput ? compInput.value : '',
             numero: numInput ? numInput.value : '',
             observaciones: obsInput ? obsInput.value : ''
@@ -1202,12 +1372,15 @@ var InvoicePanel = (function () {
 
         const clienteRaw = clientInput ? clientInput.value.trim() : '';
         const idCliente = getClientIdFromLabel(clienteRaw);
-        const cliente = cleanClientValue(clienteRaw);
         const fechaDesde = desdeInput && desdeInput.value ? desdeInput.value : '';
         const fechaHasta = hastaInput && hastaInput.value ? hastaInput.value : '';
 
         if (!clienteRaw) {
             Alerts && Alerts.showAlert('Elegí un cliente antes de generar.', 'warning');
+            return;
+        }
+        if (!idCliente) {
+            Alerts && Alerts.showAlert('Seleccioná un cliente válido de la lista.', 'warning');
             return;
         }
         if (!fechaDesde || !fechaHasta) {
@@ -1216,7 +1389,7 @@ var InvoicePanel = (function () {
         }
 
         UiState && UiState.setGlobalLoading(true, 'Generando factura con filtros...');
-        ApiService.call('createInvoiceFromAttendance', cliente, fechaDesde, fechaHasta, {}, idCliente)
+        ApiService.call('createInvoiceFromAttendance', clienteRaw, fechaDesde, fechaHasta, {}, idCliente)
             .then(() => {
                 Alerts && Alerts.showAlert('Factura generada.', 'success');
                 handleSearch();
@@ -1368,7 +1541,7 @@ var InvoicePanel = (function () {
             const totalHoras = generatorHours.reduce((acc, r) => acc + (Number(r.horas) || 0), 0);
             preset['HORAS'] = totalHoras || '';
             preset['CONCEPTO'] = `Servicios ${cliente} (${desde || ''} a ${hasta || ''})`;
-            const idCli = getClientIdFromLabel(clienteRaw || cliente);
+            const idCli = getClientIdFromLabel(clienteRaw);
             if (idCli) {
                 preset['ID_CLIENTE'] = idCli;
             }

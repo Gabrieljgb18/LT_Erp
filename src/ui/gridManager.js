@@ -190,6 +190,28 @@
             });
         }
 
+        function renderLoading(tipoFormato, message) {
+            const format = tipoFormato || currentFormat;
+            if (!format) return;
+            const formDef = FORM_DEFINITIONS[format];
+            const visibleFields = formDef && Array.isArray(formDef.fields)
+                ? formDef.fields.filter(field => field.type !== 'section' && !field.hidden)
+                : [];
+            const colSpan = (visibleFields.slice(0, 5).length || 1) + 1;
+            const tbody = document.getElementById('grid-body');
+            if (!tbody) return;
+            tbody.innerHTML = `
+                <tr>
+                    <td class="text-center text-muted py-5" colspan="${colSpan}">
+                        <div class="d-flex flex-column align-items-center gap-2">
+                            <div class="spinner-border text-primary" role="status"></div>
+                            <div class="small">${message || "Actualizando registros..."}</div>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
+
         /**
          * Abre el modal para editar un registro
          */
@@ -257,6 +279,9 @@
             }
             if (ClientTagsField && typeof ClientTagsField.syncFromValue === "function") {
                 ClientTagsField.syncFromValue();
+            }
+            if (FormManager && typeof FormManager.applyInputMasks === "function") {
+                FormManager.applyInputMasks();
             }
         }
 
@@ -371,6 +396,7 @@
 
             // Aquí iría la lógica para recargar los datos desde el servidor
             if (ApiService) {
+                renderLoading(currentFormat, "Actualizando registros...");
                 ApiService.call('searchRecords', currentFormat, '')
                     .then(records => {
                         renderGrid(currentFormat, records);
@@ -383,6 +409,7 @@
 
         return {
             renderGrid,
+            renderLoading,
             openModal,
             closeModal,
             getCurrentEditingRecord,

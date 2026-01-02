@@ -26,12 +26,16 @@
          * @param {Array} empleados - Lista de empleados
          * @returns {string} HTML de opciones
          */
-        function getEmpleadoOptionsHtml(selected, empleados = []) {
+        function getEmpleadoOptionsHtml(selectedId, empleados = []) {
+            const selected = selectedId != null ? String(selectedId) : '';
             const opts = ['<option value="">Seleccionar...</option>'];
             empleados.forEach(emp => {
-                const sel = emp === selected ? " selected" : "";
-                opts.push('<option value="' + escapeHtml(emp) + '"' + sel + ">" +
-                    escapeHtml(emp) + "</option>");
+                const label = typeof emp === 'string' ? emp : (emp.nombre || emp.empleado || emp.label || '');
+                const id = emp && typeof emp === 'object' && emp.id != null ? String(emp.id) : '';
+                if (!id || !label) return;
+                const sel = selected && id === selected ? " selected" : "";
+                opts.push('<option value="' + escapeHtml(id) + '" data-name="' + escapeHtml(label) + '"' + sel + ">" +
+                    escapeHtml(label) + "</option>");
             });
             return opts.join("");
         }

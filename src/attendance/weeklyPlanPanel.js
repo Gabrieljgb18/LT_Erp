@@ -7,7 +7,6 @@
 (function (global) {
     const WeeklyPlanPanel = (() => {
         let referenceData = { clientes: [], empleados: [] };
-        let clientIdMap = new Map();
 
         // Estado interno para navegación
         let currentContainer = null;
@@ -16,35 +15,34 @@
 
         function init(refData) {
             referenceData = refData;
-            buildClientIdMap_();
         }
 
         function formatClientLabel_(cli) {
             if (!cli) return '';
             if (typeof cli === 'string') return cli;
             const base = cli.razonSocial || cli.nombre || '';
-            const cuit = cli.cuit ? ` (${cli.cuit})` : '';
-            return (base + cuit).trim();
+            const id = cli.id != null ? String(cli.id).trim() : '';
+            const docLabel = getClientDocLabel_(cli);
+            const meta = [];
+            if (id) meta.push(`ID: ${id}`);
+            if (docLabel) meta.push(docLabel);
+            const metaSuffix = meta.length ? ` (${meta.join(' | ')})` : '';
+            return (base + metaSuffix).trim();
         }
 
-        function buildClientIdMap_() {
-            clientIdMap = new Map();
-            const clientes = referenceData && referenceData.clientes ? referenceData.clientes : [];
-            clientes.forEach(c => {
-                if (!c || typeof c === 'string') return;
-                const id = c.id || c.ID || c.ID_CLIENTE;
-                if (!id) return;
-                const base = (c.razonSocial || c.nombre || '').toString().trim();
-                const label = formatClientLabel_(c);
-                if (label) clientIdMap.set(label, String(id));
-                if (base) clientIdMap.set(base, String(id));
-            });
+        function getClientDocLabel_(cli) {
+            if (!cli || typeof cli !== 'object') return '';
+            const docType = (cli.docType || cli["TIPO DOCUMENTO"] || '').toString().trim();
+            const rawDoc = cli.docNumber || cli["NUMERO DOCUMENTO"] || cli.cuit || '';
+            if (!rawDoc) return '';
+            const fallbackType = docType || (cli.cuit ? 'CUIT' : '');
+            if (typeof InputUtils !== 'undefined' && InputUtils && typeof InputUtils.formatDocLabel === 'function') {
+                return InputUtils.formatDocLabel(fallbackType, rawDoc);
+            }
+            return (fallbackType ? (fallbackType + ' ') : '') + rawDoc;
         }
 
-        function getClientIdFromLabel_(label) {
-            if (!label) return '';
-            return clientIdMap.get(label) || '';
-        }
+        // IDs vienen desde el select, sin fallback por nombre.
 
         function formatDateForInput(v) {
             if (!v) return '';
@@ -96,6 +94,9 @@
 
                 // Intentar obtener cliente de varias formas (CLIENTE, Cliente, cliente)
                 let clienteName = r.cliente || r.CLIENTE || r.Cliente;
+                const idCliente = r.ID_CLIENTE || r.idCliente || "";
+                const idEmpleado = r.ID_EMPLEADO || r.idEmpleado || "";
+                if (!idCliente || !idEmpleado) return;
 
                 // Si es un objeto (referencia), intentar obtener nombre o razon social
                 if (typeof clienteName === 'object' && clienteName !== null) {
@@ -107,11 +108,13 @@
                 // Clave única: Cliente + Vigencia
                 const vigDesde = formatDateForInput(r["VIGENTE DESDE"] || r.vigDesde);
                 const vigHasta = formatDateForInput(r["VIGENTE HASTA"] || r.vigHasta);
-                const key = `${cliente}|${vigDesde}|${vigHasta}`;
+                const clienteKey = `id:${idCliente}`;
+                const key = `${clienteKey}|${vigDesde}|${vigHasta}`;
 
                 if (!grouped[key]) {
                     grouped[key] = {
                         cliente: cliente,
+                        idCliente: idCliente || "",
                         vigDesde: vigDesde,
                         vigHasta: vigHasta,
                         horasTotales: 0,
@@ -132,7 +135,9 @@
                 const normalizedRow = {
                     id: r.ID || r.id,
                     cliente: cliente,
+                    idCliente: idCliente || "",
                     empleado: r.EMPLEADO || r.empleado || r.Empleado,
+                    idEmpleado: idEmpleado || "",
                     diaSemana: dia,
                     horaEntrada: r["HORA ENTRADA"] || r.HORA_ENTRADA || r.horaEntrada,
                     horasPlan: horas,
@@ -200,12 +205,14 @@
                     html += '<td class="small">' + (diasStr || '-') + '</td>';
                     html += '<td class="text-end">';
                     // Guardamos key en data-key para recuperar
-                    const key = `${item.cliente}|${item.vigDesde}|${item.vigHasta}`;
+                    if (!item.idCliente) return;
+                    const keyBase = `id:${item.idCliente}`;
+                    const key = `${keyBase}|${item.vigDesde}|${item.vigHasta}`;
 
                     // Guardar filas en caché para recuperación segura
                     planGroupsCache[key] = item.rows;
 
-                    html += `<button class="btn btn-sm btn-outline-primary me-1 btn-editar-plan" data-key="${HtmlHelpers.escapeHtml(key)}"><i class="bi bi-pencil-square me-1"></i>Editar</button>`;
+                    html += `<button class="btn btn-sm btn-outline-primary me-1 btn-editar-plan" data-key="${HtmlHelpers.escapeHtml(key)}" data-id-cliente="${HtmlHelpers.escapeHtml(item.idCliente)}" data-cliente-label="${HtmlHelpers.escapeHtml(item.cliente)}"><i class="bi bi-pencil-square me-1"></i>Editar</button>`;
                     html += '</td>';
                     html += '</tr>';
                 });
@@ -234,8 +241,13 @@
 
             container.querySelectorAll('.btn-editar-plan').forEach(btn => {
                 btn.addEventListener('click', (e) => {
-                    const key = e.target.dataset.key;
-                    const [cliente, desde, hasta] = key.split('|');
+                    const target = e.currentTarget || e.target;
+                    const key = target.dataset.key;
+                    const idCliente = target.dataset.idCliente || '';
+                    const clienteLabel = target.dataset.clienteLabel || '';
+                    const parts = key.split('|');
+                    const desde = parts[1] || '';
+                    const hasta = parts[2] || '';
 
                     // Recuperar filas directamente del caché
                     const rows = planGroupsCache[key] || [];
@@ -244,19 +256,19 @@
                         console.warn("No se encontraron filas en caché para:", key);
                     }
 
-                    switchToDetail(cliente, rows, { desde, hasta });
+                    switchToDetail(idCliente, clienteLabel, rows, { desde, hasta });
                 });
             });
 
             const btnNuevo = container.querySelector('#btn-nuevo-plan');
             if (btnNuevo) {
                 btnNuevo.addEventListener('click', () => {
-                    switchToDetail(null, [], null); // Nuevo (sin cliente preseleccionado)
+                    switchToDetail('', '', [], null); // Nuevo (sin cliente preseleccionado)
                 });
             }
         }
 
-        function switchToDetail(cliente, preloadedRows, originalVigencia) {
+        function switchToDetail(clienteId, clienteLabel, preloadedRows, originalVigencia) {
             if (!currentContainer) return;
 
             currentOriginalVigencia = originalVigencia; // Guardar vigencia original
@@ -265,22 +277,22 @@
             render(currentContainer);
 
             // Si hay cliente, seleccionarlo automáticamente
-            if (cliente) {
+            if (clienteId) {
                 const select = document.getElementById('field-CLIENTE');
                 if (select) {
-                    select.value = cliente;
+                    select.value = clienteId;
                     // Si tenemos filas precargadas, usarlas directamente en lugar de fetch
                     if (preloadedRows && preloadedRows.length > 0) {
                         // Simular carga de horas pedidas (opcional, o fetch solo horas)
                         // Para simplificar, llamamos a buildWeeklyPlanPanel directamente
                         // Pero necesitamos infoHoras. Podemos hacer un fetch rápido solo de horas.
 
-                        ApiService.callLatest('weekly-hours-' + cliente, 'getClientWeeklyRequestedHours', cliente)
+                        ApiService.callLatest('weekly-hours-' + clienteId, 'getClientWeeklyRequestedHours', clienteLabel, clienteId)
                             .then(function (infoHoras) {
-                                buildWeeklyPlanPanel(preloadedRows, cliente, infoHoras || null);
+                                buildWeeklyPlanPanel(preloadedRows, clienteLabel, infoHoras || null);
                             })
                             .catch(function () {
-                                buildWeeklyPlanPanel(preloadedRows, cliente, null);
+                                buildWeeklyPlanPanel(preloadedRows, clienteLabel, null);
                             });
                     } else {
                         // Disparar evento change para cargar los datos (si no hay filas precargadas)
@@ -366,9 +378,12 @@
 
         function buildClienteOptions() {
             return referenceData.clientes.map(c => {
-                const nombre = c.razonSocial || c.nombre || c;
-                return `<option value="${HtmlHelpers.escapeHtml(nombre)}">${HtmlHelpers.escapeHtml(nombre)}</option>`;
-            }).join('');
+                if (!c || typeof c !== 'object' || c.id == null) return '';
+                const label = formatClientLabel_(c);
+                const id = String(c.id);
+                if (!label || !id) return '';
+                return `<option value="${HtmlHelpers.escapeHtml(id)}">${HtmlHelpers.escapeHtml(label)}</option>`;
+            }).filter(Boolean).join('');
         }
 
         function setup() {
@@ -384,9 +399,10 @@
 
             if (!clienteSelect) return;
 
-            const cliente = clienteSelect.value;
-            const idCliente = getClientIdFromLabel_(cliente);
-            if (!cliente) {
+            const selectedOption = clienteSelect.selectedOptions ? clienteSelect.selectedOptions[0] : null;
+            const idCliente = clienteSelect.value;
+            const cliente = selectedOption ? selectedOption.textContent : '';
+            if (!idCliente) {
                 // Limpiar si no hay cliente
                 if (container) container.innerHTML = '';
                 return;
@@ -399,7 +415,7 @@
                 "Cargando plan de <strong>" + HtmlHelpers.escapeHtml(cliente) + "</strong>..."
             );
 
-            ApiService.callLatest('weekly-plan-' + cliente, 'getWeeklyPlanForClient', cliente, idCliente)
+            ApiService.callLatest('weekly-plan-' + idCliente, 'getWeeklyPlanForClient', '', idCliente)
                 .then(function (rows) {
                     if (rows && rows.ignored) return;
                     const planRows = Array.isArray(rows) ? rows : [];
@@ -407,9 +423,9 @@
                     const currentCliente = currentClienteEl ? currentClienteEl.value : '';
 
                     // Si cambió el cliente mientras cargaba, ignorar
-                    if (currentCliente !== cliente) return;
+                    if (currentCliente !== idCliente) return;
 
-                    return ApiService.callLatest('weekly-hours-' + cliente, 'getClientWeeklyRequestedHours', cliente)
+                    return ApiService.callLatest('weekly-hours-' + idCliente, 'getClientWeeklyRequestedHours', cliente, idCliente)
                         .then(function (infoHoras) {
                             if (infoHoras && infoHoras.ignored) return;
                             buildWeeklyPlanPanel(planRows, cliente, infoHoras || null);
@@ -454,14 +470,16 @@
             const vigDesdeVal = formatDateForInput(rows[0].vigDesde || vigDesdeInputVal());
             const vigHastaVal = formatDateForInput(rows[0].vigHasta || vigHastaInputVal());
 
-            // Agrupar por empleado
+            // Agrupar por empleado (por ID)
             const groupedByEmpleado = {};
             rows.forEach((r, idx) => {
-                const emp = r.empleado || "Sin asignar";
-                if (!groupedByEmpleado[emp]) {
-                    groupedByEmpleado[emp] = [];
+                const empName = r.empleado || "Sin asignar";
+                const empId = r.idEmpleado != null && r.idEmpleado !== '' ? String(r.idEmpleado) : '';
+                const key = empId ? `id:${empId}` : 'sin-id';
+                if (!groupedByEmpleado[key]) {
+                    groupedByEmpleado[key] = { label: empName, id: empId, rows: [] };
                 }
-                groupedByEmpleado[emp].push({ ...r, originalIdx: idx });
+                groupedByEmpleado[key].rows.push({ ...r, originalIdx: idx });
             });
 
             let html = "";
@@ -518,8 +536,10 @@
             // Cards por empleado
             html += '<div id="weekly-plan-cards" class="d-flex flex-column gap-3">';
 
-            Object.keys(groupedByEmpleado).forEach((empleado, empIdx) => {
-                const empleadoRows = groupedByEmpleado[empleado];
+            Object.keys(groupedByEmpleado).forEach((key, empIdx) => {
+                const group = groupedByEmpleado[key];
+                const empleado = group.label;
+                const empleadoRows = group.rows;
                 const collapseId = "plan-emp-" + empIdx;
                 const totalHoras = empleadoRows.reduce((sum, r) => sum + (parseFloat(r.horasPlan) || 0), 0);
                 const activeDays = empleadoRows.length;
@@ -562,7 +582,7 @@
                 // Días del empleado
                 empleadoRows.forEach((r) => {
                     const rowId = "plan-row-" + r.originalIdx;
-                    const empleadoOptions = HtmlHelpers.getEmpleadoOptionsHtml(r.empleado || "", referenceData.empleados);
+                    const empleadoOptions = HtmlHelpers.getEmpleadoOptionsHtml(r.idEmpleado || "", referenceData.empleados);
                     const diaOptions = HtmlHelpers.getDiaOptionsHtml(r.diaSemana || "");
                     const horaFormatted = HtmlHelpers.formatHoraEntradaForInput(r.horaEntrada);
                     html += '<div class="lt-surface lt-surface--subtle p-3 mb-2">';
@@ -788,8 +808,10 @@
                     const horasInput = document.getElementById(`plan-row-${currentIdx}-horasPlan`);
                     const obsInput = document.getElementById(`plan-row-${currentIdx}-obs`);
 
+                    const selectedOption = empleadoSelect && empleadoSelect.selectedOptions ? empleadoSelect.selectedOptions[0] : null;
                     currentRows.push({
-                        empleado: empleadoSelect ? empleadoSelect.value : "",
+                        empleado: selectedOption ? selectedOption.textContent : "",
+                        idEmpleado: empleadoSelect ? empleadoSelect.value : "",
                         diaSemana: diaSelect ? diaSelect.value : "",
                         horaEntrada: horaInput ? horaInput.value : "",
                         horasPlan: horasInput ? horasInput.value : "",
@@ -808,9 +830,10 @@
             const clienteSelect = document.getElementById("field-CLIENTE");
             if (!clienteSelect) return;
 
-            const cliente = clienteSelect.value;
-            const idCliente = getClientIdFromLabel_(cliente);
-            if (!cliente) {
+            const selectedOption = clienteSelect.selectedOptions ? clienteSelect.selectedOptions[0] : null;
+            const idCliente = clienteSelect.value;
+            const cliente = selectedOption ? selectedOption.textContent : '';
+            if (!idCliente) {
                 if (Alerts) Alerts.showAlert("Seleccioná un cliente primero.", "warning");
                 return;
             }
@@ -832,6 +855,7 @@
                     itemsMap.set(idx, {
                         id: "",
                         empleado: "",
+                        idEmpleado: "",
                         diaSemana: "",
                         horaEntrada: "",
                         horasPlan: "",
@@ -844,7 +868,12 @@
                 const val = el.value;
 
                 if (field === "id") obj.id = val;
-                if (field === "empleado") obj.empleado = val;
+                if (field === "empleado") {
+                    const empleadoSelect = document.getElementById(`plan-row-${idx}-empleado`);
+                    const selectedEmp = empleadoSelect && empleadoSelect.selectedOptions ? empleadoSelect.selectedOptions[0] : null;
+                    obj.idEmpleado = empleadoSelect ? empleadoSelect.value : "";
+                    obj.empleado = selectedEmp ? selectedEmp.textContent : "";
+                }
                 if (field === "dia") obj.diaSemana = val;
                 if (field === "horaEntrada") obj.horaEntrada = val;
                 if (field === "horasPlan") obj.horasPlan = val;
@@ -859,6 +888,13 @@
                 UiState && UiState.setGlobalLoading(false);
                 setSavingState(false);
                 Alerts && Alerts.showAlert("No hay filas para guardar. Agregá al menos un día.", "warning");
+                return;
+            }
+            const missingEmp = items.find(item => item.empleado && !item.idEmpleado);
+            if (missingEmp) {
+                UiState && UiState.setGlobalLoading(false);
+                setSavingState(false);
+                Alerts && Alerts.showAlert("Seleccioná empleado desde la lista para guardar IDs.", "warning");
                 return;
             }
 

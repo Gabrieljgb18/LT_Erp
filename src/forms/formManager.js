@@ -149,7 +149,10 @@
                 container.appendChild(colDiv);
             });
 
-            // Autocompletar CUIT para FACTURACION y PAGOS_CLIENTES
+            // Vincular IDs ocultos con selects de cliente/empleado
+            setupEntityIdSync(container, formDef);
+
+            // Autocompletar documento para FACTURACION y PAGOS_CLIENTES
             if (tipoFormato === "FACTURACION" || tipoFormato === "PAGOS_CLIENTES") {
                 setupCuitAutocomplete();
             }
@@ -171,6 +174,8 @@
                 }
             }
 
+            setupInputMasks(container, formDef);
+
             // Actualizar visibilidad del footer
             if (global.FooterManager) {
                 global.FooterManager.updateVisibility();
@@ -178,21 +183,63 @@
         }
 
         /**
-         * Configura autocompletado de CUIT
+         * Configura autocompletado de documento (CUIT/CUIL)
          */
         function setupCuitAutocomplete() {
             const rsSelect = document.getElementById("field-RAZÓN SOCIAL");
             const cuitInput = document.getElementById("field-CUIT");
+            const inputUtils = global.InputUtils || {};
 
             if (rsSelect && cuitInput) {
                 rsSelect.addEventListener("change", function () {
-                    const selected = this.value;
-                    const cli = referenceData.clientes.find(c =>
-                        (c.razonSocial || c.nombre) === selected
-                    );
-                    cuitInput.value = cli ? cli.cuit : "";
+                    const selectedOption = this.selectedOptions ? this.selectedOptions[0] : null;
+                    const selectedId = selectedOption && selectedOption.dataset ? selectedOption.dataset.id : "";
+                    const cli = selectedId
+                        ? referenceData.clientes.find(c => String(c.id) === String(selectedId))
+                        : null;
+                    const docType = cli ? (cli.docType || cli["TIPO DOCUMENTO"] || "") : "";
+                    const docNumber = cli ? (cli.docNumber || cli["NUMERO DOCUMENTO"] || cli.cuit || "") : "";
+                    const normalizedType = String(docType || '').trim().toUpperCase();
+                    const shouldFill = normalizedType === "CUIT" || normalizedType === "CUIL" || (!!cli && !!cli.cuit);
+                    if (shouldFill && docNumber) {
+                        if (typeof inputUtils.formatDocNumber === "function") {
+                            cuitInput.value = inputUtils.formatDocNumber(docNumber, normalizedType || "CUIT");
+                        } else {
+                            cuitInput.value = docNumber;
+                        }
+                    } else {
+                        cuitInput.value = "";
+                    }
                 });
             }
+        }
+
+        function setupEntityIdSync(container, formDef) {
+            if (!container || !formDef || !Array.isArray(formDef.fields)) return;
+            const fields = formDef.fields;
+
+            fields.forEach(field => {
+                if (!field || (field.type !== "cliente" && field.type !== "empleado")) return;
+
+                const select = document.getElementById("field-" + field.id);
+                const idField = field.type === "cliente" ? "ID_CLIENTE" : "ID_EMPLEADO";
+                const idInput = document.getElementById("field-" + idField);
+                if (!select || !idInput) return;
+
+                const updateIdFromSelection = (force) => {
+                    const selectedOption = select.selectedOptions ? select.selectedOptions[0] : null;
+                    const selectedId = selectedOption && selectedOption.dataset ? selectedOption.dataset.id : "";
+                    if (force || !idInput.value) {
+                        idInput.value = selectedId || "";
+                    }
+                };
+
+                select.addEventListener("change", function () {
+                    updateIdFromSelection(true);
+                });
+
+                updateIdFromSelection(false);
+            });
         }
 
         /**
@@ -223,6 +270,7 @@
                     global.ClientTagsField.reset();
                 }
             }
+            applyInputMasks();
         }
 
         /**
@@ -240,6 +288,12 @@
          */
         function getCurrentFormat() {
             return currentFormat;
+        }
+
+        function refreshCurrent() {
+            if (currentFormat) {
+                renderForm(currentFormat);
+            }
         }
 
         function applyClientesEncargadoVisibility() {
@@ -275,6 +329,101 @@
             }
         }
 
+        function applyInputMasks() {
+            const container = document.getElementById("form-fields");
+            if (!container || !currentFormat) return;
+            const formDef = FORM_DEFINITIONS[currentFormat];
+            if (formDef) {
+                setupInputMasks(container, formDef);
+            }
+        }
+
+        function setupInputMasks(container, formDef) {
+            if (!container || !formDef) return;
+            const inputUtils = global.InputUtils || {};
+            const docTypeInputs = {};
+            const docNumberInputs = [];
+
+            formDef.fields.forEach(field => {
+                if (!field || !field.id) return;
+                if (field.type === "docType") {
+                    const el = document.getElementById("field-" + field.id);
+                    if (el) docTypeInputs[field.id] = el;
+                }
+            });
+
+            formDef.fields.forEach(field => {
+                if (!field || !field.id) return;
+                const input = document.getElementById("field-" + field.id);
+                if (!input) return;
+
+                if (field.type === "phone") {
+                    if (!input.dataset.maskPhone) {
+                        input.dataset.maskPhone = "1";
+                        input.addEventListener("input", function () {
+                            if (typeof inputUtils.sanitizePhone === "function") {
+                                const clean = inputUtils.sanitizePhone(input.value);
+                                if (clean !== input.value) input.value = clean;
+                            }
+                        });
+                    }
+                    if (!input.dataset.phonePattern) {
+                        input.dataset.phonePattern = "1";
+                        input.setAttribute("pattern", "^\\+?\\d{7,15}$");
+                        input.setAttribute("title", "Formato internacional: +5491112345678 (7 a 15 dígitos).");
+                    }
+                    if (!input.placeholder) {
+                        input.placeholder = "+5491112345678";
+                    }
+                    if (typeof inputUtils.sanitizePhone === "function") {
+                        const cleanInitial = inputUtils.sanitizePhone(input.value);
+                        if (cleanInitial !== input.value) input.value = cleanInitial;
+                    }
+                    input.inputMode = "tel";
+                }
+
+                if (field.type === "email") {
+                    input.type = "email";
+                }
+
+                if (field.type === "docNumber") {
+                    docNumberInputs.push({ field, input });
+                }
+            });
+
+            docNumberInputs.forEach(item => {
+                const field = item.field;
+                const input = item.input;
+                const docTypeFieldId = field.docTypeField || input.dataset.docTypeField || "TIPO DOCUMENTO";
+                const fixedDocType = field.docTypeValue || input.dataset.docTypeValue || "";
+                const typeInput = fixedDocType ? null : docTypeInputs[docTypeFieldId] || document.getElementById("field-" + docTypeFieldId);
+
+                const applyMask = () => {
+                    const docType = fixedDocType || (typeInput ? typeInput.value : "");
+                    if (typeof inputUtils.formatDocNumber === "function") {
+                        input.value = inputUtils.formatDocNumber(input.value, docType);
+                    }
+                    if (typeof inputUtils.docPlaceholder === "function") {
+                        const ph = inputUtils.docPlaceholder(docType);
+                        if (ph) input.placeholder = ph;
+                    }
+                };
+
+                if (!input.dataset.maskDoc) {
+                    input.dataset.maskDoc = "1";
+                    input.addEventListener("input", applyMask);
+                    input.addEventListener("blur", applyMask);
+                }
+
+                if (typeInput && !typeInput.dataset.maskDoc) {
+                    typeInput.dataset.maskDoc = "1";
+                    typeInput.addEventListener("change", applyMask);
+                }
+
+                applyMask();
+            });
+        }
+
         return {
             init,
             loadFormats,
@@ -282,7 +431,9 @@
             clearForm,
             updateReferenceData,
             getCurrentFormat,
-            applyClientesEncargadoVisibility
+            refreshCurrent,
+            applyClientesEncargadoVisibility,
+            applyInputMasks
         };
     })();
 

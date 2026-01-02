@@ -180,7 +180,10 @@ var HoursDetailPanel = (function () {
 	    function formatEmployeeLabel_(emp) {
 	        if (!emp) return '';
 	        if (typeof emp === 'string') return emp;
-	        return (emp.nombre || emp.displayName || emp.empleado || emp.label || emp.razonSocial || '').toString().trim();
+	        const nombre = (emp.nombre || emp.displayName || emp.empleado || emp.label || '').toString().trim();
+	        const id = emp.id != null ? String(emp.id).trim() : '';
+	        if (!nombre || !id) return '';
+	        return `${nombre} (#${id})`;
 	    }
 
 	    function getEmployeeIdFromLabel_(label) {
@@ -203,10 +206,6 @@ var HoursDetailPanel = (function () {
 	                if (id) {
 	                    employeeIdMap.set(label, String(id));
 	                }
-	                const base = (emp.nombre || emp.displayName || emp.empleado || '').toString().trim();
-	                if (base && id) {
-	                    employeeIdMap.set(base, String(id));
-	                }
 	            }
 	            return label;
 	        }).filter(Boolean);
@@ -228,6 +227,10 @@ var HoursDetailPanel = (function () {
 
 	        if (!employee) {
 	            Alerts.showAlert("Por favor seleccione un empleado", "warning");
+	            return;
+	        }
+	        if (!idEmpleado) {
+	            Alerts.showAlert("Seleccioná un empleado válido de la lista", "warning");
 	            return;
 	        }
 
@@ -264,8 +267,13 @@ var HoursDetailPanel = (function () {
         const start = document.getElementById('hours-filter-start').value;
         const end = document.getElementById('hours-filter-end').value;
         const employee = document.getElementById('hours-filter-employee').value;
+        const idEmpleado = getEmployeeIdFromLabel_(employee);
         if (!employee) {
             Alerts.showAlert("Selecciona un empleado para exportar", "warning");
+            return;
+        }
+        if (!idEmpleado) {
+            Alerts.showAlert("Seleccioná un empleado válido de la lista", "warning");
             return;
         }
 
@@ -277,7 +285,7 @@ var HoursDetailPanel = (function () {
         }
 
         UiState && UiState.setGlobalLoading(true, 'Generando PDF...');
-        ApiService.call('generateHoursPdf', start, end, employee)
+        ApiService.call('generateHoursPdf', start, end, employee, idEmpleado)
             .then(res => {
                 if (!res || !res.base64) throw new Error('No se pudo generar PDF');
                 const link = document.createElement('a');

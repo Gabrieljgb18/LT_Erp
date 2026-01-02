@@ -45,15 +45,16 @@ const AttendanceWeeklyPlan = (function () {
             throw new Error('Faltan columnas de horas (LUNES HS, etc.) en CLIENTES_DB.');
         }
 
-        const targetId = idCliente != null && idCliente !== '' ? String(idCliente) : '';
+        const targetId = idCliente != null && idCliente !== '' ? String(idCliente).trim() : '';
+        if (!targetId) {
+            return [];
+        }
         let rowCliente = null;
         rows.forEach(function (row) {
             const rowId = idxId > -1 ? String(row[idxId] || '').trim() : '';
             const nombre = row[idxNombre];
             const razon = row[idxRazon];
-            if (targetId && rowId && rowId === targetId) {
-                rowCliente = row;
-            } else if (!targetId && (nombre === cliente || razon === cliente)) {
+            if (rowId && rowId === targetId) {
                 rowCliente = row;
             }
         });
@@ -79,7 +80,8 @@ const AttendanceWeeklyPlan = (function () {
             const horas = Number(val) || 0;
             if (horas > 0) {
                 result.push({
-                    cliente: cliente || (rowCliente[idxRazon] || rowCliente[idxNombre] || ''),
+                    cliente: (rowCliente[idxRazon] || rowCliente[idxNombre] || cliente || ''),
+                    idCliente: targetId,
                     empleado: '',
                     diaSemana: d.label,
                     horaEntrada: '',
@@ -103,7 +105,7 @@ const AttendanceWeeklyPlan = (function () {
             idCliente = cliente.idCliente || cliente.ID_CLIENTE || idCliente;
             cliente = cliente.cliente || cliente.clientName || cliente.label || '';
         }
-        if (!cliente && !idCliente) return [];
+        if (!idCliente) return [];
 
         const sheetPlan = DatabaseService.getDbSheetForFormat('ASISTENCIA_PLAN');
         const dataPlan = sheetPlan.getDataRange().getValues();
@@ -138,26 +140,20 @@ const AttendanceWeeklyPlan = (function () {
             throw new Error('Faltan columnas en ASISTENCIA_PLAN_DB. Revisar encabezados.');
         }
 
-        const targetNorm = String(cliente || '').trim().toLowerCase();
-        const targetId = idCliente != null && idCliente !== '' ? String(idCliente) : '';
+        const targetId = idCliente != null && idCliente !== '' ? String(idCliente).trim() : '';
+        if (!targetId) return [];
         const result = [];
 
         rowsPlan.forEach(function (row) {
             const cli = row[idxCliente];
             const cliNorm = String(cli || '').trim().toLowerCase();
             const rowIdCli = idxIdCliente > -1 ? String(row[idxIdCliente] || '').trim() : '';
-            if (targetId) {
-                if (rowIdCli) {
-                    if (rowIdCli !== targetId) return;
-                } else if (cliNorm !== targetNorm) {
-                    return;
-                }
-            } else if (cliNorm !== targetNorm) return;
+            if (!rowIdCli || rowIdCli !== targetId) return;
 
             result.push({
                 id: idxId > -1 ? row[idxId] : '',
                 cliente: String(cli || ''),
-                idCliente: idxIdCliente > -1 ? row[idxIdCliente] : '',
+                idCliente: rowIdCli,
                 empleado: row[idxEmpleado] || '',
                 idEmpleado: idxIdEmpleado > -1 ? row[idxIdEmpleado] : '',
                 diaSemana: row[idxDiaSemana] || '',
@@ -183,14 +179,15 @@ const AttendanceWeeklyPlan = (function () {
             idCliente = cliente.idCliente || cliente.ID_CLIENTE || idCliente;
             cliente = cliente.cliente || cliente.clientName || cliente.label || '';
         }
-        if (!cliente && idCliente && DatabaseService.findClienteById) {
-            const cli = DatabaseService.findClienteById(idCliente);
+        const idClienteStr = idCliente != null ? String(idCliente).trim() : '';
+        if (!idClienteStr) throw new Error('Falta el ID del cliente para guardar el plan.');
+        if (!cliente && DatabaseService.findClienteById) {
+            const cli = DatabaseService.findClienteById(idClienteStr);
             if (cli && (cli.razonSocial || cli.nombre)) {
                 cliente = cli.razonSocial || cli.nombre;
             }
         }
-        console.log("Iniciando saveWeeklyPlanForClient para:", cliente || idCliente);
-        if (!cliente && !idCliente) throw new Error('Falta el cliente para guardar el plan.');
+        console.log("Iniciando saveWeeklyPlanForClient para:", cliente || idClienteStr);
 
         items = items || [];
 
@@ -236,34 +233,7 @@ const AttendanceWeeklyPlan = (function () {
         const idxVigDesde = idxMap['VIGENTE DESDE'];
         const idxVigHasta = idxMap['VIGENTE HASTA'];
 
-        // Intentar reutilizar el ID del cliente si ya existe en datos previos
-        let defaultIdCliente = idCliente != null && idCliente !== '' ? String(idCliente) : '';
-        if (idxCliente !== undefined && idxIdCliente !== undefined && idxIdCliente > -1) {
-            if (!defaultIdCliente) {
-                existingData.some(row => {
-                    const rowCliente = String(row[idxCliente] || '');
-                    const idCli = row[idxIdCliente];
-                    if (rowCliente === String(cliente) && idCli) {
-                        defaultIdCliente = String(idCli);
-                        return true;
-                    }
-                    return false;
-                });
-            }
-        }
-
-        if (!defaultIdCliente) {
-            const foundCli = DatabaseService.findClienteByNombreORazon(cliente);
-            if (foundCli && foundCli.id) {
-                defaultIdCliente = foundCli.id;
-            }
-        }
-
-        function resolveEmpleadoId(nombre) {
-            if (!nombre) return '';
-            const found = DatabaseService.findEmpleadoByNombre(nombre);
-            return found && found.id ? found.id : '';
-        }
+        const defaultIdCliente = idClienteStr;
 
         // Helper para comparar fechas (strings YYYY-MM-DD o Date objects)
         const areDatesEqual = (d1, d2) => {
@@ -282,7 +252,7 @@ const AttendanceWeeklyPlan = (function () {
             const rowIdCli = idxIdCliente > -1 ? String(row[idxIdCliente] || '').trim() : '';
             const isSameClient = defaultIdCliente && rowIdCli
                 ? rowIdCli === String(defaultIdCliente)
-                : rowCliente === String(cliente);
+                : false;
             if (!isSameClient) return true; // Mantener otros clientes
 
             // Es el mismo cliente. Verificamos si corresponde al plan que estamos editando.
@@ -331,6 +301,11 @@ const AttendanceWeeklyPlan = (function () {
             });
         }
 
+        const missingEmp = items.find(it => (it && (it.empleado || it.idEmpleado || it.id_empleado)) && !(it.idEmpleado || it.id_empleado));
+        if (missingEmp) {
+            throw new Error('Falta ID_EMPLEADO en uno o más registros del plan.');
+        }
+
         const newRows = items.map(it => {
             const row = new Array(finalHeaders.length).fill('');
 
@@ -347,7 +322,7 @@ const AttendanceWeeklyPlan = (function () {
             setVal('ID', it.id || nextId++);
             setVal('ID_CLIENTE', it.idCliente || it.id_cliente || defaultIdCliente || '');
             setVal('CLIENTE', cliente);
-            setVal('ID_EMPLEADO', it.idEmpleado || it.id_empleado || resolveEmpleadoId(it.empleado));
+            setVal('ID_EMPLEADO', it.idEmpleado || it.id_empleado || '');
             setVal('EMPLEADO', it.empleado || '');
             setVal('DIA SEMANA', it.diaSemana || '');
             setVal('HORA ENTRADA', it.horaEntrada || '');

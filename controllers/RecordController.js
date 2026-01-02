@@ -39,6 +39,8 @@ var RecordController = (function () {
         }
 
         const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+        const headerKeys = headers.map(h => String(h || '').trim().toUpperCase());
+        const idxId = headerKeys.indexOf('ID');
         const data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
 
         const q = (query || '').toString().toLowerCase().trim();
@@ -55,8 +57,9 @@ var RecordController = (function () {
                     record[h] = rowStrings[colIdx];
                 });
 
+                const rowId = idxId > -1 ? row[idxId] : row[0];
                 results.push({
-                    id: row[0], // First column is ID
+                    id: rowId,
                     rowNumber: index + 2,
                     record: record
                 });
@@ -78,33 +81,39 @@ var RecordController = (function () {
     });
   }
 
-  function enrichAttendanceIds(tipoFormato, record) {
-    if (tipoFormato === 'ASISTENCIA') {
-      if (!record['ID_CLIENTE'] && record['CLIENTE']) {
-        const cli = DatabaseService.findClienteByNombreORazon(record['CLIENTE']);
-        if (cli && cli.id) record['ID_CLIENTE'] = cli.id;
+  function ensureRequiredIds(tipoFormato, record) {
+    const rulesByFormat = {
+      ASISTENCIA: [
+        { idField: 'ID_CLIENTE', labelField: 'CLIENTE' },
+        { idField: 'ID_EMPLEADO', labelField: 'EMPLEADO' }
+      ],
+      ASISTENCIA_PLAN: [
+        { idField: 'ID_CLIENTE', labelField: 'CLIENTE' },
+        { idField: 'ID_EMPLEADO', labelField: 'EMPLEADO' }
+      ],
+      ADELANTOS: [
+        { idField: 'ID_EMPLEADO', labelField: 'EMPLEADO' }
+      ],
+      FACTURACION: [
+        { idField: 'ID_CLIENTE', labelField: 'RAZÓN SOCIAL' }
+      ],
+      PAGOS_CLIENTES: [
+        { idField: 'ID_CLIENTE', labelField: 'RAZÓN SOCIAL' }
+      ]
+    };
+
+    const rules = rulesByFormat[tipoFormato];
+    if (!rules || !record) return;
+
+    rules.forEach(rule => {
+      const idVal = record[rule.idField];
+      const labelVal = rule.labelField ? record[rule.labelField] : '';
+      const hasLabel = labelVal != null && String(labelVal).trim() !== '';
+      const hasId = idVal != null && String(idVal).trim() !== '';
+      if (!hasId && (hasLabel || record.hasOwnProperty(rule.idField))) {
+        throw new Error('Falta ' + rule.idField + ' para guardar el registro.');
       }
-      if (!record['ID_EMPLEADO'] && record['EMPLEADO']) {
-        const emp = DatabaseService.findEmpleadoByNombre(record['EMPLEADO']);
-        if (emp && emp.id) record['ID_EMPLEADO'] = emp.id;
-      }
-    }
-    if (tipoFormato === 'ASISTENCIA_PLAN') {
-      if (!record['ID_CLIENTE'] && record['CLIENTE']) {
-        const cli = DatabaseService.findClienteByNombreORazon(record['CLIENTE']);
-        if (cli && cli.id) record['ID_CLIENTE'] = cli.id;
-      }
-      if (!record['ID_EMPLEADO'] && record['EMPLEADO']) {
-        const emp = DatabaseService.findEmpleadoByNombre(record['EMPLEADO']);
-        if (emp && emp.id) record['ID_EMPLEADO'] = emp.id;
-      }
-    }
-    if (tipoFormato === 'ADELANTOS') {
-      if (!record['ID_EMPLEADO'] && record['EMPLEADO']) {
-        const emp = DatabaseService.findEmpleadoByNombre(record['EMPLEADO']);
-        if (emp && emp.id) record['ID_EMPLEADO'] = emp.id;
-      }
-    }
+    });
   }
 
   function ensureHeaders_(sheet, headers, templateHeaders) {
@@ -152,7 +161,7 @@ var RecordController = (function () {
             headers = templateHeaders;
         }
 
-        enrichAttendanceIds(tipoFormato, record);
+        ensureRequiredIds(tipoFormato, record);
 
         // Si la hoja está vacía, agregar headers
         if (sheet.getLastRow() === 0 && headers.length > 0) {
@@ -259,7 +268,7 @@ var RecordController = (function () {
         // Ensure ID is set (frontend doesn't send ID field)
         newRecord['ID'] = id;
 
-        enrichAttendanceIds(tipoFormato, newRecord);
+        ensureRequiredIds(tipoFormato, newRecord);
 
         // Build new row values with ID in correct position
         const newRowValues = buildRowValues(headers, newRecord);
@@ -321,11 +330,22 @@ var RecordController = (function () {
     /**
      * Guarda un pago de empleado en PAGOS_EMP_DB
      */
-    function recordEmployeePayment(fechaStr, empleado, concepto, monto, obs) {
+    function recordEmployeePayment(fechaStr, empleado, concepto, monto, medioPago, obs) {
         const sheet = DatabaseService.getDbSheetForFormat('PAGOS_EMP');
-        const templateHeaders = ['ID', 'FECHA', 'EMPLEADO', 'CONCEPTO', 'MONTO', 'OBSERVACIONES'];
+        const templateHeaders = ['ID', 'FECHA', 'EMPLEADO', 'CONCEPTO', 'MONTO', 'MEDIO DE PAGO', 'OBSERVACIONES'];
+        let headers = [];
         if (sheet.getLastRow() === 0) {
             sheet.appendRow(templateHeaders);
+            headers = templateHeaders.slice();
+        } else {
+            const lastCol = sheet.getLastColumn();
+            headers = lastCol > 0 ? sheet.getRange(1, 1, 1, lastCol).getValues()[0] : [];
+            templateHeaders.forEach((header) => {
+                if (headers.indexOf(header) === -1) {
+                    sheet.getRange(1, headers.length + 1).setValue(header);
+                    headers.push(header);
+                }
+            });
         }
         const lock = LockService.getScriptLock();
         try {
@@ -337,14 +357,18 @@ var RecordController = (function () {
         try {
             id = DatabaseService.getNextId(sheet);
             const fecha = fechaStr ? new Date(fechaStr) : new Date();
-            const row = [
-                id,
-                fecha,
-                empleado || '',
-                concepto || '',
-                Number(monto) || 0,
-                obs || ''
-            ];
+            const valuesByHeader = {
+                'ID': id,
+                'FECHA': fecha,
+                'EMPLEADO': empleado || '',
+                'CONCEPTO': concepto || '',
+                'MONTO': Number(monto) || 0,
+                'MEDIO DE PAGO': medioPago || '',
+                'OBSERVACIONES': obs || ''
+            };
+            const row = headers.map((header) => {
+                return valuesByHeader.hasOwnProperty(header) ? valuesByHeader[header] : '';
+            });
             sheet.appendRow(row);
         } finally {
             lock.releaseLock();

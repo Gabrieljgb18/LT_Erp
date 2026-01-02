@@ -9,7 +9,8 @@ var Formats = (function () {
         'NOMBRE',
         'ESTADO',
         'RAZON SOCIAL',
-        'CUIT',
+        'TIPO DOCUMENTO',
+        'NUMERO DOCUMENTO',
         'NOMBRE ADMINISTRADOR',
         'DESCRIPCION',
         'ETIQUETAS',
@@ -19,6 +20,7 @@ var Formats = (function () {
         'TELEFONO',
         'DIRECCION',
         'CORREO ADMINISTRACION',
+        'TELEFONO ADMINISTRACION',
         'CORREO FACTURACION',
         'TIPO FACTURACION',
         'FECHA CONTRATO',
@@ -37,7 +39,8 @@ var Formats = (function () {
         150, // NOMBRE
         100, // ESTADO
         200, // RAZON SOCIAL
-        120, // CUIT
+        120, // TIPO DOCUMENTO
+        160, // NUMERO DOCUMENTO
         180, // NOMBRE ADMINISTRADOR
         240, // DESCRIPCION
         200, // ETIQUETAS
@@ -47,6 +50,7 @@ var Formats = (function () {
         120, // TELEFONO
         200, // DIRECCION
         200, // CORREO ADMINISTRACION
+        150, // TELEFONO ADMINISTRACION
         200, // CORREO FACTURACION
         140, // TIPO FACTURACION
         120, // FECHA CONTRATO
@@ -70,16 +74,19 @@ var Formats = (function () {
         'ID',
         'ESTADO',
         'EMPLEADO',
-        'CUIL',
+        'TIPO DOCUMENTO',
+        'NUMERO DOCUMENTO',
         'DIRECCION',
         'TELEFONO',
-        'CONTACTO DE EMERGENCIA',
+        'CONTACTO EMERGENCIA NOMBRE',
+        'CONTACTO EMERGENCIA TELEFONO',
+        'CONTACTO EMERGENCIA VINCULO',
+        'DESCRIPCION VIVIENDA',
         'CBU - ALIAS',
-        'DNI',
         'VALOR DE HORA',
         'VIATICOS'
       ],
-      columnWidths: [60, 100, 180, 120, 220, 120, 200, 160, 100, 120, 110],
+      columnWidths: [60, 100, 180, 120, 160, 220, 120, 200, 150, 160, 240, 160, 120, 110],
       freezeRows: 1
     },
 

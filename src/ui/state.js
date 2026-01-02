@@ -10,7 +10,7 @@
 
   function toggleControls(disabled) {
     // Don't disable search-query so users can keep typing during search
-    ["formato", "btn-nuevo"].forEach(function (id) {
+    ["btn-nuevo", "btn-refresh"].forEach(function (id) {
       var el = document.getElementById(id);
       if (el) el.disabled = !!disabled;
     });
