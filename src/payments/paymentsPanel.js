@@ -10,6 +10,16 @@ var PaymentsPanel = (function () {
     let currentMode = "account"; // account | invoice
     const defaultPaymentMethods = ["Uala", "Mercado Pago", "Efectivo", "Santander"];
     let referenceListenerBound = false;
+    const escapeHtml = (typeof HtmlHelpers !== "undefined" && HtmlHelpers && typeof HtmlHelpers.escapeHtml === "function")
+        ? HtmlHelpers.escapeHtml
+        : function (value) {
+            return String(value || "")
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#39;");
+        };
 
     function render() {
         const container = document.getElementById(containerId);
@@ -948,18 +958,6 @@ var PaymentsPanel = (function () {
         const d = v instanceof Date ? v : new Date(v);
         if (!isNaN(d.getTime())) return d.toLocaleDateString("es-AR");
         return String(v);
-    }
-
-    function escapeHtml(value) {
-        if (typeof HtmlHelpers !== "undefined" && HtmlHelpers && typeof HtmlHelpers.escapeHtml === "function") {
-            return HtmlHelpers.escapeHtml(value);
-        }
-        return String(value || "")
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#39;");
     }
 
     function getPaymentMethods_() {

@@ -7,6 +7,16 @@ var AnalysisPanel = (function () {
   var currentRange = 6;
   var comparisonVisible = false;
   var lastData = null;
+  var escapeHtml_ = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.escapeHtml === 'function')
+    ? HtmlHelpers.escapeHtml
+    : function (value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    };
 
   function render(targetId) {
     var container = document.getElementById(targetId || containerId);
@@ -573,18 +583,6 @@ var AnalysisPanel = (function () {
     }
     var num = Number(value) || 0;
     return num.toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' hs';
-  }
-
-  function escapeHtml_(value) {
-    if (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.escapeHtml === 'function') {
-      return HtmlHelpers.escapeHtml(value);
-    }
-    return String(value || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
   }
 
   return { render: render };

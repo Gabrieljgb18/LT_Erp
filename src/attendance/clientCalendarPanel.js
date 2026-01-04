@@ -11,14 +11,16 @@
         let scheduleData = null;
         let clientList = [];
 
-        function escapeHtml(str) {
-            return String(str || '')
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#39;');
-        }
+        const escapeHtml = (global.HtmlHelpers && typeof global.HtmlHelpers.escapeHtml === 'function')
+            ? global.HtmlHelpers.escapeHtml
+            : function (str) {
+                return String(str || '')
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            };
 
         function formatHoras(h) {
             const num = Number(h);

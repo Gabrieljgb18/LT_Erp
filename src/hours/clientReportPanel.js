@@ -5,6 +5,16 @@ var ClientReportPanel = (function () {
     const containerId = 'client-report-panel';
     let lastRows = [];
     const clientIdMap = new Map();
+    const escapeHtml = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.escapeHtml === 'function')
+        ? HtmlHelpers.escapeHtml
+        : function (value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        };
 
     function render() {
         const container = document.getElementById(containerId);
@@ -520,18 +530,6 @@ var ClientReportPanel = (function () {
         }
         const num = Number(val);
         return num.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2 });
-    }
-
-    function escapeHtml(value) {
-        if (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.escapeHtml === 'function') {
-            return HtmlHelpers.escapeHtml(value);
-        }
-        return String(value || '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
     }
 
     return {

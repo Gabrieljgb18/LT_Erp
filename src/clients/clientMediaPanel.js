@@ -15,6 +15,16 @@ var ClientMediaPanel = (function () {
     const VIEWER_MSG_ID = 'client-media-viewer-msg';
     const VIEWER_DRIVE_ID = 'client-media-viewer-drive';
     const ACCEPT_IMAGE_ANY = 'image/' + '*';
+    const escapeHtml_ = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.escapeHtml === 'function')
+        ? HtmlHelpers.escapeHtml
+        : function (val) {
+            return String(val == null ? '' : val)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        };
 
     let state = {
         clientId: '',
@@ -22,18 +32,6 @@ var ClientMediaPanel = (function () {
         llave: [],
         viewerKeyHandlerInstalled: false
     };
-
-    function escapeHtml_(val) {
-        if (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.escapeHtml === 'function') {
-            return HtmlHelpers.escapeHtml(val);
-        }
-        return String(val == null ? '' : val)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
-    }
 
     function getEditingClient_() {
         try {

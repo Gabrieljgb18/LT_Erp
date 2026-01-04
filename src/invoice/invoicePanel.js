@@ -16,17 +16,16 @@ var InvoicePanel = (function () {
     let generatorPage = 1;
     let coverageRows = [];
 
-    function escapeHtml_(val) {
-        if (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.escapeHtml === 'function') {
-            return HtmlHelpers.escapeHtml(val);
-        }
-        return String(val == null ? '' : val)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
-    }
+    const escapeHtml_ = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.escapeHtml === 'function')
+        ? HtmlHelpers.escapeHtml
+        : function (val) {
+            return String(val == null ? '' : val)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        };
 
     function buildOnClick_(fnName, arg) {
         const safeArg = JSON.stringify(arg == null ? '' : String(arg));

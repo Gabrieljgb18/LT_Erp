@@ -112,17 +112,16 @@
       };
     }
 
-    function escapeHtml(value) {
-      if (global.HtmlHelpers && typeof global.HtmlHelpers.escapeHtml === "function") {
-        return global.HtmlHelpers.escapeHtml(value);
-      }
-      return String(value || "")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#39;");
-    }
+    const escapeHtml = (global.HtmlHelpers && typeof global.HtmlHelpers.escapeHtml === "function")
+      ? global.HtmlHelpers.escapeHtml
+      : function (value) {
+        return String(value || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      };
 
     function getClientDisplayName(cliente) {
       if (!cliente) return "";

@@ -847,14 +847,16 @@
 
 
 (function (global) {
-  function escapeHtml(val) {
-    return String(val == null ? "" : val)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
-  }
+  const escapeHtml = (global.HtmlHelpers && typeof global.HtmlHelpers.escapeHtml === "function")
+    ? global.HtmlHelpers.escapeHtml
+    : function (val) {
+      return String(val == null ? "" : val)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    };
 
   function toggleControls(disabled) {
     // Don't disable search-query so users can keep typing during search
@@ -957,17 +959,16 @@
         return out;
     }
 
-    function escapeHtml_(value) {
-        if (global.HtmlHelpers && typeof global.HtmlHelpers.escapeHtml === "function") {
-            return global.HtmlHelpers.escapeHtml(value);
-        }
-        return String(value || "")
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#39;");
-    }
+    const escapeHtml_ = (global.HtmlHelpers && typeof global.HtmlHelpers.escapeHtml === "function")
+        ? global.HtmlHelpers.escapeHtml
+        : function (value) {
+            return String(value || "")
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#39;");
+        };
 
     function buildDefaultOptions_() {
         const map = {};
@@ -1968,17 +1969,16 @@
       };
     }
 
-    function escapeHtml(value) {
-      if (global.HtmlHelpers && typeof global.HtmlHelpers.escapeHtml === "function") {
-        return global.HtmlHelpers.escapeHtml(value);
-      }
-      return String(value || "")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#39;");
-    }
+    const escapeHtml = (global.HtmlHelpers && typeof global.HtmlHelpers.escapeHtml === "function")
+      ? global.HtmlHelpers.escapeHtml
+      : function (value) {
+        return String(value || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      };
 
     function getClientDisplayName(cliente) {
       if (!cliente) return "";
@@ -3694,6 +3694,16 @@ var ClientMediaPanel = (function () {
     const VIEWER_MSG_ID = 'client-media-viewer-msg';
     const VIEWER_DRIVE_ID = 'client-media-viewer-drive';
     const ACCEPT_IMAGE_ANY = 'image/' + '*';
+    const escapeHtml_ = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.escapeHtml === 'function')
+        ? HtmlHelpers.escapeHtml
+        : function (val) {
+            return String(val == null ? '' : val)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        };
 
     let state = {
         clientId: '',
@@ -3701,18 +3711,6 @@ var ClientMediaPanel = (function () {
         llave: [],
         viewerKeyHandlerInstalled: false
     };
-
-    function escapeHtml_(val) {
-        if (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.escapeHtml === 'function') {
-            return HtmlHelpers.escapeHtml(val);
-        }
-        return String(val == null ? '' : val)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
-    }
 
     function getEditingClient_() {
         try {
@@ -6604,14 +6602,16 @@ var ClientMediaPanel = (function () {
         const ALL_EMPLOYEES_VALUE = '__ALL__';
 
         // Helpers
-        function escapeHtml(str) {
-            return String(str || '')
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#39;');
-        }
+        const escapeHtml = (global.HtmlHelpers && typeof global.HtmlHelpers.escapeHtml === 'function')
+            ? global.HtmlHelpers.escapeHtml
+            : function (str) {
+                return String(str || '')
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            };
 
         function formatHoras(h) {
             const num = Number(h);
@@ -7519,14 +7519,16 @@ var ClientMediaPanel = (function () {
         let scheduleData = null;
         let clientList = [];
 
-        function escapeHtml(str) {
-            return String(str || '')
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#39;');
-        }
+        const escapeHtml = (global.HtmlHelpers && typeof global.HtmlHelpers.escapeHtml === 'function')
+            ? global.HtmlHelpers.escapeHtml
+            : function (str) {
+                return String(str || '')
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            };
 
         function formatHoras(h) {
             const num = Number(h);
@@ -8185,6 +8187,16 @@ var AnalysisPanel = (function () {
   var currentRange = 6;
   var comparisonVisible = false;
   var lastData = null;
+  var escapeHtml_ = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.escapeHtml === 'function')
+    ? HtmlHelpers.escapeHtml
+    : function (value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    };
 
   function render(targetId) {
     var container = document.getElementById(targetId || containerId);
@@ -8753,18 +8765,6 @@ var AnalysisPanel = (function () {
     return num.toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' hs';
   }
 
-  function escapeHtml_(value) {
-    if (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.escapeHtml === 'function') {
-      return HtmlHelpers.escapeHtml(value);
-    }
-    return String(value || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
-
   return { render: render };
 })();
 
@@ -8781,6 +8781,16 @@ var PaymentsPanel = (function () {
     let currentMode = "account"; // account | invoice
     const defaultPaymentMethods = ["Uala", "Mercado Pago", "Efectivo", "Santander"];
     let referenceListenerBound = false;
+    const escapeHtml = (typeof HtmlHelpers !== "undefined" && HtmlHelpers && typeof HtmlHelpers.escapeHtml === "function")
+        ? HtmlHelpers.escapeHtml
+        : function (value) {
+            return String(value || "")
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#39;");
+        };
 
     function render() {
         const container = document.getElementById(containerId);
@@ -9721,18 +9731,6 @@ var PaymentsPanel = (function () {
         return String(v);
     }
 
-    function escapeHtml(value) {
-        if (typeof HtmlHelpers !== "undefined" && HtmlHelpers && typeof HtmlHelpers.escapeHtml === "function") {
-            return HtmlHelpers.escapeHtml(value);
-        }
-        return String(value || "")
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#39;");
-    }
-
     function getPaymentMethods_() {
         if (typeof DropdownConfig !== "undefined" && DropdownConfig && typeof DropdownConfig.getOptions === "function") {
             const list = DropdownConfig.getOptions("MEDIO DE PAGO", defaultPaymentMethods);
@@ -9772,17 +9770,16 @@ var InvoicePanel = (function () {
     let generatorPage = 1;
     let coverageRows = [];
 
-    function escapeHtml_(val) {
-        if (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.escapeHtml === 'function') {
-            return HtmlHelpers.escapeHtml(val);
-        }
-        return String(val == null ? '' : val)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
-    }
+    const escapeHtml_ = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.escapeHtml === 'function')
+        ? HtmlHelpers.escapeHtml
+        : function (val) {
+            return String(val == null ? '' : val)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        };
 
     function buildOnClick_(fnName, arg) {
         const safeArg = JSON.stringify(arg == null ? '' : String(arg));
@@ -12125,6 +12122,16 @@ var HoursDetailPanel = (function () {
  */
 var ClientMonthlySummaryPanel = (function () {
     const containerId = 'client-monthly-summary-panel';
+    const escapeHtml_ = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.escapeHtml === 'function')
+        ? HtmlHelpers.escapeHtml
+        : function (value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        };
 
     function render() {
         const container = document.getElementById(containerId);
@@ -12299,18 +12306,6 @@ var ClientMonthlySummaryPanel = (function () {
         return n.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2 });
     }
 
-    function escapeHtml_(value) {
-        if (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.escapeHtml === 'function') {
-            return HtmlHelpers.escapeHtml(value);
-        }
-        return String(value || '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
-    }
-
     function buildFallbackClientLabel_(nombre, idCliente) {
         const name = String(nombre || '').trim();
         const id = String(idCliente || '').trim();
@@ -12368,6 +12363,16 @@ var ClientAccountPanel = (function () {
     let lastQuery = null;
     const defaultPaymentMethods = ["Uala", "Mercado Pago", "Efectivo", "Santander"];
     let referenceListenerBound = false;
+    const escapeHtml = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.escapeHtml === 'function')
+        ? HtmlHelpers.escapeHtml
+        : function (value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        };
 
     function render() {
         // Find or create container
@@ -12968,18 +12973,6 @@ var ClientAccountPanel = (function () {
             .join('');
     }
 
-    function escapeHtml(value) {
-        if (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.escapeHtml === 'function') {
-            return HtmlHelpers.escapeHtml(value);
-        }
-        return String(value || '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
-    }
-
     function setDebug(payload, show) {
         const details = document.getElementById('client-acc-debug');
         const pre = document.getElementById('client-acc-debug-pre');
@@ -13019,6 +13012,16 @@ var ClientReportPanel = (function () {
     const containerId = 'client-report-panel';
     let lastRows = [];
     const clientIdMap = new Map();
+    const escapeHtml = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.escapeHtml === 'function')
+        ? HtmlHelpers.escapeHtml
+        : function (value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        };
 
     function render() {
         const container = document.getElementById(containerId);
@@ -13534,18 +13537,6 @@ var ClientReportPanel = (function () {
         }
         const num = Number(val);
         return num.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2 });
-    }
-
-    function escapeHtml(value) {
-        if (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.escapeHtml === 'function') {
-            return HtmlHelpers.escapeHtml(value);
-        }
-        return String(value || '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
     }
 
     return {

@@ -46,17 +46,16 @@
         return out;
     }
 
-    function escapeHtml_(value) {
-        if (global.HtmlHelpers && typeof global.HtmlHelpers.escapeHtml === "function") {
-            return global.HtmlHelpers.escapeHtml(value);
-        }
-        return String(value || "")
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#39;");
-    }
+    const escapeHtml_ = (global.HtmlHelpers && typeof global.HtmlHelpers.escapeHtml === "function")
+        ? global.HtmlHelpers.escapeHtml
+        : function (value) {
+            return String(value || "")
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#39;");
+        };
 
     function buildDefaultOptions_() {
         const map = {};

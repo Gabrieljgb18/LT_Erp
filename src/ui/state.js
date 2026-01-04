@@ -1,12 +1,14 @@
 (function (global) {
-  function escapeHtml(val) {
-    return String(val == null ? "" : val)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
-  }
+  const escapeHtml = (global.HtmlHelpers && typeof global.HtmlHelpers.escapeHtml === "function")
+    ? global.HtmlHelpers.escapeHtml
+    : function (val) {
+      return String(val == null ? "" : val)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    };
 
   function toggleControls(disabled) {
     // Don't disable search-query so users can keep typing during search

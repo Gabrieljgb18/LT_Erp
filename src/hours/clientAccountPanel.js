@@ -7,6 +7,16 @@ var ClientAccountPanel = (function () {
     let lastQuery = null;
     const defaultPaymentMethods = ["Uala", "Mercado Pago", "Efectivo", "Santander"];
     let referenceListenerBound = false;
+    const escapeHtml = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.escapeHtml === 'function')
+        ? HtmlHelpers.escapeHtml
+        : function (value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        };
 
     function render() {
         // Find or create container
@@ -605,18 +615,6 @@ var ClientAccountPanel = (function () {
                 return `<option value="${safe}">${safe}</option>`;
             })
             .join('');
-    }
-
-    function escapeHtml(value) {
-        if (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.escapeHtml === 'function') {
-            return HtmlHelpers.escapeHtml(value);
-        }
-        return String(value || '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
     }
 
     function setDebug(payload, show) {
