@@ -143,6 +143,7 @@
                 const isFull = isSection || field.full;
                 colDiv.className = isFull ? "col-12" : "col-12 col-md-6";
                 if (field.id) colDiv.dataset.fieldId = field.id;
+                if (field.hidden) colDiv.classList.add("d-none");
 
                 const formGroup = FormRenderer.renderField(field, referenceData);
                 colDiv.appendChild(formGroup);
@@ -175,6 +176,10 @@
             }
 
             setupInputMasks(container, formDef);
+
+            if (global.MapsAutocomplete && typeof global.MapsAutocomplete.bind === "function") {
+                global.MapsAutocomplete.bind(container);
+            }
 
             // Actualizar visibilidad del footer
             if (global.FooterManager) {

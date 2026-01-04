@@ -65,7 +65,8 @@
   const registroViews = {
     clientes: { format: "CLIENTES", title: "Diccionario de clientes" },
     empleados: { format: "EMPLEADOS", title: "Diccionario de empleados" },
-    adelantos: { format: "ADELANTOS", title: "Adelantos de sueldo" }
+    adelantos: { format: "ADELANTOS", title: "Adelantos de sueldo" },
+    gastos: { format: "GASTOS", title: "Gastos" }
   };
   let currentRegistroFormat = "CLIENTES";
 
@@ -358,11 +359,14 @@
         const viewId = e.detail.view;
         const pageTitle = document.getElementById('page-title');
         const titles = {
+          analisis: 'Análisis',
+          mapa: 'Mapa',
           registro: 'Diccionario',
           clientes: 'Diccionario de clientes',
           empleados: 'Diccionario de empleados',
           adelantos: 'Adelantos de sueldo',
           pagos: 'Pagos',
+          gastos: 'Gastos',
           'asistencia-plan': 'Plan Semanal',
           'asistencia-diaria': 'Tomar Asistencia',
           'asistencia-calendario': 'Calendario Empleado',
@@ -413,6 +417,12 @@
               });
           }
         }
+        if (viewId === 'analisis' && typeof AnalysisPanel !== 'undefined') {
+          AnalysisPanel.render('analysis-panel');
+        }
+        if (viewId === 'mapa' && typeof MapPanel !== 'undefined') {
+          MapPanel.render('maps-panel');
+        }
 
         if (viewId === 'asistencia-diaria' && typeof AttendanceDailyUI !== 'undefined') {
           const container = document.getElementById('daily-attendance-panel');
@@ -456,7 +466,7 @@
       });
 
       if (Sidebar.setActive) {
-        Sidebar.setActive('clientes');
+        Sidebar.setActive('analisis');
       }
     }
   }

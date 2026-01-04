@@ -162,11 +162,17 @@ var ClientMonthlySummaryPanel = (function () {
     }
 
     function formatNumber(v) {
+        if (typeof Formatters !== 'undefined' && Formatters && typeof Formatters.formatNumber === 'function') {
+            return Formatters.formatNumber(v, 2);
+        }
         const n = Number(v);
         return isNaN(n) ? '0.00' : n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
     function formatCurrency(v) {
+        if (typeof Formatters !== 'undefined' && Formatters && typeof Formatters.formatCurrency === 'function') {
+            return Formatters.formatCurrency(v);
+        }
         const n = Number(v);
         return n.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2 });
     }
@@ -194,7 +200,9 @@ var ClientMonthlySummaryPanel = (function () {
     function formatClientLabel_(cli) {
         if (!cli) return '';
         if (typeof cli === 'string') return cli;
-        const base = cli.razonSocial || cli.nombre || '';
+        const base = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.getClientDisplayName === 'function')
+            ? HtmlHelpers.getClientDisplayName(cli)
+            : (cli.nombre || cli.razonSocial || '');
         const id = cli.id != null ? String(cli.id).trim() : '';
         const docLabel = getClientDocLabel_(cli);
         const meta = [];

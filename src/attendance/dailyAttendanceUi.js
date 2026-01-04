@@ -318,7 +318,9 @@
             let found = false;
             const selectedIdStr = selectedId != null && selectedId !== '' ? String(selectedId) : '';
             (reference.clientes || []).forEach(cli => {
-                const label = cli.razonSocial || cli.nombre || cli.CLIENTE || cli;
+                const label = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.getClientDisplayName === 'function')
+                    ? HtmlHelpers.getClientDisplayName(cli)
+                    : (cli.nombre || cli.razonSocial || cli.CLIENTE || cli);
                 const id = cli && typeof cli === 'object' && cli.id != null ? String(cli.id) : '';
                 if (!label) return;
                 const sel = selectedIdStr && id && id === selectedIdStr ? " selected" : "";

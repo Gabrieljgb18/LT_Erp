@@ -818,31 +818,105 @@ var PdfController = (function () {
             }
             .visit {
                 border: 1px solid #e2e8f0;
-                border-radius: 8px;
-                padding: 10px;
-                margin-top: 10px;
+                border-radius: 10px;
+                padding: 12px;
+                margin-top: 12px;
                 page-break-inside: avoid;
+                background: #f8fafc;
+            }
+            .visit-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                gap: 10px;
+                margin-bottom: 10px;
             }
             .visit-title {
                 font-weight: 700;
                 font-size: 12px;
-                margin-bottom: 6px;
+                color: #0f172a;
             }
-            .visit-meta {
+            .visit-tags {
                 display: flex;
                 flex-wrap: wrap;
-                gap: 8px 14px;
-                font-size: 10px;
-                color: #475569;
-                margin-bottom: 6px;
+                gap: 6px;
+                margin-top: 6px;
             }
-            .visit-meta span {
+            .tag-chip {
+                display: inline-flex;
+                align-items: center;
+                gap: 5px;
+                font-size: 9px;
+                font-weight: 700;
+                padding: 2px 8px;
+                border-radius: 999px;
+                background: #fff7ed;
+                color: #9a3412;
+                border: 1px solid #fed7aa;
+                white-space: nowrap;
+            }
+            .tag-dot {
+                width: 6px;
+                height: 6px;
+                border-radius: 999px;
+                background: #fb923c;
                 display: inline-block;
             }
-            .visit-obs {
-                margin-top: 6px;
+            .visit-grid {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 10px;
+            }
+            .visit-block {
+                background: #ffffff;
+                border: 1px solid #e2e8f0;
+                border-radius: 8px;
+                padding: 8px 10px;
+            }
+            .visit-block__title {
+                font-size: 9px;
+                text-transform: uppercase;
+                letter-spacing: 0.06em;
+                color: #64748b;
+                margin-bottom: 6px;
+                font-weight: 700;
+            }
+            .visit-row {
+                display: flex;
+                gap: 6px;
                 font-size: 10px;
+                color: #334155;
+                margin-bottom: 4px;
+            }
+            .visit-row--stack {
+                flex-direction: column;
+            }
+            .visit-label {
+                font-weight: 600;
+                color: #475569;
+                min-width: 78px;
+            }
+            .visit-value {
                 color: #0f172a;
+                word-break: break-word;
+            }
+            .visit-note {
+                margin-top: 8px;
+                padding: 8px;
+                border-radius: 8px;
+                border: 1px dashed #cbd5f5;
+                background: #eef2ff;
+                font-size: 10px;
+                color: #1f2937;
+            }
+            .visit-obs {
+                margin-top: 8px;
+                padding: 8px;
+                border-radius: 8px;
+                border: 1px solid #fde68a;
+                background: #fffbeb;
+                font-size: 10px;
+                color: #92400e;
             }
             .photos {
                 display: flex;
@@ -924,6 +998,22 @@ var PdfController = (function () {
             return `<div class="photo-group"><div class="photo-title">${label}</div><div class="photo-row">${photos}</div></div>`;
         };
 
+        const parseTags = (value) => {
+            if (!value) return [];
+            return String(value).split(',').map(t => t.trim()).filter(Boolean);
+        };
+
+        const buildRow = (label, value, stacked) => {
+            if (!value) return '';
+            const rowClass = stacked ? 'visit-row visit-row--stack' : 'visit-row';
+            return `
+                <div class="${rowClass}">
+                    <div class="visit-label">${escapeHtml_(label)}</div>
+                    <div class="visit-value">${escapeHtml_(value)}</div>
+                </div>
+            `;
+        };
+
         const diasConTrabajo = (data.dias || []).filter(dia => dia && Array.isArray(dia.clientes) && dia.clientes.length > 0);
 
         const daysHtml = (diasConTrabajo.length ? diasConTrabajo : []).map(dia => {
@@ -933,20 +1023,48 @@ var PdfController = (function () {
                 const media = mediaMap && c.idCliente ? mediaMap[String(c.idCliente)] : null;
                 const fachada = media ? media.fachada : [];
                 const llave = media ? media.llave : [];
-                const meta = [
-                    c.horaEntrada ? `Ingreso: ${escapeHtml_(c.horaEntrada)}` : '',
-                    c.horasPlan ? `Horas: ${formatHours_(c.horasPlan)} hs` : '',
-                    c.direccion ? `Dirección: ${escapeHtml_(c.direccion)}` : '',
-                    c.telefono ? `Tel: ${escapeHtml_(c.telefono)}` : '',
-                    c.encargado ? `Contacto: ${escapeHtml_(c.encargado)}` : '',
-                    c.correo ? `Correo: ${escapeHtml_(c.correo)}` : ''
-                ].filter(Boolean);
+                const title = escapeHtml_(c.cliente || c.nombre || c.razonSocial || '');
+                const tags = parseTags(c.tags);
+                const tagsHtml = tags.length
+                    ? `<div class="visit-tags">${tags.map(tag => `<span class="tag-chip"><span class="tag-dot"></span>${escapeHtml_(tag)}</span>`).join('')}</div>`
+                    : '';
+                const ingreso = c.horaEntrada ? c.horaEntrada : '';
+                const horas = c.horasPlan ? `${formatHours_(c.horasPlan)} hs` : '';
+                const contactRows = [
+                    buildRow('Encargado', c.encargado || ''),
+                    buildRow('Teléfono', c.telefono || '')
+                ].filter(Boolean).join('');
+                const contactBlock = contactRows
+                    ? `<div class="visit-block">
+                            <div class="visit-block__title">Contacto en el lugar</div>
+                            ${contactRows}
+                        </div>`
+                    : `<div class="visit-block">
+                            <div class="visit-block__title">Contacto en el lugar</div>
+                            <div class="visit-row visit-row--stack">
+                                <div class="visit-value">Sin contacto asignado.</div>
+                            </div>
+                        </div>`;
 
                 return `
                     <div class="visit">
-                        <div class="visit-title">${escapeHtml_(c.cliente || c.razonSocial || '')}</div>
-                        <div class="visit-meta">${meta.map(m => `<span>${m}</span>`).join('')}</div>
-                        ${c.observaciones ? `<div class="visit-obs"><strong>Obs:</strong> ${escapeHtml_(c.observaciones)}</div>` : ''}
+                        <div class="visit-header">
+                            <div>
+                                <div class="visit-title">${title}</div>
+                            </div>
+                        </div>
+                        ${tagsHtml}
+                        <div class="visit-grid">
+                            <div class="visit-block">
+                                <div class="visit-block__title">Datos de la visita</div>
+                                ${buildRow('Ingreso', ingreso)}
+                                ${buildRow('Horas', horas)}
+                                ${buildRow('Dirección', c.direccion || '', true)}
+                            </div>
+                            ${contactBlock}
+                        </div>
+                        ${c.descripcion ? `<div class="visit-note"><strong>Notas del cliente:</strong> ${escapeHtml_(c.descripcion)}</div>` : ''}
+                        ${c.observaciones ? `<div class="visit-obs"><strong>Obs. del plan:</strong> ${escapeHtml_(c.observaciones)}</div>` : ''}
                         <div class="photos">
                             ${buildPhotoGroup('Fachadas', fachada)}
                             ${buildPhotoGroup('Llaves', llave)}

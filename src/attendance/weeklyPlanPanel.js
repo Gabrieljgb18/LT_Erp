@@ -12,6 +12,10 @@
         let currentContainer = null;
         let allRecordsCache = [];
         let currentOriginalVigencia = null; // Para saber qué plan estamos editando
+        let forceNewPlan = false;
+        let lastInfoHoras = null;
+        let lastInfoHorasClientId = "";
+        let openGroupKeys = new Set();
 
         function init(refData) {
             referenceData = refData;
@@ -20,7 +24,9 @@
         function formatClientLabel_(cli) {
             if (!cli) return '';
             if (typeof cli === 'string') return cli;
-            const base = cli.razonSocial || cli.nombre || '';
+            const base = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.getClientDisplayName === 'function')
+                ? HtmlHelpers.getClientDisplayName(cli)
+                : (cli.nombre || cli.razonSocial || '');
             const id = cli.id != null ? String(cli.id).trim() : '';
             const docLabel = getClientDocLabel_(cli);
             const meta = [];
@@ -44,16 +50,79 @@
 
         // IDs vienen desde el select, sin fallback por nombre.
 
+        function getClientNameById_(idCliente) {
+            const id = idCliente != null ? String(idCliente).trim() : '';
+            if (!id) return '';
+            const list = referenceData && referenceData.clientes ? referenceData.clientes : [];
+            const match = list.find(cli => cli && String(cli.id || '').trim() === id);
+            if (!match) return '';
+            if (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.getClientDisplayName === 'function') {
+                return HtmlHelpers.getClientDisplayName(match);
+            }
+            return match.nombre || match.razonSocial || '';
+        }
+
         function formatDateForInput(v) {
             if (!v) return '';
             if (v instanceof Date && !isNaN(v)) {
                 return v.toISOString().split('T')[0];
             }
-            const d = new Date(v);
-            if (!isNaN(d)) {
-                return d.toISOString().split('T')[0];
+            const str = String(v || '').trim();
+            if (str.includes('/')) {
+                const parts = str.split('/');
+                if (parts.length === 3) {
+                    const dd = Number(parts[0]);
+                    const mm = Number(parts[1]);
+                    const yyyy = Number(parts[2]);
+                    const d = new Date(yyyy, mm - 1, dd);
+                    if (!isNaN(d)) return d.toISOString().split('T')[0];
+                }
             }
+            if (str.includes('-')) {
+                const parts = str.split('-');
+                if (parts.length === 3) {
+                    const a = parts[0];
+                    const b = parts[1];
+                    const c = parts[2];
+                    // yyyy-mm-dd
+                    if (a.length === 4) {
+                        const d = new Date(Number(a), Number(b) - 1, Number(c));
+                        if (!isNaN(d)) return d.toISOString().split('T')[0];
+                    }
+                    // dd-mm-yyyy
+                    if (c.length === 4) {
+                        const d = new Date(Number(c), Number(b) - 1, Number(a));
+                        if (!isNaN(d)) return d.toISOString().split('T')[0];
+                    }
+                }
+            }
+            const d = new Date(str);
+            if (!isNaN(d)) return d.toISOString().split('T')[0];
             return '';
+        }
+
+        function normalizePlanKey(value) {
+            return String(value || '')
+                .trim()
+                .toLowerCase()
+                .replace(/[^a-z0-9_-]/g, '_');
+        }
+
+        function captureOpenGroupKeys() {
+            const panel = document.getElementById("plan-semanal-panel");
+            if (!panel) {
+                openGroupKeys = new Set();
+                return;
+            }
+            const open = new Set();
+            panel.querySelectorAll('[data-emp-key]').forEach(card => {
+                const key = card.getAttribute('data-emp-key') || '';
+                const collapse = card.querySelector('.collapse');
+                if (collapse && collapse.classList.contains('show')) {
+                    open.add(key);
+                }
+            });
+            openGroupKeys = open;
         }
 
         function vigDesdeInputVal() {
@@ -72,6 +141,7 @@
             currentContainer = container;
             allRecordsCache = records || [];
             planGroupsCache = {}; // Limpiar caché
+            openGroupKeys = new Set();
 
             // DEBUG: Ver estructura de los datos
             console.log('=== DEBUG WeeklyPlanPanel ===');
@@ -92,15 +162,19 @@
                 // Los registros vienen envueltos: {rowNumber, record, id}
                 const r = item.record || item;
 
-                // Intentar obtener cliente de varias formas (CLIENTE, Cliente, cliente)
-                let clienteName = r.cliente || r.CLIENTE || r.Cliente;
                 const idCliente = r.ID_CLIENTE || r.idCliente || "";
                 const idEmpleado = r.ID_EMPLEADO || r.idEmpleado || "";
                 if (!idCliente || !idEmpleado) return;
+                // Intentar obtener cliente de varias formas (CLIENTE, Cliente, cliente)
+                let clienteName = getClientNameById_(idCliente) || r.cliente || r.CLIENTE || r.Cliente;
 
                 // Si es un objeto (referencia), intentar obtener nombre o razon social
                 if (typeof clienteName === 'object' && clienteName !== null) {
-                    clienteName = clienteName.razonSocial || clienteName.nombre || clienteName.toString();
+                    if (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.getClientDisplayName === 'function') {
+                        clienteName = HtmlHelpers.getClientDisplayName(clienteName);
+                    } else {
+                        clienteName = clienteName.nombre || clienteName.razonSocial || clienteName.toString();
+                    }
                 }
 
                 const cliente = clienteName || "Sin asignar";
@@ -272,6 +346,7 @@
             if (!currentContainer) return;
 
             currentOriginalVigencia = originalVigencia; // Guardar vigencia original
+            forceNewPlan = !originalVigencia;
 
             // Renderizar la vista de detalle (cards)
             render(currentContainer);
@@ -317,6 +392,8 @@
         function render(container) {
             currentContainer = container; // Actualizar referencia
             if (!container) return;
+            forceNewPlan = false;
+            openGroupKeys = new Set();
 
             // Fallback para datos de referencia
             if ((!referenceData.clientes || !referenceData.clientes.length) && typeof ReferenceService !== 'undefined') {
@@ -425,14 +502,66 @@
                     // Si cambió el cliente mientras cargaba, ignorar
                     if (currentCliente !== idCliente) return;
 
+                    lastInfoHorasClientId = idCliente;
+                    let rowsToRender = planRows;
+                    if (!forceNewPlan) {
+                        const groups = new Map();
+                        planRows.forEach(function (row) {
+                            const desde = formatDateForInput(row.vigDesde || row["VIGENTE DESDE"] || "");
+                            const hasta = formatDateForInput(row.vigHasta || row["VIGENTE HASTA"] || "");
+                            const key = `${desde}|${hasta}`;
+                            if (!groups.has(key)) {
+                                groups.set(key, { vigencia: { desde, hasta }, rows: [] });
+                            }
+                            groups.get(key).rows.push(row);
+                        });
+
+                        if (groups.size === 1) {
+                            const entry = Array.from(groups.values())[0];
+                            currentOriginalVigencia = entry.vigencia;
+                            rowsToRender = entry.rows;
+                        } else if (groups.size > 1) {
+                            let selected = null;
+                            let latestTime = -Infinity;
+                            groups.forEach(entry => {
+                                const baseDate = entry.vigencia.desde || entry.vigencia.hasta || "";
+                                const time = baseDate ? new Date(baseDate).getTime() : 0;
+                                const normalizedTime = isNaN(time) ? 0 : time;
+                                if (normalizedTime >= latestTime) {
+                                    latestTime = normalizedTime;
+                                    selected = entry;
+                                }
+                            });
+                            if (selected) {
+                                currentOriginalVigencia = selected.vigencia;
+                                rowsToRender = selected.rows;
+                                if (Alerts) {
+                                    Alerts.showAlert("Hay varios planes para este cliente. Se muestra el más reciente. Para editar otro, usá el listado.", "warning");
+                                }
+                            }
+                        } else {
+                            currentOriginalVigencia = null;
+                        }
+                    } else {
+                        currentOriginalVigencia = null;
+                        if (planRows.length) {
+                            rowsToRender = planRows.map(row => ({ ...row, id: "" }));
+                            if (Alerts) {
+                                Alerts.showAlert("Estás creando un plan nuevo. Definí una nueva vigencia antes de guardar.", "info");
+                            }
+                        }
+                    }
+
                     return ApiService.callLatest('weekly-hours-' + idCliente, 'getClientWeeklyRequestedHours', cliente, idCliente)
                         .then(function (infoHoras) {
                             if (infoHoras && infoHoras.ignored) return;
-                            buildWeeklyPlanPanel(planRows, cliente, infoHoras || null);
+                            lastInfoHoras = infoHoras || null;
+                            buildWeeklyPlanPanel(rowsToRender, cliente, infoHoras || null);
                         })
                         .catch(function (err2) {
                             console.error("Error obteniendo horas pedidas:", err2);
-                            buildWeeklyPlanPanel(planRows, cliente, null);
+                            lastInfoHoras = null;
+                            buildWeeklyPlanPanel(rowsToRender, cliente, null);
                         });
                 })
                 .catch(function (err) {
@@ -454,6 +583,10 @@
             // Ocultar footer del modal si estamos en un modal
             const modalFooter = document.querySelector('.modal-footer-custom');
             if (modalFooter) modalFooter.style.display = 'none';
+
+            const clienteSelect = document.getElementById("field-CLIENTE");
+            const clienteId = clienteSelect ? clienteSelect.value : "";
+            const effectiveInfoHoras = infoHoras || (clienteId && clienteId === lastInfoHorasClientId ? lastInfoHoras : null);
 
             if (!rows.length) {
                 rows = [{
@@ -500,7 +633,7 @@
 
             // Horas contratadas
             let horasHtml = '';
-            if (infoHoras) {
+            if (effectiveInfoHoras) {
                 const partes = [];
                 const pushSiTieneHoras = (label, valor) => {
                     const num = Number(valor || 0);
@@ -509,13 +642,13 @@
                     }
                 };
 
-                pushSiTieneHoras('Lu', infoHoras.lunes);
-                pushSiTieneHoras('Ma', infoHoras.martes);
-                pushSiTieneHoras('Mi', infoHoras.miercoles);
-                pushSiTieneHoras('Ju', infoHoras.jueves);
-                pushSiTieneHoras('Vi', infoHoras.viernes);
-                pushSiTieneHoras('Sa', infoHoras.sabado);
-                pushSiTieneHoras('Do', infoHoras.domingo);
+                pushSiTieneHoras('Lu', effectiveInfoHoras.lunes);
+                pushSiTieneHoras('Ma', effectiveInfoHoras.martes);
+                pushSiTieneHoras('Mi', effectiveInfoHoras.miercoles);
+                pushSiTieneHoras('Ju', effectiveInfoHoras.jueves);
+                pushSiTieneHoras('Vi', effectiveInfoHoras.viernes);
+                pushSiTieneHoras('Sa', effectiveInfoHoras.sabado);
+                pushSiTieneHoras('Do', effectiveInfoHoras.domingo);
 
                 if (partes.length) {
                     horasHtml += '<div class="lt-surface lt-surface--subtle p-2 flex-grow-1 border-start border-success border-3">';
@@ -540,7 +673,7 @@
                 const group = groupedByEmpleado[key];
                 const empleado = group.label;
                 const empleadoRows = group.rows;
-                const collapseId = "plan-emp-" + empIdx;
+                const collapseId = "plan-emp-" + normalizePlanKey(key);
                 const totalHoras = empleadoRows.reduce((sum, r) => sum + (parseFloat(r.horasPlan) || 0), 0);
                 const activeDays = empleadoRows.length;
 
@@ -552,9 +685,10 @@
                 // 1. Si es "Sin asignar" (donde van los nuevos)
                 // 2. O si no hay ninguno abierto (opcional, aquí lo dejamos cerrado por defecto excepto Sin Asignar)
                 const isSinAsignar = empleado === "Sin asignar";
-                const isOpen = isSinAsignar;
+                const hasOpenState = openGroupKeys && openGroupKeys.size > 0;
+                const isOpen = hasOpenState ? openGroupKeys.has(key) : isSinAsignar;
 
-                html += '<div class="card shadow-sm border-0">';
+                html += '<div class="card shadow-sm border-0" data-emp-key="' + HtmlHelpers.escapeHtml(key) + '">';
 
                 // Card Header
                 html += '<div class="card-header py-2 px-3 bg-white d-flex flex-wrap justify-content-between align-items-center gap-2 lt-clickable" ';
@@ -689,13 +823,14 @@
 
         function attachWeeklyPlanHandlers(panel) {
             panel.addEventListener("click", function (e) {
-                const target = e.target;
-                const action = target.getAttribute("data-action");
+                const actionBtn = e.target.closest("[data-action]");
+                if (!actionBtn) return;
+                const action = actionBtn.getAttribute("data-action");
 
                 if (action === "add-plan-row") {
                     addEmptyPlanRow();
                 } else if (action === "delete-plan-row") {
-                    const idx = target.getAttribute("data-idx");
+                    const idx = actionBtn.getAttribute("data-idx");
                     deletePlanRow(idx);
                 } else if (action === "save-weekly-plan") {
                     saveWeeklyPlan();
@@ -718,6 +853,8 @@
             const panel = document.getElementById("plan-semanal-panel");
             if (!panel) return;
 
+            captureOpenGroupKeys();
+
             const currentRows = [];
             const allInputs = panel.querySelectorAll('[id^="plan-row-"]');
             const processedIndices = new Set();
@@ -733,9 +870,13 @@
                     const horaInput = document.getElementById(`plan-row-${idx}-horaEntrada`);
                     const horasInput = document.getElementById(`plan-row-${idx}-horasPlan`);
                     const obsInput = document.getElementById(`plan-row-${idx}-obs`);
+                    const idInput = document.getElementById(`plan-row-${idx}-id`);
+                    const selectedOption = empleadoSelect && empleadoSelect.selectedOptions ? empleadoSelect.selectedOptions[0] : null;
 
                     const row = {
-                        empleado: empleadoSelect ? empleadoSelect.value : "",
+                        id: idInput ? idInput.value : "",
+                        empleado: selectedOption ? selectedOption.textContent : "",
+                        idEmpleado: empleadoSelect ? empleadoSelect.value : "",
                         diaSemana: diaSelect ? diaSelect.value : "",
                         horaEntrada: horaInput ? horaInput.value : "",
                         horasPlan: horasInput ? horasInput.value : "",
@@ -763,7 +904,7 @@
             });
 
             // Reconstruir el panel
-            buildWeeklyPlanPanel(currentRows, cliente, null);
+            buildWeeklyPlanPanel(currentRows, cliente, lastInfoHoras);
 
             // Expandir automáticamente el grupo "Sin asignar"
             setTimeout(() => {
@@ -778,11 +919,14 @@
             const clienteSelect = document.getElementById("field-CLIENTE");
             if (!clienteSelect) return;
 
-            const cliente = clienteSelect.value;
+            const selectedOption = clienteSelect.selectedOptions ? clienteSelect.selectedOptions[0] : null;
+            const cliente = selectedOption ? selectedOption.textContent : clienteSelect.value;
             if (!cliente) return;
 
             const panel = document.getElementById("plan-semanal-panel");
             if (!panel) return;
+
+            captureOpenGroupKeys();
 
             // Obtener todas las filas actuales excepto la que queremos eliminar
             const currentRows = [];
@@ -807,9 +951,11 @@
                     const horaInput = document.getElementById(`plan-row-${currentIdx}-horaEntrada`);
                     const horasInput = document.getElementById(`plan-row-${currentIdx}-horasPlan`);
                     const obsInput = document.getElementById(`plan-row-${currentIdx}-obs`);
+                    const idInput = document.getElementById(`plan-row-${currentIdx}-id`);
 
                     const selectedOption = empleadoSelect && empleadoSelect.selectedOptions ? empleadoSelect.selectedOptions[0] : null;
                     currentRows.push({
+                        id: idInput ? idInput.value : "",
                         empleado: selectedOption ? selectedOption.textContent : "",
                         idEmpleado: empleadoSelect ? empleadoSelect.value : "",
                         diaSemana: diaSelect ? diaSelect.value : "",
@@ -823,7 +969,7 @@
             });
 
             // Reconstruir el panel sin la fila eliminada
-            buildWeeklyPlanPanel(currentRows, cliente, null);
+            buildWeeklyPlanPanel(currentRows, cliente, lastInfoHoras);
         }
 
         function saveWeeklyPlan() {
@@ -902,7 +1048,16 @@
             UiState.setGlobalLoading(true, "Guardando plan semanal...");
 
             // Pasamos currentOriginalVigencia para que el backend sepa qué reemplazar
-            ApiService.call('saveWeeklyPlanForClient', cliente, items, currentOriginalVigencia, idCliente)
+            let originalVigencia = currentOriginalVigencia;
+            if (!forceNewPlan && (!originalVigencia || (!originalVigencia.desde && !originalVigencia.hasta))) {
+                const desde = vigDesdeInputVal();
+                const hasta = vigHastaInputVal();
+                if (desde || hasta) {
+                    originalVigencia = { desde: desde, hasta: hasta };
+                }
+            }
+
+            ApiService.call('saveWeeklyPlanForClient', cliente, items, forceNewPlan ? null : originalVigencia, idCliente)
                 .then(function () {
                     if (Alerts) Alerts.showAlert("✅ Plan semanal guardado correctamente.", "success");
                     // Recargar la lista completa desde el servidor

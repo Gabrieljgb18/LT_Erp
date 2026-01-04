@@ -92,15 +92,88 @@
             return "";
         }
 
+        function getClientDisplayName(cliente, options) {
+            if (!cliente) return "";
+            if (typeof cliente === "string") return cliente;
+            const opts = options || {};
+            const nombre = cliente.nombre || cliente.NOMBRE || cliente.cliente || cliente.CLIENTE || "";
+            const razon = cliente.razonSocial || cliente["RAZON SOCIAL"] || cliente["RAZÓN SOCIAL"] || "";
+            if (opts.preferRazon) {
+                return (razon || nombre || "").toString().trim();
+            }
+            return (nombre || razon || "").toString().trim();
+        }
+
         return {
             escapeHtml,
             getEmpleadoOptionsHtml,
             getDiaOptionsHtml,
-            formatHoraEntradaForInput
+            formatHoraEntradaForInput,
+            getClientDisplayName
         };
     })();
 
     global.HtmlHelpers = HtmlHelpers;
+})(typeof window !== "undefined" ? window : this);
+
+
+/**
+ * Formatters
+ * Utilidades para formateo consistente en la UI.
+ */
+
+(function (global) {
+  const Formatters = (() => {
+    function formatCurrency(value, locale, currency) {
+      const num = Number(value) || 0;
+      const loc = locale || "es-AR";
+      const curr = currency || "ARS";
+      return num.toLocaleString(loc, { style: "currency", currency: curr });
+    }
+
+    function formatNumber(value, decimals, locale) {
+      const num = Number(value) || 0;
+      const loc = locale || "es-AR";
+      if (typeof decimals === "number") {
+        return num.toLocaleString(loc, {
+          minimumFractionDigits: decimals,
+          maximumFractionDigits: decimals
+        });
+      }
+      return num.toLocaleString(loc);
+    }
+
+    function formatHours(value, locale) {
+      const num = Number(value) || 0;
+      const loc = locale || "es-AR";
+      return num.toLocaleString(loc, {
+        minimumFractionDigits: 1,
+        maximumFractionDigits: 1
+      }) + " hs";
+    }
+
+    function formatDateDisplay(value, locale) {
+      if (!value) return "";
+      if (typeof value === "string") {
+        const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (match) return `${match[3]}/${match[2]}/${match[1]}`;
+      }
+      const d = value instanceof Date ? value : new Date(value);
+      if (!isNaN(d.getTime())) {
+        return d.toLocaleDateString(locale || "es-AR");
+      }
+      return String(value);
+    }
+
+    return {
+      formatCurrency,
+      formatNumber,
+      formatHours,
+      formatDateDisplay
+    };
+  })();
+
+  global.Formatters = Formatters;
 })(typeof window !== "undefined" ? window : this);
 
 
@@ -247,6 +320,9 @@
         { id: "DESCRIPCION", label: "Descripción", type: "textarea", rows: 3, placeholder: "Descripción del servicio", full: true },
         { id: "ETIQUETAS", label: "Etiquetas", type: "tags", full: true, placeholder: "Agregar etiqueta..." },
         { id: "DIRECCION", label: "Dirección", type: "text", full: true },
+        { id: "MAPS PLACE ID", label: "Maps Place ID", type: "text", hidden: true },
+        { id: "MAPS LAT", label: "Maps Lat", type: "text", hidden: true },
+        { id: "MAPS LNG", label: "Maps Lng", type: "text", hidden: true },
         { id: "SECTION_ADMIN", label: "Administración y facturación", type: "section", icon: "bi-clipboard-check" },
         { id: "NOMBRE ADMINISTRADOR", label: "Administrador", type: "text", placeholder: "Nombre del administrador" },
         { id: "CORREO ADMINISTRACION", label: "Correo administración", type: "email" },
@@ -292,6 +368,9 @@
         { id: "NUMERO DOCUMENTO", label: "Número de documento", type: "docNumber", docTypeField: "TIPO DOCUMENTO", placeholder: "00-00000000-0" },
         { id: "SECTION_CONTACTO", label: "Contacto", type: "section", icon: "bi-telephone" },
         { id: "DIRECCION", label: "Dirección", type: "text", full: true },
+        { id: "MAPS PLACE ID", label: "Maps Place ID", type: "text", hidden: true },
+        { id: "MAPS LAT", label: "Maps Lat", type: "text", hidden: true },
+        { id: "MAPS LNG", label: "Maps Lng", type: "text", hidden: true },
         { id: "TELEFONO", label: "Teléfono", type: "phone" },
         { id: "SECTION_EMERGENCIA", label: "Contacto de emergencia", type: "section", icon: "bi-life-preserver" },
         { id: "CONTACTO EMERGENCIA NOMBRE", label: "Nombre", type: "text", full: true },
@@ -337,6 +416,30 @@
         { id: "MONTO", label: "Monto", type: "number", step: "0.01" },
         { id: "ID_FACTURA", label: "ID Factura", type: "text", hidden: true },
         { id: "FACTURA_NUMERO", label: "Factura número", type: "text" }
+      ]
+    },
+    GASTOS: {
+      title: "Registro de gastos",
+      fields: [
+        { id: "SECTION_GASTOS", label: "Detalle del gasto", type: "section", icon: "bi-receipt-cutoff" },
+        { id: "FECHA", label: "Fecha", type: "date" },
+        {
+          id: "CATEGORIA",
+          label: "Categoría",
+          type: "select",
+          options: ["Servicios", "Insumos", "Transporte", "Impuestos", "Administración", "Mantenimiento", "Otros"]
+        },
+        { id: "DETALLE", label: "Detalle", type: "text", full: true, placeholder: "Detalle del gasto" },
+        { id: "PROVEEDOR", label: "Proveedor", type: "text" },
+        { id: "MONTO", label: "Monto", type: "number", step: "0.01" },
+        {
+          id: "MEDIO DE PAGO",
+          label: "Medio de pago",
+          type: "select",
+          options: ["Uala", "Mercado Pago", "Efectivo", "Santander"]
+        },
+        { id: "COMPROBANTE", label: "Comprobante", type: "text" },
+        { id: "OBSERVACIONES", label: "Observaciones", type: "textarea", full: true }
       ]
     },
     ASISTENCIA_PLAN: {
@@ -439,6 +542,8 @@
       loaded: false
     };
     const listeners = new Set();
+    let inFlight = null;
+    let notifyOnResolve = false;
 
     function load(force) {
       const shouldNotify = !!force;
@@ -454,24 +559,31 @@
         return Promise.resolve(state.data);
       }
 
-      return ApiService.call("getReferenceData")
+      if (shouldNotify) notifyOnResolve = true;
+      if (inFlight) return inFlight;
+
+      inFlight = ApiService.call("getReferenceData")
         .then(function (data) {
           if (data && data.ignored) return;
           state.data = data || { clientes: [], empleados: [] };
           ApiService.dataCache.reference = state.data;
           ApiService.dataCache.referenceTs = Date.now();
-          if (shouldNotify) notify(state.data);
+          if (notifyOnResolve) notify(state.data);
           return state.data;
         })
         .catch(function (err) {
           console.error("Error obteniendo referencia:", err);
           state.data = { clientes: [], empleados: [] };
-          if (shouldNotify) notify(state.data);
+          if (notifyOnResolve) notify(state.data);
           return state.data;
         })
         .finally(function () {
           state.loaded = true;
+          inFlight = null;
+          notifyOnResolve = false;
         });
+
+      return inFlight;
     }
 
     function get() {
@@ -560,6 +672,12 @@
       entity: "pago de cliente",
       label: function (record) {
         return record["RAZÓN SOCIAL"] || "";
+      }
+    },
+    GASTOS: {
+      entity: "gasto",
+      label: function (record) {
+        return record["DETALLE"] || record["CATEGORIA"] || "";
       }
     },
     ASISTENCIA: {
@@ -1292,6 +1410,20 @@
     return wrapper;
   }
 
+  function renderHidden(field) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "mb-1 d-none";
+
+    const input = document.createElement("input");
+    input.type = "hidden";
+    input.id = "field-" + field.id;
+    input.className = "form-control form-control-sm";
+    if (field.placeholder) input.placeholder = field.placeholder;
+
+    wrapper.appendChild(input);
+    return wrapper;
+  }
+
   function renderSection(field) {
     const wrapper = document.createElement("div");
     wrapper.className = "form-section-heading";
@@ -1497,6 +1629,9 @@
 
   const FormRenderer = {
     renderField: function (field, referenceData) {
+      if (field && field.hidden) {
+        return renderHidden(field);
+      }
       switch (field.type) {
         case "boolean":
           return renderBoolean(field);
@@ -1505,10 +1640,22 @@
         case "dayOfWeek":
           return renderDayOfWeek(field);
         case "cliente": {
+          const normalizeToken = (val) => String(val || "")
+            .toUpperCase()
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "");
+          const preferRazon = field && (
+            normalizeToken(field.id).indexOf("RAZON") > -1 ||
+            normalizeToken(field.label).indexOf("RAZON") > -1
+          );
           const options =
             (referenceData.clientes || []).map((cli) => ({
-              value: cli.razonSocial || cli.nombre,
-              label: cli.razonSocial || cli.nombre,
+              value: (global.HtmlHelpers && typeof global.HtmlHelpers.getClientDisplayName === "function")
+                ? global.HtmlHelpers.getClientDisplayName(cli, { preferRazon: preferRazon })
+                : (cli.nombre || cli.razonSocial || ""),
+              label: (global.HtmlHelpers && typeof global.HtmlHelpers.getClientDisplayName === "function")
+                ? global.HtmlHelpers.getClientDisplayName(cli, { preferRazon: preferRazon })
+                : (cli.nombre || cli.razonSocial || ""),
               dataset: {
                 id: cli.id != null ? String(cli.id) : "",
                 cuit: cli.cuit || ""
@@ -1596,6 +1743,1239 @@
   };
 
   global.FormRenderer = FormRenderer;
+})(typeof window !== "undefined" ? window : this);
+
+
+(function (global) {
+  if (typeof document === "undefined") return;
+
+  const listeners = [];
+  let ready = false;
+
+  function isReady() {
+    return !!(global.google && global.google.maps && global.google.maps.places);
+  }
+
+  function notifyReady() {
+    if (ready || !isReady()) return;
+    ready = true;
+    while (listeners.length) {
+      const cb = listeners.shift();
+      try {
+        cb();
+      } catch (e) {
+        console.warn("MapsLoader callback error:", e);
+      }
+    }
+  }
+
+  document.addEventListener("maps:ready", notifyReady);
+
+  const MapsLoader = {
+    onReady: function (cb) {
+      if (typeof cb !== "function") return;
+      if (isReady()) {
+        ready = true;
+        cb();
+        return;
+      }
+      listeners.push(cb);
+    },
+    isAvailable: function () {
+      return isReady();
+    },
+    hasKey: function () {
+      return !!global.__MAPS_API_KEY__;
+    }
+  };
+
+  global.MapsLoader = MapsLoader;
+})(typeof window !== "undefined" ? window : this);
+
+
+(function (global) {
+  function bindAddressInput(container) {
+    if (!container) return;
+    const input = container.querySelector("#field-DIRECCION");
+    if (!input || input.dataset.mapsBound) return;
+
+    input.dataset.mapsBound = "1";
+
+    const getField = (fieldId) => container.querySelector("[id='field-" + fieldId + "']");
+    const placeIdInput = getField("MAPS PLACE ID");
+    const latInput = getField("MAPS LAT");
+    const lngInput = getField("MAPS LNG");
+
+    function clearPlaceData() {
+      if (placeIdInput) placeIdInput.value = "";
+      if (latInput) latInput.value = "";
+      if (lngInput) lngInput.value = "";
+      input.dataset.mapsPlaceSelected = "0";
+    }
+
+    input.addEventListener("input", clearPlaceData);
+
+    if (!global.MapsLoader || !global.MapsLoader.hasKey()) {
+      return;
+    }
+
+    global.MapsLoader.onReady(function () {
+      if (!global.google || !global.google.maps || !global.google.maps.places) return;
+
+      const autocomplete = new global.google.maps.places.Autocomplete(input, {
+        fields: ["place_id", "formatted_address", "geometry", "name"],
+        types: ["geocode"]
+      });
+
+      autocomplete.addListener("place_changed", function () {
+        const place = autocomplete.getPlace();
+        if (!place) return;
+        if (place.formatted_address) {
+          input.value = place.formatted_address;
+        }
+        if (placeIdInput) {
+          placeIdInput.value = place.place_id || "";
+        }
+        if (place.geometry && place.geometry.location) {
+          if (latInput) latInput.value = String(place.geometry.location.lat());
+          if (lngInput) lngInput.value = String(place.geometry.location.lng());
+        }
+        input.dataset.mapsPlaceSelected = "1";
+      });
+    });
+  }
+
+  const MapsAutocomplete = {
+    bind: function (container) {
+      bindAddressInput(container);
+    }
+  };
+
+  global.MapsAutocomplete = MapsAutocomplete;
+})(typeof window !== "undefined" ? window : this);
+
+
+(function (global) {
+  if (typeof document === "undefined") return;
+
+  const MapPanel = (() => {
+    let map = null;
+    let markers = [];
+    let markersByKey = new Map();
+    let infoWindow = null;
+    let cachedReference = { clientes: [], empleados: [] };
+    let referenceIndex = {
+      clientsById: new Map(),
+      employeesById: new Map(),
+      sortedClients: [],
+      sortedEmployees: []
+    };
+    let cachedClientItems = [];
+    let clientItemsDirty = true;
+    let selectsDirty = true;
+    let planData = null;
+    let planIndex = createPlanIndex();
+    let currentListItems = [];
+    let listClickBound = false;
+    let unsubscribeRef = null;
+    let planRequestId = 0;
+    let isPlanLoading = false;
+    let isRefLoading = false;
+    let clientDetailCache = new Map();
+
+    const state = {
+      employeeId: "",
+      clientId: "",
+      query: "",
+      planFilter: "all", // all | planned | unplanned
+      weekStart: getMondayOfWeek(new Date())
+    };
+
+    function buildPanelHtml() {
+      return `
+        <div class="lt-surface lt-surface--subtle p-3 mb-3">
+          <div class="d-flex flex-column flex-lg-row gap-3 align-items-start align-items-lg-center justify-content-between">
+            <div>
+              <div class="small text-muted">Mapa operativo</div>
+              <h5 class="m-0">Planificación semanal</h5>
+            </div>
+            <div class="map-week-nav">
+              <button type="button" class="btn btn-outline-secondary btn-sm" title="Semana anterior" data-map-week-prev>
+                <i class="bi bi-chevron-left"></i>
+              </button>
+              <div class="map-week-label" data-map-week-label>Semana</div>
+              <button type="button" class="btn btn-outline-secondary btn-sm" title="Semana siguiente" data-map-week-next>
+                <i class="bi bi-chevron-right"></i>
+              </button>
+              <button type="button" class="btn btn-outline-primary btn-sm" title="Ir a hoy" data-map-week-today>
+                <i class="bi bi-calendar-check"></i>
+              </button>
+              <button type="button" class="btn btn-outline-primary btn-sm" title="Actualizar plan" data-map-week-refresh>
+                <i class="bi bi-arrow-repeat"></i>
+              </button>
+            </div>
+          </div>
+          <div class="map-filters mt-3">
+            <div class="map-filter">
+              <label class="form-label">Empleado</label>
+              <select class="form-select form-select-sm" data-map-employee>
+                <option value="">Todos los empleados</option>
+              </select>
+            </div>
+            <div class="map-filter">
+              <label class="form-label">Cliente</label>
+              <select class="form-select form-select-sm" data-map-client>
+                <option value="">Todos los clientes</option>
+              </select>
+            </div>
+            <div class="map-filter">
+              <label class="form-label">Estado</label>
+              <div class="map-status-toggle" data-map-plan-toggle>
+                <button type="button" class="btn btn-outline-primary btn-sm active" data-map-plan="all">Todos</button>
+                <button type="button" class="btn btn-outline-primary btn-sm" data-map-plan="planned">Planificados</button>
+                <button type="button" class="btn btn-outline-primary btn-sm" data-map-plan="unplanned">Sin planificar</button>
+              </div>
+            </div>
+            <div class="map-filter map-filter--wide">
+              <label class="form-label">Buscar cliente</label>
+              <input type="search" class="form-control form-control-sm" placeholder="Nombre o dirección" data-map-search>
+            </div>
+          </div>
+        </div>
+        <div class="row g-3">
+          <div class="col-12 col-xl-8">
+            <div class="lt-surface map-canvas-wrapper">
+              <div id="map-canvas" class="map-canvas"></div>
+              <div class="map-canvas-overlay d-none" data-map-overlay></div>
+            </div>
+          </div>
+          <div class="col-12 col-xl-4">
+            <div class="lt-surface p-3 map-list">
+              <div class="map-summary mb-3" data-map-summary></div>
+              <div class="map-employee-card d-none" data-map-employee-card></div>
+              <div class="map-items" data-map-items></div>
+              <div class="map-missing mt-3" data-map-missing></div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function createPlanIndex() {
+      return {
+        plannedClientIds: new Set(),
+        clientAssignments: new Map(),
+        employeeAssignments: new Map()
+      };
+    }
+
+    function escapeHtml(value) {
+      if (global.HtmlHelpers && typeof global.HtmlHelpers.escapeHtml === "function") {
+        return global.HtmlHelpers.escapeHtml(value);
+      }
+      return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function getClientDisplayName(cliente) {
+      if (!cliente) return "";
+      if (global.HtmlHelpers && typeof global.HtmlHelpers.getClientDisplayName === "function") {
+        return global.HtmlHelpers.getClientDisplayName(cliente);
+      }
+      return cliente.nombre || cliente.razonSocial || "";
+    }
+
+    function normalizeText(value) {
+      return String(value || "").toLowerCase();
+    }
+
+    function hasCoords(item) {
+      return typeof item.lat === "number" && !isNaN(item.lat) &&
+        typeof item.lng === "number" && !isNaN(item.lng);
+    }
+
+    function toNumber(value) {
+      if (value === "" || value == null) return null;
+      const num = Number(value);
+      return isNaN(num) ? null : num;
+    }
+
+    function getMondayOfWeek(date) {
+      const d = new Date(date);
+      const day = d.getDay();
+      const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+      return new Date(d.setDate(diff));
+    }
+
+    function addDays(date, days) {
+      const d = new Date(date);
+      d.setDate(d.getDate() + days);
+      return d;
+    }
+
+    function formatDateISO(date) {
+      const d = new Date(date);
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    function formatDateShort(date) {
+      const d = new Date(date);
+      const dd = String(d.getDate()).padStart(2, "0");
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      return `${dd}/${mm}`;
+    }
+
+    function formatWeekLabel(weekStart) {
+      const end = addDays(weekStart, 6);
+      return `Semana ${formatDateShort(weekStart)} - ${formatDateShort(end)}`;
+    }
+
+    function buildPlanIndex(data) {
+      const index = createPlanIndex();
+      if (!data || !Array.isArray(data.dias)) return index;
+
+      data.dias.forEach(dia => {
+        const dayLabel = dia.diaDisplay || dia.dia || dia.fechaDisplay || "";
+        (dia.clientes || []).forEach(cliente => {
+          const rawId = cliente && cliente.idCliente != null ? cliente.idCliente : "";
+          const clientId = String(rawId || "").trim();
+          if (!clientId) return;
+
+          index.plannedClientIds.add(clientId);
+
+          let clientEntry = index.clientAssignments.get(clientId);
+          if (!clientEntry) {
+            clientEntry = { id: clientId, empleados: new Set(), dias: new Set() };
+            index.clientAssignments.set(clientId, clientEntry);
+          }
+          if (dayLabel) clientEntry.dias.add(dayLabel);
+
+          (cliente.asignaciones || []).forEach(asg => {
+            const empId = asg && asg.idEmpleado != null ? String(asg.idEmpleado).trim() : "";
+            if (!empId) return;
+            const empName = asg && asg.empleado ? String(asg.empleado).trim() : "";
+            clientEntry.empleados.add(empName || empId);
+
+            let empEntry = index.employeeAssignments.get(empId);
+            if (!empEntry) {
+              empEntry = { id: empId, nombre: empName || "", clientes: new Set() };
+              index.employeeAssignments.set(empId, empEntry);
+            }
+            empEntry.clientes.add(clientId);
+          });
+        });
+      });
+
+      return index;
+    }
+
+    function getEmployeeById(id) {
+      if (!id) return null;
+      return referenceIndex.employeesById.get(String(id).trim()) || null;
+    }
+
+    function getClientById(id) {
+      if (!id) return null;
+      return referenceIndex.clientsById.get(String(id).trim()) || null;
+    }
+
+    function parseTags(value) {
+      if (!value) return [];
+      return String(value)
+        .split(",")
+        .map(tag => tag.trim())
+        .filter(Boolean);
+    }
+
+    function formatDocLabel(docType, docNumber) {
+      const type = String(docType || "").trim();
+      const number = String(docNumber || "").trim();
+      if (!type && !number) return "";
+      if (global.InputUtils && typeof global.InputUtils.formatDocLabel === "function") {
+        return global.InputUtils.formatDocLabel(type || "CUIT", number);
+      }
+      return `${type} ${number}`.trim();
+    }
+
+    function buildClientDetailContent(ref, record, loading) {
+      const data = record && record.record ? record.record : {};
+      const nombre = data["NOMBRE"] || (ref && ref.nombre) || "";
+      const razon = data["RAZON SOCIAL"] || data["RAZÓN SOCIAL"] || (ref && ref.razonSocial) || "";
+      const docType = data["TIPO DOCUMENTO"] || (ref && ref.docType) || "";
+      const docNumber = data["NUMERO DOCUMENTO"] || (ref && ref.docNumber) || "";
+      const direccion = data["DIRECCION"] || (ref && ref.direccion) || "";
+      const tipoServicio = data["TIPO SERVICIO"] || (ref && ref.tipoServicio) || "";
+      const descripcion = data["DESCRIPCION"] || "";
+      const administrador = data["NOMBRE ADMINISTRADOR"] || "";
+      const correoAdmin = data["CORREO ADMINISTRACION"] || "";
+      const telAdmin = data["TELEFONO ADMINISTRACION"] || "";
+      const correoFact = data["CORREO FACTURACION"] || "";
+      const encargado = data["ENCARGADO"] || "";
+      const telEncargado = data["TELEFONO"] || "";
+      const valorHora = data["VALOR HORA"] || "";
+      const fechaContrato = data["FECHA CONTRATO"] || "";
+      const tags = parseTags(data["ETIQUETAS"] || (ref && ref.tags) || "");
+      const docLabel = formatDocLabel(docType, docNumber);
+
+      const detailItem = (label, value) => {
+        if (!value) return "";
+        return `
+          <div class="map-client-detail__item">
+            <div class="map-client-detail__label">${escapeHtml(label)}</div>
+            <div class="map-client-detail__value">${escapeHtml(value)}</div>
+          </div>
+        `;
+      };
+
+      const tagsHtml = tags.length
+        ? `<div class="map-client-detail__tags">${tags.map(tag => `<span class="lt-chip lt-chip--muted">${escapeHtml(tag)}</span>`).join("")}</div>`
+        : `<div class="text-muted small">Sin etiquetas</div>`;
+
+      const loadingHtml = loading
+        ? `<div class="map-client-detail__loading"><span class="spinner-border spinner-border-sm"></span>Actualizando datos...</div>`
+        : "";
+
+      return `
+        <div class="map-client-detail">
+          <div class="map-client-detail__header">
+            <div class="map-client-detail__title">${escapeHtml(nombre || razon || "Cliente")}</div>
+            ${razon ? `<div class="map-client-detail__subtitle">${escapeHtml(razon)}</div>` : ""}
+          </div>
+          ${loadingHtml}
+          <div class="map-client-detail__grid">
+            ${detailItem("Documento", docLabel)}
+            ${detailItem("Dirección", direccion)}
+            ${detailItem("Tipo de servicio", tipoServicio)}
+            ${detailItem("Administrador", administrador)}
+            ${detailItem("Teléfono administración", telAdmin)}
+            ${detailItem("Correo administración", correoAdmin)}
+            ${detailItem("Correo facturación", correoFact)}
+            ${detailItem("Encargado", encargado)}
+            ${detailItem("Teléfono encargado", telEncargado)}
+            ${detailItem("Fecha contrato", fechaContrato)}
+            ${detailItem("Valor hora", valorHora)}
+          </div>
+          ${descripcion ? `<div class="map-client-detail__description">${escapeHtml(descripcion)}</div>` : ""}
+          <div class="map-client-detail__tags-block">
+            <div class="map-client-detail__label">Etiquetas</div>
+            ${tagsHtml}
+          </div>
+        </div>
+      `;
+    }
+
+    function openClientDetailModal(clientId) {
+      if (!clientId || !global.bootstrap || !global.bootstrap.Modal) {
+        if (global.Alerts && global.Alerts.showAlert) {
+          global.Alerts.showAlert("No se pudo abrir el detalle del cliente.", "warning");
+        }
+        return;
+      }
+
+      const ref = getClientById(clientId) || {};
+      const name = getClientDisplayName(ref) || "Cliente";
+      const modalId = "map-client-detail-modal";
+
+      const oldModal = document.getElementById(modalId);
+      if (oldModal) oldModal.remove();
+
+      const cached = clientDetailCache.get(clientId);
+      const modalHtml = `
+        <div class="modal fade" id="${modalId}" tabindex="-1">
+          <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+              <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">
+                  <i class="bi bi-building me-2"></i>${escapeHtml(name)}
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+              </div>
+              <div class="modal-body">
+                <div data-map-client-detail>
+                  ${buildClientDetailContent(ref, cached, !cached)}
+                </div>
+              </div>
+              <div class="modal-footer">
+                ${ref && ref.direccion ? `
+                  <a class="btn btn-outline-primary" target="_blank" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ref.direccion)}">
+                    <i class="bi bi-geo-alt me-1"></i> Ver en mapa
+                  </a>
+                ` : ""}
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      document.body.insertAdjacentHTML("beforeend", modalHtml);
+      const modalEl = document.getElementById(modalId);
+      const modal = new bootstrap.Modal(modalEl);
+      modal.show();
+
+      modalEl.addEventListener("hidden.bs.modal", () => {
+        modalEl.remove();
+      });
+
+      if (cached) return;
+
+      if (!global.ApiService) return;
+
+      global.ApiService.callLatest(`client-detail-${clientId}`, "getRecordById", "CLIENTES", clientId)
+        .then(result => {
+          if (result && result.ignored) return;
+          if (!result || !result.record) return;
+          clientDetailCache.set(clientId, result);
+          const detail = modalEl.querySelector("[data-map-client-detail]");
+          if (detail) {
+            detail.innerHTML = buildClientDetailContent(ref, result, false);
+          }
+        })
+        .catch(() => {
+          const detail = modalEl.querySelector("[data-map-client-detail]");
+          if (detail) {
+            detail.innerHTML = buildClientDetailContent(ref, null, false);
+          }
+        });
+    }
+
+    function openPlanModal(clientId) {
+      if (!clientId || !global.WeeklyPlanPanel || !global.bootstrap || !global.bootstrap.Modal) {
+        if (global.Alerts && global.Alerts.showAlert) {
+          global.Alerts.showAlert("No se pudo abrir el plan semanal.", "warning");
+        }
+        return;
+      }
+
+      const modalId = "map-plan-modal";
+      const oldModal = document.getElementById(modalId);
+      if (oldModal) oldModal.remove();
+
+      const existingPanel = document.getElementById("plan-semanal-panel");
+      if (existingPanel && !existingPanel.closest(`#${modalId}`)) {
+        existingPanel.remove();
+      }
+
+      const ref = getClientById(clientId);
+      const name = getClientDisplayName(ref) || "Cliente";
+
+      const modalHtml = `
+        <div class="modal fade" id="${modalId}" tabindex="-1">
+          <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+              <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">
+                  <i class="bi bi-calendar-week me-2"></i>Plan semanal · ${escapeHtml(name)}
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+              </div>
+              <div class="modal-body">
+                <div id="map-plan-panel"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      document.body.insertAdjacentHTML("beforeend", modalHtml);
+      const modalEl = document.getElementById(modalId);
+      const modal = new bootstrap.Modal(modalEl);
+      modal.show();
+
+      modalEl.addEventListener("hidden.bs.modal", () => {
+        modalEl.remove();
+      });
+
+      const panel = modalEl.querySelector("#map-plan-panel");
+      if (!panel) return;
+
+      if (typeof global.WeeklyPlanPanel.init === "function") {
+        global.WeeklyPlanPanel.init(cachedReference);
+      }
+      global.WeeklyPlanPanel.render(panel);
+
+      const select = modalEl.querySelector("#field-CLIENTE");
+      if (select) {
+        select.value = clientId;
+        select.dispatchEvent(new Event("change"));
+      }
+    }
+
+    function buildReferenceIndex() {
+      const clients = cachedReference.clientes || [];
+      const employees = cachedReference.empleados || [];
+      const clientsById = new Map();
+      const employeesById = new Map();
+
+      clients.forEach(cli => {
+        const id = cli && cli.id != null ? String(cli.id).trim() : "";
+        if (id) clientsById.set(id, cli);
+      });
+
+      employees.forEach(emp => {
+        const id = emp && emp.id != null ? String(emp.id).trim() : "";
+        if (id) employeesById.set(id, emp);
+      });
+
+      referenceIndex = {
+        clientsById,
+        employeesById,
+        sortedClients: clients.slice().sort((a, b) => getClientDisplayName(a).localeCompare(getClientDisplayName(b))),
+        sortedEmployees: employees.slice().sort((a, b) => String(a.nombre || "").localeCompare(String(b.nombre || "")))
+      };
+    }
+
+    function rebuildClientItems() {
+      const clients = referenceIndex.sortedClients.length
+        ? referenceIndex.sortedClients
+        : (cachedReference.clientes || []);
+      cachedClientItems = clients.map(cli => {
+        const id = cli && cli.id != null ? String(cli.id).trim() : "";
+        if (!id) return null;
+        const name = getClientDisplayName(cli);
+        if (!name) return null;
+        const assignment = planIndex.clientAssignments.get(id);
+        const assignedEmployees = assignment ? Array.from(assignment.empleados).filter(Boolean) : [];
+        return {
+          type: "cliente",
+          id: id,
+          name: name,
+          direccion: cli.direccion || "",
+          lat: toNumber(cli.lat),
+          lng: toNumber(cli.lng),
+          isPlanned: planIndex.plannedClientIds.has(id),
+          assignedEmployees: assignedEmployees
+        };
+      }).filter(Boolean);
+      clientItemsDirty = false;
+    }
+
+    function applyFilters(items) {
+      const query = normalizeText(state.query);
+      let filtered = items.slice();
+
+      if (state.clientId) {
+        filtered = filtered.filter(item => item.id === state.clientId);
+      }
+
+      if (state.employeeId) {
+        const entry = planIndex.employeeAssignments.get(state.employeeId);
+        const allowed = entry ? entry.clientes : null;
+        filtered = allowed ? filtered.filter(item => allowed.has(item.id)) : [];
+      }
+
+      const applyPlanFilter = !(state.employeeId || state.clientId);
+      if (applyPlanFilter) {
+        if (state.planFilter === "planned") {
+          filtered = filtered.filter(item => item.isPlanned);
+        } else if (state.planFilter === "unplanned") {
+          filtered = filtered.filter(item => !item.isPlanned);
+        }
+      }
+
+      if (query) {
+        filtered = filtered.filter(item => {
+          const haystack = normalizeText(`${item.name} ${item.direccion}`);
+          return haystack.includes(query);
+        });
+      }
+
+      return filtered;
+    }
+
+    function splitByCoords(items) {
+      const withCoords = [];
+      const missing = [];
+      items.forEach(item => {
+        if (hasCoords(item)) {
+          withCoords.push(item);
+        } else {
+          missing.push(item);
+        }
+      });
+      return { withCoords, missing };
+    }
+
+    function buildEmployeeMarker() {
+      if (!state.employeeId) return null;
+      const emp = getEmployeeById(state.employeeId);
+      if (!emp) return null;
+      const lat = toNumber(emp.lat);
+      const lng = toNumber(emp.lng);
+      return {
+        type: "empleado",
+        id: String(state.employeeId),
+        name: emp.nombre || "Empleado",
+        direccion: emp.direccion || "",
+        lat: lat,
+        lng: lng,
+        isPlanned: true,
+        assignedEmployees: []
+      };
+    }
+
+    function renderSummary(container, filtered, missing) {
+      const summary = container.querySelector("[data-map-summary]");
+      if (!summary) return;
+
+      const plannedCount = filtered.filter(item => item.isPlanned).length;
+      const unplannedCount = filtered.length - plannedCount;
+      const total = filtered.length;
+
+      const loadingBadge = isPlanLoading
+        ? '<span class="map-loading-inline"><span class="spinner-border spinner-border-sm"></span>Actualizando</span>'
+        : '';
+
+      summary.innerHTML = `
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <div class="small text-muted">Resumen semanal</div>
+          ${loadingBadge}
+        </div>
+        <div class="map-summary-chips">
+          <span class="lt-chip lt-chip--primary">Mostrados: ${total}</span>
+          <span class="lt-chip lt-chip--success">Planificados: ${plannedCount}</span>
+          <span class="lt-chip lt-chip--muted">Sin planificar: ${unplannedCount}</span>
+          <span class="lt-chip lt-chip--muted">Sin coordenadas: ${missing.length}</span>
+        </div>
+        <div class="map-legend">
+          <span class="map-legend__item"><span class="map-legend__dot map-legend__dot--employee"></span>Empleados</span>
+          <span class="map-legend__item"><span class="map-legend__dot map-legend__dot--client"></span>Clientes</span>
+          <span class="map-legend__item"><span class="map-legend__dot map-legend__dot--planned"></span>Planificados</span>
+        </div>
+      `;
+    }
+
+    function renderEmployeeCard(container, filtered) {
+      const card = container.querySelector("[data-map-employee-card]");
+      if (!card) return;
+
+      if (!state.employeeId) {
+        card.classList.add("d-none");
+        card.innerHTML = "";
+        return;
+      }
+
+      const emp = getEmployeeById(state.employeeId);
+      if (!emp) {
+        card.classList.remove("d-none");
+        card.innerHTML = `
+          <div class="map-employee-card__title">Empleado seleccionado</div>
+          <div class="map-employee-card__name">Sin información</div>
+        `;
+        return;
+      }
+
+      const entry = planIndex.employeeAssignments.get(state.employeeId);
+      const assignedCount = entry ? entry.clientes.size : 0;
+      const address = emp.direccion || "Sin dirección";
+
+      card.classList.remove("d-none");
+      card.innerHTML = `
+        <div class="map-employee-card__title">Empleado seleccionado</div>
+        <div class="map-employee-card__name">${escapeHtml(emp.nombre || "Empleado")}</div>
+        <div class="map-employee-card__meta">Direccion: ${escapeHtml(address)}</div>
+        <div class="map-employee-card__meta">Clientes esta semana: ${assignedCount}</div>
+      `;
+    }
+
+    function renderList(container, items) {
+      const list = container.querySelector("[data-map-items]");
+      if (!list) return;
+
+      if (!items.length) {
+        list.innerHTML = '<div class="text-muted small map-empty">No hay clientes para mostrar.</div>';
+        return;
+      }
+
+      list.innerHTML = items.map(item => {
+        const name = escapeHtml(item.name);
+        const direccion = escapeHtml(item.direccion || "Sin dirección");
+        const statusLabel = item.isPlanned ? "Planificado" : "Sin planificar";
+        const statusClass = item.isPlanned ? "map-status--planned" : "map-status--unplanned";
+
+        return `
+          <div class="map-item" data-map-id="${item.id}">
+            <div class="map-item__title">
+              <button type="button" class="map-item__focus" data-map-action="focus" data-map-id="${item.id}">
+                ${name}
+              </button>
+              <span class="map-status ${statusClass}">${statusLabel}</span>
+            </div>
+            <div class="map-item__meta">${direccion}</div>
+            <div class="map-item__actions">
+              <button type="button" class="btn btn-light btn-sm" data-map-action="detail" data-map-id="${item.id}">
+                <i class="bi bi-info-circle me-1"></i>Datos
+              </button>
+              <button type="button" class="btn btn-outline-primary btn-sm" data-map-action="plan" data-map-id="${item.id}">
+                <i class="bi bi-calendar-week me-1"></i>Plan
+              </button>
+            </div>
+          </div>
+        `;
+      }).join("");
+      bindListClick(list);
+    }
+
+    function bindListClick(list) {
+      if (listClickBound || !list) return;
+      listClickBound = true;
+      list.addEventListener("click", function (e) {
+        const actionBtn = e.target.closest("[data-map-action]");
+        const card = e.target.closest(".map-item");
+        if (!card) return;
+        const id = (actionBtn && actionBtn.getAttribute("data-map-id")) || card.getAttribute("data-map-id");
+        const item = currentListItems.find(entry => entry.id === id);
+        if (!item) return;
+
+        if (!actionBtn) {
+          focusItem(item);
+          return;
+        }
+
+        const action = actionBtn.getAttribute("data-map-action");
+        if (action === "detail") {
+          openClientDetailModal(item.id);
+          return;
+        }
+        if (action === "plan") {
+          openPlanModal(item.id);
+          return;
+        }
+        focusItem(item);
+      });
+    }
+
+    function renderMissing(container, missing) {
+      const section = container.querySelector("[data-map-missing]");
+      if (!section) return;
+
+      if (!missing.length) {
+        section.innerHTML = "";
+        return;
+      }
+
+      section.innerHTML = `
+        <div class="small text-muted mb-2">Sin coordenadas</div>
+        <div class="map-missing-list">
+          ${missing.map(item => {
+            const name = escapeHtml(item.name);
+            const status = item.isPlanned ? "Planificado" : "Sin planificar";
+            return `<div class="map-missing-item">${name} <span>${status}</span></div>`;
+          }).join("")}
+        </div>
+      `;
+    }
+
+    function ensureMap(container, items) {
+      const overlay = container.querySelector("[data-map-overlay]");
+      const mapEl = container.querySelector("#map-canvas");
+      if (!mapEl) return;
+
+      if (!global.MapsLoader || !global.MapsLoader.hasKey()) {
+        if (overlay) {
+          overlay.classList.remove("d-none");
+          overlay.innerHTML = '<div class="text-center"><i class="bi bi-exclamation-circle"></i><div class="mt-2">Configura MAPS_API_KEY para usar el mapa.</div></div>';
+        }
+        return;
+      }
+
+      if (!global.MapsLoader.isAvailable()) {
+        if (overlay) {
+          overlay.classList.remove("d-none");
+          overlay.innerHTML = '<div class="text-center"><div class="spinner-border text-primary"></div><div class="mt-2">Cargando mapa...</div></div>';
+        }
+        global.MapsLoader.onReady(function () {
+          ensureMap(container, items);
+        });
+        return;
+      }
+
+      if (overlay) overlay.classList.add("d-none");
+
+      if (!map) {
+        map = new google.maps.Map(mapEl, {
+          center: { lat: -34.6037, lng: -58.3816 },
+          zoom: 11,
+          mapTypeControl: false,
+          fullscreenControl: false,
+          streetViewControl: false
+        });
+        infoWindow = new google.maps.InfoWindow();
+      }
+
+      updateMarkers(items);
+    }
+
+    function getMarkerKey(item) {
+      return `${item.type}:${item.id}`;
+    }
+
+    const MAP_ICON_BASE = "https:\\/\\/maps.google.com/mapfiles/ms/icons/";
+
+    function getMarkerIcon(item) {
+      if (item.type === "empleado") {
+        return MAP_ICON_BASE + "purple-dot.png";
+      }
+      return item.isPlanned
+        ? MAP_ICON_BASE + "green-dot.png"
+        : MAP_ICON_BASE + "blue-dot.png";
+    }
+
+    function updateMarkers(items) {
+      markers.forEach(marker => marker.setMap(null));
+      markers = [];
+      markersByKey.clear();
+
+      if (!map) return;
+
+      const bounds = new google.maps.LatLngBounds();
+      const hasItems = items.length > 0;
+
+      items.forEach(item => {
+        if (!hasCoords(item)) return;
+        const position = { lat: item.lat, lng: item.lng };
+        const marker = new google.maps.Marker({
+          position,
+          map,
+          title: item.name || "",
+          icon: getMarkerIcon(item)
+        });
+        marker.addListener("click", function () {
+          openInfo(marker, item);
+        });
+        markers.push(marker);
+        markersByKey.set(getMarkerKey(item), marker);
+        bounds.extend(position);
+      });
+
+      if (hasItems) {
+        if (items.length === 1) {
+          map.setCenter(bounds.getCenter());
+          map.setZoom(15);
+        } else {
+          map.fitBounds(bounds);
+        }
+      }
+    }
+
+    function openInfo(marker, item) {
+      if (!infoWindow || !marker) return;
+      const name = escapeHtml(item.name);
+      const direccion = escapeHtml(item.direccion || "Sin dirección");
+
+      if (item.type === "empleado") {
+        const content = `
+          <div class="map-info">
+            <div class="map-info__title">${name}</div>
+            <div class="map-info__meta">Empleado</div>
+            <div class="map-info__address">${direccion}</div>
+          </div>
+        `;
+        infoWindow.setContent(content);
+        infoWindow.open({ anchor: marker, map });
+        return;
+      }
+
+      const statusText = item.isPlanned ? "Planificado" : "Sin planificar";
+      const employees = item.assignedEmployees && item.assignedEmployees.length
+        ? escapeHtml(item.assignedEmployees.join(", "))
+        : "Sin asignaciones";
+
+      const content = `
+        <div class="map-info">
+          <div class="map-info__title">${name}</div>
+          <div class="map-info__meta">${statusText}</div>
+          <div class="map-info__address">${direccion}</div>
+          <div class="map-info__employees">Empleados: ${employees}</div>
+        </div>
+      `;
+      infoWindow.setContent(content);
+      infoWindow.open({ anchor: marker, map });
+    }
+
+    function focusItem(item) {
+      if (!map || !item) return;
+      const key = getMarkerKey(item);
+      const marker = markersByKey.get(key);
+      if (!marker) return;
+      const position = marker.getPosition();
+      if (position) {
+        map.panTo(position);
+        map.setZoom(15);
+      }
+      openInfo(marker, item);
+    }
+
+    function updateWeekLabel(container) {
+      const label = container.querySelector("[data-map-week-label]");
+      if (!label) return;
+      if (planData && planData.semana && planData.semana.label) {
+        label.textContent = `Semana ${planData.semana.label}`;
+      } else {
+        label.textContent = formatWeekLabel(state.weekStart);
+      }
+    }
+
+    function populateSelects(container) {
+      const employeeSelect = container.querySelector("[data-map-employee]");
+      if (employeeSelect) {
+        const current = state.employeeId;
+        employeeSelect.innerHTML = '<option value="">Todos los empleados</option>';
+        const empleados = referenceIndex.sortedEmployees.length
+          ? referenceIndex.sortedEmployees
+          : (cachedReference.empleados || []);
+        empleados.forEach(emp => {
+          const id = emp && emp.id != null ? String(emp.id).trim() : "";
+          const nombre = emp && emp.nombre ? String(emp.nombre).trim() : "";
+          if (!id || !nombre) return;
+          const opt = document.createElement("option");
+          opt.value = id;
+          opt.textContent = nombre;
+          if (id === current) opt.selected = true;
+          employeeSelect.appendChild(opt);
+        });
+      }
+
+      const clientSelect = container.querySelector("[data-map-client]");
+      if (clientSelect) {
+        const current = state.clientId;
+        clientSelect.innerHTML = '<option value="">Todos los clientes</option>';
+        const clientes = referenceIndex.sortedClients.length
+          ? referenceIndex.sortedClients
+          : (cachedReference.clientes || []);
+        clientes.forEach(cli => {
+          const id = cli && cli.id != null ? String(cli.id).trim() : "";
+          const nombre = getClientDisplayName(cli);
+          if (!id || !nombre) return;
+          const opt = document.createElement("option");
+          opt.value = id;
+          opt.textContent = nombre;
+          if (id === current) opt.selected = true;
+          clientSelect.appendChild(opt);
+        });
+      }
+    }
+
+    function updatePlanToggleState(container) {
+      const buttons = container.querySelectorAll("[data-map-plan]");
+      const disabled = !!(state.employeeId || state.clientId);
+      buttons.forEach(btn => {
+        const value = btn.getAttribute("data-map-plan");
+        btn.classList.toggle("active", value === state.planFilter);
+        btn.disabled = disabled;
+      });
+    }
+
+    function renderView(container) {
+      if (!container) return;
+
+      updateWeekLabel(container);
+      if (selectsDirty) {
+        populateSelects(container);
+        selectsDirty = false;
+      }
+      updatePlanToggleState(container);
+
+      if (isRefLoading && (!cachedReference.clientes || !cachedReference.clientes.length)) {
+        const list = container.querySelector("[data-map-items]");
+        if (list) {
+          list.innerHTML = '<div class="text-muted small map-empty">Cargando datos...</div>';
+        }
+        return;
+      }
+
+      if (clientItemsDirty) rebuildClientItems();
+      const clients = cachedClientItems;
+      const filtered = applyFilters(clients);
+      const split = splitByCoords(filtered);
+
+      renderSummary(container, filtered, split.missing);
+      renderEmployeeCard(container, filtered);
+      renderList(container, split.withCoords);
+      renderMissing(container, split.missing);
+
+      currentListItems = split.withCoords;
+
+      const mapItems = split.withCoords.slice();
+      const employeeMarker = buildEmployeeMarker();
+      if (employeeMarker && hasCoords(employeeMarker)) {
+        mapItems.push(employeeMarker);
+      }
+      ensureMap(container, mapItems);
+    }
+
+    function refreshReferenceData(container) {
+      if (!global.ReferenceService) return;
+      isRefLoading = true;
+      renderView(container);
+
+      global.ReferenceService.load()
+        .then(data => {
+          cachedReference = data || { clientes: [], empleados: [] };
+          buildReferenceIndex();
+          clientItemsDirty = true;
+          selectsDirty = true;
+        })
+        .catch(() => {
+          cachedReference = { clientes: [], empleados: [] };
+          buildReferenceIndex();
+          clientItemsDirty = true;
+          selectsDirty = true;
+        })
+        .finally(() => {
+          isRefLoading = false;
+          renderView(container);
+        });
+    }
+
+    function refreshPlanData(container) {
+      if (!global.ApiService) return;
+      const requestId = ++planRequestId;
+      isPlanLoading = true;
+      renderView(container);
+
+      const weekStartStr = formatDateISO(state.weekStart);
+      global.ApiService.call("getWeeklyClientOverview", { weekStartDate: weekStartStr })
+        .then(data => {
+          if (requestId !== planRequestId) return;
+          if (data && data.error) throw new Error(data.error);
+          planData = data || null;
+          planIndex = buildPlanIndex(planData);
+          clientItemsDirty = true;
+        })
+        .catch(() => {
+          if (requestId !== planRequestId) return;
+          planData = null;
+          planIndex = createPlanIndex();
+          clientItemsDirty = true;
+        })
+        .finally(() => {
+          if (requestId !== planRequestId) return;
+          isPlanLoading = false;
+          renderView(container);
+        });
+    }
+
+    function attachEvents(container) {
+      const employeeSelect = container.querySelector("[data-map-employee]");
+      if (employeeSelect) {
+        employeeSelect.addEventListener("change", function () {
+          state.employeeId = employeeSelect.value || "";
+          renderView(container);
+        });
+      }
+
+      const clientSelect = container.querySelector("[data-map-client]");
+      if (clientSelect) {
+        clientSelect.addEventListener("change", function () {
+          state.clientId = clientSelect.value || "";
+          renderView(container);
+        });
+      }
+
+      const planButtons = container.querySelectorAll("[data-map-plan]");
+      planButtons.forEach(btn => {
+        btn.addEventListener("click", function () {
+          if (btn.disabled) return;
+          const value = btn.getAttribute("data-map-plan") || "all";
+          state.planFilter = value;
+          renderView(container);
+        });
+      });
+
+      const searchInput = container.querySelector("[data-map-search]");
+      if (searchInput) {
+        let searchTimer = null;
+        searchInput.addEventListener("input", function () {
+          clearTimeout(searchTimer);
+          searchTimer = setTimeout(() => {
+            state.query = searchInput.value || "";
+            renderView(container);
+          }, 200);
+        });
+      }
+
+      const prevBtn = container.querySelector("[data-map-week-prev]");
+      if (prevBtn) {
+        prevBtn.addEventListener("click", function () {
+          state.weekStart = addDays(state.weekStart, -7);
+          refreshPlanData(container);
+        });
+      }
+
+      const nextBtn = container.querySelector("[data-map-week-next]");
+      if (nextBtn) {
+        nextBtn.addEventListener("click", function () {
+          state.weekStart = addDays(state.weekStart, 7);
+          refreshPlanData(container);
+        });
+      }
+
+      const todayBtn = container.querySelector("[data-map-week-today]");
+      if (todayBtn) {
+        todayBtn.addEventListener("click", function () {
+          state.weekStart = getMondayOfWeek(new Date());
+          refreshPlanData(container);
+        });
+      }
+
+      const refreshBtn = container.querySelector("[data-map-week-refresh]");
+      if (refreshBtn) {
+        refreshBtn.addEventListener("click", function () {
+          refreshPlanData(container);
+        });
+      }
+    }
+
+    function isActiveView() {
+      const view = document.getElementById("view-mapa");
+      return !!(view && !view.classList.contains("d-none"));
+    }
+
+    function render(containerId) {
+      const container = typeof containerId === "string"
+        ? document.getElementById(containerId)
+        : containerId;
+      if (!container) return;
+
+      container.innerHTML = buildPanelHtml();
+      map = null;
+      markers = [];
+      markersByKey = new Map();
+      infoWindow = null;
+      currentListItems = [];
+      cachedClientItems = [];
+      clientItemsDirty = true;
+      selectsDirty = true;
+      listClickBound = false;
+      attachEvents(container);
+
+      refreshReferenceData(container);
+      refreshPlanData(container);
+
+      if (unsubscribeRef) unsubscribeRef();
+      if (global.ReferenceService && typeof global.ReferenceService.subscribe === "function") {
+        unsubscribeRef = global.ReferenceService.subscribe(function () {
+          if (isActiveView()) {
+            refreshReferenceData(container);
+          }
+        });
+      }
+    }
+
+    return {
+      render
+    };
+  })();
+
+  global.MapPanel = MapPanel;
 })(typeof window !== "undefined" ? window : this);
 
 
@@ -3089,6 +4469,8 @@ var ClientMediaPanel = (function () {
     const SearchManager = (() => {
         let searchDebounce = null;
         let suggestionResults = [];
+        let suggestionClickBound = false;
+        const SEARCH_TTL_MS = 60 * 1000;
 
         /**
          * Builds a preview string for a search result based on its content
@@ -3111,7 +4493,7 @@ var ClientMediaPanel = (function () {
             }
 
             // Additional context field
-            if (record["RAZON SOCIAL"]) {
+            if (!record.NOMBRE && !record.CLIENTE && record["RAZON SOCIAL"]) {
                 parts.push(`<strong>RAZÓN SOCIAL:</strong> ${record["RAZON SOCIAL"]}`);
             } else if (record["TIPO DOCUMENTO"] || record["NUMERO DOCUMENTO"]) {
                 const docType = record["TIPO DOCUMENTO"] || "";
@@ -3155,16 +4537,26 @@ var ClientMediaPanel = (function () {
             if (!query || query.length < 2) {
                 sugg.classList.add("d-none");
                 sugg.innerHTML = "";
+                UiState.setGlobalLoading(false);
                 return;
             }
 
-            UiState.setGlobalLoading(true, "Buscando...");
-
             searchDebounce = setTimeout(function () {
+                const cacheKey = String(tipoFormato || "") + "|" + String(query || "").toLowerCase().trim();
+                const cached = getCachedResults(cacheKey);
+                if (cached) {
+                    suggestionResults = cached;
+                    renderSearchResults(suggestionResults);
+                    UiState.setGlobalLoading(false);
+                    return;
+                }
+
+                UiState.setGlobalLoading(true, "Buscando...");
                 ApiService.callLatest('search-' + tipoFormato, 'searchRecords', tipoFormato, query)
                     .then(function (results) {
                         if (results && results.ignored) return;
                         suggestionResults = results || [];
+                        setCachedResults(cacheKey, suggestionResults);
                         renderSearchResults(suggestionResults);
                     })
                     .catch(function (err) {
@@ -3175,6 +4567,22 @@ var ClientMediaPanel = (function () {
                         UiState.setGlobalLoading(false);
                     });
             }, 300);
+        }
+
+        function getCachedResults(key) {
+            if (!global.ApiService || !ApiService.dataCache || !ApiService.dataCache.search) return null;
+            const entry = ApiService.dataCache.search.get(key);
+            if (!entry) return null;
+            if (Date.now() - entry.ts > SEARCH_TTL_MS) {
+                ApiService.dataCache.search.delete(key);
+                return null;
+            }
+            return entry.results || null;
+        }
+
+        function setCachedResults(key, results) {
+            if (!global.ApiService || !ApiService.dataCache || !ApiService.dataCache.search) return;
+            ApiService.dataCache.search.set(key, { ts: Date.now(), results: results || [] });
         }
 
         function renderSearchResults(results) {
@@ -3206,6 +4614,14 @@ var ClientMediaPanel = (function () {
             sugg.innerHTML = "";
             sugg.appendChild(list);
 
+            bindSuggestionClick();
+        }
+
+        function bindSuggestionClick() {
+            if (suggestionClickBound) return;
+            const sugg = document.getElementById("search-suggestions");
+            if (!sugg) return;
+            suggestionClickBound = true;
             sugg.addEventListener("click", function (e) {
                 const li = e.target.closest("[data-suggestion-idx]");
                 if (li) {
@@ -3264,6 +4680,10 @@ var ClientMediaPanel = (function () {
         let currentContainer = null;
         let allRecordsCache = [];
         let currentOriginalVigencia = null; // Para saber qué plan estamos editando
+        let forceNewPlan = false;
+        let lastInfoHoras = null;
+        let lastInfoHorasClientId = "";
+        let openGroupKeys = new Set();
 
         function init(refData) {
             referenceData = refData;
@@ -3272,7 +4692,9 @@ var ClientMediaPanel = (function () {
         function formatClientLabel_(cli) {
             if (!cli) return '';
             if (typeof cli === 'string') return cli;
-            const base = cli.razonSocial || cli.nombre || '';
+            const base = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.getClientDisplayName === 'function')
+                ? HtmlHelpers.getClientDisplayName(cli)
+                : (cli.nombre || cli.razonSocial || '');
             const id = cli.id != null ? String(cli.id).trim() : '';
             const docLabel = getClientDocLabel_(cli);
             const meta = [];
@@ -3296,16 +4718,79 @@ var ClientMediaPanel = (function () {
 
         // IDs vienen desde el select, sin fallback por nombre.
 
+        function getClientNameById_(idCliente) {
+            const id = idCliente != null ? String(idCliente).trim() : '';
+            if (!id) return '';
+            const list = referenceData && referenceData.clientes ? referenceData.clientes : [];
+            const match = list.find(cli => cli && String(cli.id || '').trim() === id);
+            if (!match) return '';
+            if (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.getClientDisplayName === 'function') {
+                return HtmlHelpers.getClientDisplayName(match);
+            }
+            return match.nombre || match.razonSocial || '';
+        }
+
         function formatDateForInput(v) {
             if (!v) return '';
             if (v instanceof Date && !isNaN(v)) {
                 return v.toISOString().split('T')[0];
             }
-            const d = new Date(v);
-            if (!isNaN(d)) {
-                return d.toISOString().split('T')[0];
+            const str = String(v || '').trim();
+            if (str.includes('/')) {
+                const parts = str.split('/');
+                if (parts.length === 3) {
+                    const dd = Number(parts[0]);
+                    const mm = Number(parts[1]);
+                    const yyyy = Number(parts[2]);
+                    const d = new Date(yyyy, mm - 1, dd);
+                    if (!isNaN(d)) return d.toISOString().split('T')[0];
+                }
             }
+            if (str.includes('-')) {
+                const parts = str.split('-');
+                if (parts.length === 3) {
+                    const a = parts[0];
+                    const b = parts[1];
+                    const c = parts[2];
+                    // yyyy-mm-dd
+                    if (a.length === 4) {
+                        const d = new Date(Number(a), Number(b) - 1, Number(c));
+                        if (!isNaN(d)) return d.toISOString().split('T')[0];
+                    }
+                    // dd-mm-yyyy
+                    if (c.length === 4) {
+                        const d = new Date(Number(c), Number(b) - 1, Number(a));
+                        if (!isNaN(d)) return d.toISOString().split('T')[0];
+                    }
+                }
+            }
+            const d = new Date(str);
+            if (!isNaN(d)) return d.toISOString().split('T')[0];
             return '';
+        }
+
+        function normalizePlanKey(value) {
+            return String(value || '')
+                .trim()
+                .toLowerCase()
+                .replace(/[^a-z0-9_-]/g, '_');
+        }
+
+        function captureOpenGroupKeys() {
+            const panel = document.getElementById("plan-semanal-panel");
+            if (!panel) {
+                openGroupKeys = new Set();
+                return;
+            }
+            const open = new Set();
+            panel.querySelectorAll('[data-emp-key]').forEach(card => {
+                const key = card.getAttribute('data-emp-key') || '';
+                const collapse = card.querySelector('.collapse');
+                if (collapse && collapse.classList.contains('show')) {
+                    open.add(key);
+                }
+            });
+            openGroupKeys = open;
         }
 
         function vigDesdeInputVal() {
@@ -3324,6 +4809,7 @@ var ClientMediaPanel = (function () {
             currentContainer = container;
             allRecordsCache = records || [];
             planGroupsCache = {}; // Limpiar caché
+            openGroupKeys = new Set();
 
             // DEBUG: Ver estructura de los datos
             console.log('=== DEBUG WeeklyPlanPanel ===');
@@ -3344,15 +4830,19 @@ var ClientMediaPanel = (function () {
                 // Los registros vienen envueltos: {rowNumber, record, id}
                 const r = item.record || item;
 
-                // Intentar obtener cliente de varias formas (CLIENTE, Cliente, cliente)
-                let clienteName = r.cliente || r.CLIENTE || r.Cliente;
                 const idCliente = r.ID_CLIENTE || r.idCliente || "";
                 const idEmpleado = r.ID_EMPLEADO || r.idEmpleado || "";
                 if (!idCliente || !idEmpleado) return;
+                // Intentar obtener cliente de varias formas (CLIENTE, Cliente, cliente)
+                let clienteName = getClientNameById_(idCliente) || r.cliente || r.CLIENTE || r.Cliente;
 
                 // Si es un objeto (referencia), intentar obtener nombre o razon social
                 if (typeof clienteName === 'object' && clienteName !== null) {
-                    clienteName = clienteName.razonSocial || clienteName.nombre || clienteName.toString();
+                    if (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.getClientDisplayName === 'function') {
+                        clienteName = HtmlHelpers.getClientDisplayName(clienteName);
+                    } else {
+                        clienteName = clienteName.nombre || clienteName.razonSocial || clienteName.toString();
+                    }
                 }
 
                 const cliente = clienteName || "Sin asignar";
@@ -3524,6 +5014,7 @@ var ClientMediaPanel = (function () {
             if (!currentContainer) return;
 
             currentOriginalVigencia = originalVigencia; // Guardar vigencia original
+            forceNewPlan = !originalVigencia;
 
             // Renderizar la vista de detalle (cards)
             render(currentContainer);
@@ -3569,6 +5060,8 @@ var ClientMediaPanel = (function () {
         function render(container) {
             currentContainer = container; // Actualizar referencia
             if (!container) return;
+            forceNewPlan = false;
+            openGroupKeys = new Set();
 
             // Fallback para datos de referencia
             if ((!referenceData.clientes || !referenceData.clientes.length) && typeof ReferenceService !== 'undefined') {
@@ -3677,14 +5170,66 @@ var ClientMediaPanel = (function () {
                     // Si cambió el cliente mientras cargaba, ignorar
                     if (currentCliente !== idCliente) return;
 
+                    lastInfoHorasClientId = idCliente;
+                    let rowsToRender = planRows;
+                    if (!forceNewPlan) {
+                        const groups = new Map();
+                        planRows.forEach(function (row) {
+                            const desde = formatDateForInput(row.vigDesde || row["VIGENTE DESDE"] || "");
+                            const hasta = formatDateForInput(row.vigHasta || row["VIGENTE HASTA"] || "");
+                            const key = `${desde}|${hasta}`;
+                            if (!groups.has(key)) {
+                                groups.set(key, { vigencia: { desde, hasta }, rows: [] });
+                            }
+                            groups.get(key).rows.push(row);
+                        });
+
+                        if (groups.size === 1) {
+                            const entry = Array.from(groups.values())[0];
+                            currentOriginalVigencia = entry.vigencia;
+                            rowsToRender = entry.rows;
+                        } else if (groups.size > 1) {
+                            let selected = null;
+                            let latestTime = -Infinity;
+                            groups.forEach(entry => {
+                                const baseDate = entry.vigencia.desde || entry.vigencia.hasta || "";
+                                const time = baseDate ? new Date(baseDate).getTime() : 0;
+                                const normalizedTime = isNaN(time) ? 0 : time;
+                                if (normalizedTime >= latestTime) {
+                                    latestTime = normalizedTime;
+                                    selected = entry;
+                                }
+                            });
+                            if (selected) {
+                                currentOriginalVigencia = selected.vigencia;
+                                rowsToRender = selected.rows;
+                                if (Alerts) {
+                                    Alerts.showAlert("Hay varios planes para este cliente. Se muestra el más reciente. Para editar otro, usá el listado.", "warning");
+                                }
+                            }
+                        } else {
+                            currentOriginalVigencia = null;
+                        }
+                    } else {
+                        currentOriginalVigencia = null;
+                        if (planRows.length) {
+                            rowsToRender = planRows.map(row => ({ ...row, id: "" }));
+                            if (Alerts) {
+                                Alerts.showAlert("Estás creando un plan nuevo. Definí una nueva vigencia antes de guardar.", "info");
+                            }
+                        }
+                    }
+
                     return ApiService.callLatest('weekly-hours-' + idCliente, 'getClientWeeklyRequestedHours', cliente, idCliente)
                         .then(function (infoHoras) {
                             if (infoHoras && infoHoras.ignored) return;
-                            buildWeeklyPlanPanel(planRows, cliente, infoHoras || null);
+                            lastInfoHoras = infoHoras || null;
+                            buildWeeklyPlanPanel(rowsToRender, cliente, infoHoras || null);
                         })
                         .catch(function (err2) {
                             console.error("Error obteniendo horas pedidas:", err2);
-                            buildWeeklyPlanPanel(planRows, cliente, null);
+                            lastInfoHoras = null;
+                            buildWeeklyPlanPanel(rowsToRender, cliente, null);
                         });
                 })
                 .catch(function (err) {
@@ -3706,6 +5251,10 @@ var ClientMediaPanel = (function () {
             // Ocultar footer del modal si estamos en un modal
             const modalFooter = document.querySelector('.modal-footer-custom');
             if (modalFooter) modalFooter.style.display = 'none';
+
+            const clienteSelect = document.getElementById("field-CLIENTE");
+            const clienteId = clienteSelect ? clienteSelect.value : "";
+            const effectiveInfoHoras = infoHoras || (clienteId && clienteId === lastInfoHorasClientId ? lastInfoHoras : null);
 
             if (!rows.length) {
                 rows = [{
@@ -3752,7 +5301,7 @@ var ClientMediaPanel = (function () {
 
             // Horas contratadas
             let horasHtml = '';
-            if (infoHoras) {
+            if (effectiveInfoHoras) {
                 const partes = [];
                 const pushSiTieneHoras = (label, valor) => {
                     const num = Number(valor || 0);
@@ -3761,13 +5310,13 @@ var ClientMediaPanel = (function () {
                     }
                 };
 
-                pushSiTieneHoras('Lu', infoHoras.lunes);
-                pushSiTieneHoras('Ma', infoHoras.martes);
-                pushSiTieneHoras('Mi', infoHoras.miercoles);
-                pushSiTieneHoras('Ju', infoHoras.jueves);
-                pushSiTieneHoras('Vi', infoHoras.viernes);
-                pushSiTieneHoras('Sa', infoHoras.sabado);
-                pushSiTieneHoras('Do', infoHoras.domingo);
+                pushSiTieneHoras('Lu', effectiveInfoHoras.lunes);
+                pushSiTieneHoras('Ma', effectiveInfoHoras.martes);
+                pushSiTieneHoras('Mi', effectiveInfoHoras.miercoles);
+                pushSiTieneHoras('Ju', effectiveInfoHoras.jueves);
+                pushSiTieneHoras('Vi', effectiveInfoHoras.viernes);
+                pushSiTieneHoras('Sa', effectiveInfoHoras.sabado);
+                pushSiTieneHoras('Do', effectiveInfoHoras.domingo);
 
                 if (partes.length) {
                     horasHtml += '<div class="lt-surface lt-surface--subtle p-2 flex-grow-1 border-start border-success border-3">';
@@ -3792,7 +5341,7 @@ var ClientMediaPanel = (function () {
                 const group = groupedByEmpleado[key];
                 const empleado = group.label;
                 const empleadoRows = group.rows;
-                const collapseId = "plan-emp-" + empIdx;
+                const collapseId = "plan-emp-" + normalizePlanKey(key);
                 const totalHoras = empleadoRows.reduce((sum, r) => sum + (parseFloat(r.horasPlan) || 0), 0);
                 const activeDays = empleadoRows.length;
 
@@ -3804,9 +5353,10 @@ var ClientMediaPanel = (function () {
                 // 1. Si es "Sin asignar" (donde van los nuevos)
                 // 2. O si no hay ninguno abierto (opcional, aquí lo dejamos cerrado por defecto excepto Sin Asignar)
                 const isSinAsignar = empleado === "Sin asignar";
-                const isOpen = isSinAsignar;
+                const hasOpenState = openGroupKeys && openGroupKeys.size > 0;
+                const isOpen = hasOpenState ? openGroupKeys.has(key) : isSinAsignar;
 
-                html += '<div class="card shadow-sm border-0">';
+                html += '<div class="card shadow-sm border-0" data-emp-key="' + HtmlHelpers.escapeHtml(key) + '">';
 
                 // Card Header
                 html += '<div class="card-header py-2 px-3 bg-white d-flex flex-wrap justify-content-between align-items-center gap-2 lt-clickable" ';
@@ -3941,13 +5491,14 @@ var ClientMediaPanel = (function () {
 
         function attachWeeklyPlanHandlers(panel) {
             panel.addEventListener("click", function (e) {
-                const target = e.target;
-                const action = target.getAttribute("data-action");
+                const actionBtn = e.target.closest("[data-action]");
+                if (!actionBtn) return;
+                const action = actionBtn.getAttribute("data-action");
 
                 if (action === "add-plan-row") {
                     addEmptyPlanRow();
                 } else if (action === "delete-plan-row") {
-                    const idx = target.getAttribute("data-idx");
+                    const idx = actionBtn.getAttribute("data-idx");
                     deletePlanRow(idx);
                 } else if (action === "save-weekly-plan") {
                     saveWeeklyPlan();
@@ -3970,6 +5521,8 @@ var ClientMediaPanel = (function () {
             const panel = document.getElementById("plan-semanal-panel");
             if (!panel) return;
 
+            captureOpenGroupKeys();
+
             const currentRows = [];
             const allInputs = panel.querySelectorAll('[id^="plan-row-"]');
             const processedIndices = new Set();
@@ -3985,9 +5538,13 @@ var ClientMediaPanel = (function () {
                     const horaInput = document.getElementById(`plan-row-${idx}-horaEntrada`);
                     const horasInput = document.getElementById(`plan-row-${idx}-horasPlan`);
                     const obsInput = document.getElementById(`plan-row-${idx}-obs`);
+                    const idInput = document.getElementById(`plan-row-${idx}-id`);
+                    const selectedOption = empleadoSelect && empleadoSelect.selectedOptions ? empleadoSelect.selectedOptions[0] : null;
 
                     const row = {
-                        empleado: empleadoSelect ? empleadoSelect.value : "",
+                        id: idInput ? idInput.value : "",
+                        empleado: selectedOption ? selectedOption.textContent : "",
+                        idEmpleado: empleadoSelect ? empleadoSelect.value : "",
                         diaSemana: diaSelect ? diaSelect.value : "",
                         horaEntrada: horaInput ? horaInput.value : "",
                         horasPlan: horasInput ? horasInput.value : "",
@@ -4015,7 +5572,7 @@ var ClientMediaPanel = (function () {
             });
 
             // Reconstruir el panel
-            buildWeeklyPlanPanel(currentRows, cliente, null);
+            buildWeeklyPlanPanel(currentRows, cliente, lastInfoHoras);
 
             // Expandir automáticamente el grupo "Sin asignar"
             setTimeout(() => {
@@ -4030,11 +5587,14 @@ var ClientMediaPanel = (function () {
             const clienteSelect = document.getElementById("field-CLIENTE");
             if (!clienteSelect) return;
 
-            const cliente = clienteSelect.value;
+            const selectedOption = clienteSelect.selectedOptions ? clienteSelect.selectedOptions[0] : null;
+            const cliente = selectedOption ? selectedOption.textContent : clienteSelect.value;
             if (!cliente) return;
 
             const panel = document.getElementById("plan-semanal-panel");
             if (!panel) return;
+
+            captureOpenGroupKeys();
 
             // Obtener todas las filas actuales excepto la que queremos eliminar
             const currentRows = [];
@@ -4059,9 +5619,11 @@ var ClientMediaPanel = (function () {
                     const horaInput = document.getElementById(`plan-row-${currentIdx}-horaEntrada`);
                     const horasInput = document.getElementById(`plan-row-${currentIdx}-horasPlan`);
                     const obsInput = document.getElementById(`plan-row-${currentIdx}-obs`);
+                    const idInput = document.getElementById(`plan-row-${currentIdx}-id`);
 
                     const selectedOption = empleadoSelect && empleadoSelect.selectedOptions ? empleadoSelect.selectedOptions[0] : null;
                     currentRows.push({
+                        id: idInput ? idInput.value : "",
                         empleado: selectedOption ? selectedOption.textContent : "",
                         idEmpleado: empleadoSelect ? empleadoSelect.value : "",
                         diaSemana: diaSelect ? diaSelect.value : "",
@@ -4075,7 +5637,7 @@ var ClientMediaPanel = (function () {
             });
 
             // Reconstruir el panel sin la fila eliminada
-            buildWeeklyPlanPanel(currentRows, cliente, null);
+            buildWeeklyPlanPanel(currentRows, cliente, lastInfoHoras);
         }
 
         function saveWeeklyPlan() {
@@ -4154,7 +5716,16 @@ var ClientMediaPanel = (function () {
             UiState.setGlobalLoading(true, "Guardando plan semanal...");
 
             // Pasamos currentOriginalVigencia para que el backend sepa qué reemplazar
-            ApiService.call('saveWeeklyPlanForClient', cliente, items, currentOriginalVigencia, idCliente)
+            let originalVigencia = currentOriginalVigencia;
+            if (!forceNewPlan && (!originalVigencia || (!originalVigencia.desde && !originalVigencia.hasta))) {
+                const desde = vigDesdeInputVal();
+                const hasta = vigHastaInputVal();
+                if (desde || hasta) {
+                    originalVigencia = { desde: desde, hasta: hasta };
+                }
+            }
+
+            ApiService.call('saveWeeklyPlanForClient', cliente, items, forceNewPlan ? null : originalVigencia, idCliente)
                 .then(function () {
                     if (Alerts) Alerts.showAlert("✅ Plan semanal guardado correctamente.", "success");
                     // Recargar la lista completa desde el servidor
@@ -4531,7 +6102,9 @@ var ClientMediaPanel = (function () {
             let found = false;
             const selectedIdStr = selectedId != null && selectedId !== '' ? String(selectedId) : '';
             (reference.clientes || []).forEach(cli => {
-                const label = cli.razonSocial || cli.nombre || cli.CLIENTE || cli;
+                const label = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.getClientDisplayName === 'function')
+                    ? HtmlHelpers.getClientDisplayName(cli)
+                    : (cli.nombre || cli.razonSocial || cli.CLIENTE || cli);
                 const id = cli && typeof cli === 'object' && cli.id != null ? String(cli.id) : '';
                 if (!label) return;
                 const sel = selectedIdStr && id && id === selectedIdStr ? " selected" : "";
@@ -5046,6 +6619,15 @@ var ClientMediaPanel = (function () {
             return isNaN(num) ? '0' : num.toFixed(1).replace('.0', '');
         }
 
+        function getClienteDisplayName(cliente) {
+            if (!cliente) return '';
+            if (typeof cliente === 'string') return cliente;
+            if (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.getClientDisplayName === 'function') {
+                return HtmlHelpers.getClientDisplayName(cliente);
+            }
+            return cliente.nombre || cliente.cliente || cliente.razonSocial || '';
+        }
+
         function getMondayOfWeek(date) {
             const d = new Date(date);
             const day = d.getDay();
@@ -5217,11 +6799,11 @@ var ClientMediaPanel = (function () {
                         html += `
                             <div class="calendar-client-card" 
                                  data-cliente-id="${escapeHtml(cliente.idCliente)}"
-                                 data-cliente-nombre="${escapeHtml(cliente.cliente)}"
+                                 data-cliente-nombre="${escapeHtml(getClienteDisplayName(cliente))}"
                                  data-dia="${escapeHtml(dia.diaSemana)}">
-                                <div class="calendar-client-name" title="${escapeHtml(cliente.cliente)}">
+                                <div class="calendar-client-name" title="${escapeHtml(getClienteDisplayName(cliente))}">
                                     <i class="bi bi-building me-1"></i>
-                                    ${escapeHtml(cliente.cliente || cliente.razonSocial)}
+                                    ${escapeHtml(getClienteDisplayName(cliente))}
                                 </div>
                                 <div class="calendar-client-time">
                                     <i class="bi bi-clock me-1"></i>
@@ -5335,7 +6917,7 @@ var ClientMediaPanel = (function () {
                                 ${uniqueClientes.length ? `
                                     <div class="calendar-client-employees">
                                         ${uniqueClientes.map(c => {
-                                            const nombre = c.cliente || c.razonSocial || '';
+                                            const nombre = getClienteDisplayName(c);
                                             const detalles = [];
                                             if (c.horaEntrada) detalles.push(c.horaEntrada);
                                             if (c.horasPlan) detalles.push(`${formatHoras(c.horasPlan)} hs`);
@@ -5399,7 +6981,7 @@ var ClientMediaPanel = (function () {
                             <div class="modal-header bg-primary text-white">
                                 <h5 class="modal-title">
                                     <i class="bi bi-building me-2"></i>
-                                    ${escapeHtml(clienteData.cliente || clienteData.razonSocial)}
+                                    ${escapeHtml(getClienteDisplayName(clienteData))}
                                 </h5>
                                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                             </div>
@@ -5952,6 +7534,15 @@ var ClientMediaPanel = (function () {
             return isNaN(num) ? '0' : num.toFixed(1).replace('.0', '');
         }
 
+        function getClienteDisplayName(cliente) {
+            if (!cliente) return '';
+            if (typeof cliente === 'string') return cliente;
+            if (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.getClientDisplayName === 'function') {
+                return HtmlHelpers.getClientDisplayName(cliente);
+            }
+            return cliente.nombre || cliente.cliente || cliente.razonSocial || '';
+        }
+
         function getMondayOfWeek(date) {
             const d = new Date(date);
             const day = d.getDay();
@@ -6075,9 +7666,7 @@ var ClientMediaPanel = (function () {
             select.innerHTML = '<option value="">Todos los clientes</option>';
             clientList.forEach(c => {
                 const id = c && typeof c === 'object' ? (c.id || c.ID || c.ID_CLIENTE || '') : '';
-                const nombre = c && typeof c === 'object'
-                    ? (c.razonSocial || c.nombre || '')
-                    : String(c || '');
+                const nombre = getClienteDisplayName(c);
                 if (!id || !nombre) return;
 
                 const opt = document.createElement('option');
@@ -6180,11 +7769,11 @@ var ClientMediaPanel = (function () {
                         html += `
                             <div class="calendar-client-card calendar-client-card--summary"
                                  data-cliente-id="${escapeHtml(cliente.idCliente || '')}"
-                                 data-cliente-nombre="${escapeHtml(cliente.cliente || '')}"
+                                 data-cliente-nombre="${escapeHtml(getClienteDisplayName(cliente))}"
                                  data-dia="${escapeHtml(dia.diaSemana || '')}">
-                                <div class="calendar-client-name" title="${escapeHtml(cliente.cliente)}">
+                                <div class="calendar-client-name" title="${escapeHtml(getClienteDisplayName(cliente))}">
                                     <i class="bi bi-building me-1"></i>
-                                    ${escapeHtml(cliente.cliente || cliente.razonSocial || '')}
+                                    ${escapeHtml(getClienteDisplayName(cliente))}
                                 </div>
                                 <div class="calendar-client-time">
                                     <i class="bi bi-clock me-1"></i>
@@ -6278,7 +7867,7 @@ var ClientMediaPanel = (function () {
                             <div class="modal-header bg-primary text-white">
                                 <h5 class="modal-title">
                                     <i class="bi bi-building me-2"></i>
-                                    ${escapeHtml(clienteData.cliente || clienteData.razonSocial || '')}
+                                    ${escapeHtml(getClienteDisplayName(clienteData))}
                                 </h5>
                                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                             </div>
@@ -6586,6 +8175,599 @@ var ClientMediaPanel = (function () {
 
     global.ClientCalendarPanel = ClientCalendarPanel;
 })(typeof window !== 'undefined' ? window : this);
+
+
+/**
+ * Panel de Analisis
+ */
+var AnalysisPanel = (function () {
+  var containerId = 'analysis-panel';
+  var currentPeriod = null;
+  var currentRange = 6;
+  var comparisonVisible = false;
+  var lastData = null;
+
+  function render(targetId) {
+    var container = document.getElementById(targetId || containerId);
+    if (!container) return;
+
+    comparisonVisible = false;
+    lastData = null;
+
+    container.innerHTML = `
+      <div class="lt-surface p-3 mb-3 analysis-hero">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+          <div>
+            <div class="analysis-title">Análisis del negocio</div>
+            <div class="text-muted small">Resumen mensual con indicadores clave, rankings y flujo de caja.</div>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <input type="month" id="analysis-period" class="form-control form-control-sm" />
+            <button class="btn btn-primary btn-sm" id="analysis-refresh">
+              <i class="bi bi-arrow-repeat me-1"></i>Actualizar
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div id="analysis-content">
+        <div id="analysis-loading" class="text-center py-5">
+          <div class="spinner-border text-primary" role="status"></div>
+          <div class="text-muted mt-2">Cargando análisis...</div>
+        </div>
+        <div id="analysis-dashboard" class="d-none">
+          <div class="row g-3 mb-3" id="analysis-kpis"></div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-12">
+              <div class="lt-surface p-3">
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                  <div class="analysis-section-title mb-0">Comparativa últimos <span id="analysis-range-label"></span> meses</div>
+                  <div class="d-flex align-items-center gap-2">
+                    <select id="analysis-range" class="form-select form-select-sm">
+                      <option value="3">3 meses</option>
+                      <option value="6" selected>6 meses</option>
+                      <option value="12">12 meses</option>
+                    </select>
+                    <button class="btn btn-outline-primary btn-sm" id="analysis-compare-toggle">
+                      <i class="bi bi-bar-chart-line me-1"></i><span>Mostrar</span>
+                    </button>
+                  </div>
+                </div>
+                <div id="analysis-compare-placeholder" class="analysis-placeholder text-muted small mt-3">
+                  Comparativa en pausa. Activala para calcular los meses seleccionados.
+                </div>
+                <div id="analysis-compare-body" class="mt-3 d-none">
+                  <div id="analysis-trends"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-lg-7">
+              <div class="lt-surface p-3 h-100">
+                <div class="analysis-section-title">Flujo del mes</div>
+                <div class="analysis-flow" id="analysis-flow"></div>
+                <div class="analysis-note text-muted small mt-2">
+                  Facturación basada en comprobantes emitidos dentro del mes.
+                </div>
+              </div>
+            </div>
+            <div class="col-lg-5">
+              <div class="lt-surface p-3 h-100">
+                <div class="analysis-section-title">Medios de cobro</div>
+                <div id="analysis-payments"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-lg-6">
+              <div class="lt-surface p-3 h-100">
+                <div class="analysis-section-title">Gastos por categoría</div>
+                <div id="analysis-expenses-category"></div>
+              </div>
+            </div>
+            <div class="col-lg-6">
+              <div class="lt-surface p-3 h-100">
+                <div class="analysis-section-title">Gastos por medio</div>
+                <div id="analysis-expenses-method"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-12">
+              <div class="lt-surface p-3">
+                <div class="analysis-section-title">Proyección de ingresos</div>
+                <div id="analysis-projection"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="row g-3">
+            <div class="col-lg-6">
+              <div class="lt-surface p-3 h-100">
+                <div class="analysis-section-title">Top clientes (por horas)</div>
+                <div class="analysis-table" id="analysis-top-clients"></div>
+                <div class="analysis-note text-muted small mt-2">Estimado según asistencia y valor hora.</div>
+              </div>
+            </div>
+            <div class="col-lg-6">
+              <div class="lt-surface p-3 h-100">
+                <div class="analysis-section-title">Mejores empleados</div>
+                <div class="analysis-table" id="analysis-top-employees"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    var periodInput = document.getElementById('analysis-period');
+    if (periodInput) {
+      var now = new Date();
+      var y = now.getFullYear();
+      var m = String(now.getMonth() + 1).padStart(2, '0');
+      periodInput.value = y + '-' + m;
+      currentPeriod = periodInput.value;
+      periodInput.addEventListener('change', function () {
+        currentPeriod = periodInput.value;
+        loadData_();
+      });
+    }
+
+    var rangeSelect = document.getElementById('analysis-range');
+    if (rangeSelect) {
+      rangeSelect.value = String(currentRange);
+      rangeSelect.addEventListener('change', function () {
+        currentRange = Number(rangeSelect.value) || 6;
+        loadData_();
+      });
+    }
+
+    var compareToggle = document.getElementById('analysis-compare-toggle');
+    if (compareToggle) {
+      compareToggle.addEventListener('click', function () {
+        comparisonVisible = !comparisonVisible;
+        updateComparisonUI_();
+        if (comparisonVisible && lastData) {
+          renderTrend_(lastData.trend || []);
+        }
+      });
+    }
+
+    var refreshBtn = document.getElementById('analysis-refresh');
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', function () {
+        loadData_();
+      });
+    }
+
+    updateComparisonUI_();
+    loadData_();
+  }
+
+  function loadData_() {
+    var loading = document.getElementById('analysis-loading');
+    var dash = document.getElementById('analysis-dashboard');
+    if (loading) loading.classList.remove('d-none');
+    if (dash) dash.classList.add('d-none');
+
+    var payload = currentPeriod ? { period: currentPeriod, monthsBack: currentRange } : { monthsBack: currentRange };
+    ApiService.call('getAnalyticsSummary', payload)
+      .then(function (data) {
+        lastData = data || {};
+        renderDashboard_(lastData);
+      })
+      .catch(function (err) {
+        var container = document.getElementById('analysis-content');
+        if (container) {
+          container.innerHTML = '<div class="alert alert-danger">Error cargando análisis: ' + escapeHtml_(err.message || err) + '</div>';
+        }
+      })
+      .finally(function () {
+        if (loading) loading.classList.add('d-none');
+        if (dash) dash.classList.remove('d-none');
+      });
+  }
+
+  function renderDashboard_(data) {
+    var kpis = data.kpis || {};
+    renderKpis_(kpis, data.period || {});
+    if (comparisonVisible) {
+      renderTrend_(data.trend || []);
+    } else {
+      renderTrendPlaceholder_();
+    }
+    renderFlow_(kpis);
+    renderPaymentMethods_(data.pagosPorMedio || []);
+    renderExpensesByCategory_(data.gastosPorCategoria || []);
+    renderExpensesByMethod_(data.gastosPorMedio || []);
+    renderProjection_(data.projection || {});
+    renderTopClients_(data.topClientes || []);
+    renderTopEmployees_(data.topEmpleados || []);
+  }
+
+  function renderKpis_(kpis, period) {
+    var container = document.getElementById('analysis-kpis');
+    if (!container) return;
+
+    var cards = [
+      {
+        title: 'Facturación del mes',
+        value: formatCurrency_(kpis.facturacionMes),
+        hint: 'Periodo ' + (period.label || '')
+      },
+      {
+        title: 'Sueldos estimados',
+        value: formatCurrency_(kpis.sueldosMes),
+        hint: 'Costo mensual'
+      },
+      {
+        title: 'Impuestos (IVA)',
+        value: formatCurrency_(kpis.impuestosMes),
+        hint: 'Estimado por facturación'
+      },
+      {
+        title: 'Gastos operativos',
+        value: formatCurrency_(kpis.gastosMes),
+        hint: 'Gastos registrados'
+      },
+      {
+        title: 'Neto estimado',
+        value: formatCurrency_(kpis.netoMes),
+        hint: 'Facturación - sueldos - impuestos - gastos'
+      },
+      {
+        title: 'Cobros del mes',
+        value: formatCurrency_(kpis.pagosClientesMes),
+        hint: 'Pagos de clientes'
+      },
+      {
+        title: 'Facturas pendientes',
+        value: formatNumber_(kpis.facturasPendientes),
+        hint: formatCurrency_(kpis.facturacionPendiente)
+      },
+      {
+        title: 'Horas trabajadas',
+        value: formatHours_(kpis.horasMes),
+        hint: 'Asistencia registrada'
+      },
+      {
+        title: 'Clientes activos',
+        value: formatNumber_(kpis.clientesActivos),
+        hint: 'Base actual'
+      },
+      {
+        title: 'Empleados activos',
+        value: formatNumber_(kpis.empleadosActivos),
+        hint: 'Base actual'
+      }
+    ];
+
+    container.innerHTML = cards.map(function (card) {
+      return `
+        <div class="col-12 col-md-6 col-xl-4">
+          <div class="lt-metric p-3 h-100">
+            <div class="text-muted small">${escapeHtml_(card.title)}</div>
+            <div class="analysis-kpi-value">${escapeHtml_(card.value)}</div>
+            <div class="text-muted small">${escapeHtml_(card.hint)}</div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function renderFlow_(kpis) {
+    var container = document.getElementById('analysis-flow');
+    if (!container) return;
+
+    var saldo = (Number(kpis.pagosClientesMes) || 0) -
+      (Number(kpis.pagosEmpleadosMes) || 0) -
+      (Number(kpis.adelantosMes) || 0) -
+      (Number(kpis.gastosMes) || 0);
+
+    var rows = [
+      { label: 'Facturación emitida', value: formatCurrency_(kpis.facturacionMes) },
+      { label: 'Impuestos (IVA)', value: formatCurrency_(kpis.impuestosMes) },
+      { label: 'Cobros del mes', value: formatCurrency_(kpis.pagosClientesMes) },
+      { label: 'Pagos a empleados', value: formatCurrency_(kpis.pagosEmpleadosMes) },
+      { label: 'Adelantos', value: formatCurrency_(kpis.adelantosMes) },
+      { label: 'Gastos operativos', value: formatCurrency_(kpis.gastosMes) },
+      { label: 'Saldo neto', value: formatCurrency_(saldo), highlight: true }
+    ];
+
+    container.innerHTML = rows.map(function (row) {
+      return `
+        <div class="analysis-flow-row ${row.highlight ? 'analysis-flow-row--highlight' : ''}">
+          <span>${escapeHtml_(row.label)}</span>
+          <strong>${escapeHtml_(row.value)}</strong>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function renderPaymentMethods_(items) {
+    var container = document.getElementById('analysis-payments');
+    if (!container) return;
+
+    if (!items.length) {
+      container.innerHTML = '<div class="text-muted small">Sin pagos registrados en el período.</div>';
+      return;
+    }
+
+    var total = items.reduce(function (acc, item) {
+      return acc + (Number(item.total) || 0);
+    }, 0);
+
+    container.innerHTML = items.slice(0, 6).map(function (item) {
+      var pct = total ? Math.round((Number(item.total) || 0) / total * 100) : 0;
+      return `
+        <div class="analysis-payment">
+          <div class="d-flex justify-content-between">
+            <span>${escapeHtml_(item.medio || 'Sin medio')}</span>
+            <span class="fw-semibold">${escapeHtml_(formatCurrency_(item.total))}</span>
+          </div>
+          <div class="analysis-bar">
+            <span style="width:${pct}%"></span>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function renderExpensesByCategory_(items) {
+    renderExpensesList_('analysis-expenses-category', items, 'Sin gastos registrados en el período.', 'categoria');
+  }
+
+  function renderExpensesByMethod_(items) {
+    renderExpensesList_('analysis-expenses-method', items, 'Sin gastos registrados en el período.', 'medio');
+  }
+
+  function renderExpensesList_(containerId, items, emptyMessage, labelKey) {
+    var container = document.getElementById(containerId);
+    if (!container) return;
+
+    if (!items.length) {
+      container.innerHTML = '<div class="text-muted small">' + escapeHtml_(emptyMessage) + '</div>';
+      return;
+    }
+
+    var total = items.reduce(function (acc, item) {
+      return acc + (Number(item.total) || 0);
+    }, 0);
+
+    container.innerHTML = items.slice(0, 6).map(function (item) {
+      var pct = total ? Math.round((Number(item.total) || 0) / total * 100) : 0;
+      var label = item[labelKey] || item.label || item.medio || 'Sin categoría';
+      return `
+        <div class="analysis-payment">
+          <div class="d-flex justify-content-between">
+            <span>${escapeHtml_(label)}</span>
+            <span class="fw-semibold">${escapeHtml_(formatCurrency_(item.total))}</span>
+          </div>
+          <div class="analysis-bar">
+            <span style="width:${pct}%"></span>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function renderTrend_(items) {
+    var container = document.getElementById('analysis-trends');
+    updateRangeLabel_();
+    if (!container) return;
+
+    if (!items.length) {
+      container.innerHTML = '<div class="text-muted small">No hay datos para comparar.</div>';
+      return;
+    }
+
+    var maxFact = items.reduce(function (acc, item) {
+      return Math.max(acc, Number(item.facturacion) || 0);
+    }, 0);
+
+    container.innerHTML = `
+      <div class="analysis-trend-grid">
+        <div class="analysis-trend-row analysis-trend-header">
+          <span>Mes</span>
+          <span>Facturación</span>
+          <span>Sueldos</span>
+          <span>Gastos</span>
+          <span>Impuestos</span>
+          <span>Neto</span>
+        </div>
+        ${items.map(function (item) {
+          var pct = maxFact ? Math.round((Number(item.facturacion) || 0) / maxFact * 100) : 0;
+          var neto = Number(item.neto) || 0;
+          var netoClass = neto >= 0 ? 'text-success' : 'text-danger';
+          return `
+            <div class="analysis-trend-row">
+              <span class="analysis-trend-month">${escapeHtml_(item.label || '')}</span>
+              <span>
+                <div class="analysis-trend-bar"><span style="width:${pct}%"></span></div>
+                <div class="analysis-trend-value">${escapeHtml_(formatCurrency_(item.facturacion))}</div>
+              </span>
+              <span>${escapeHtml_(formatCurrency_(item.sueldos))}</span>
+              <span>${escapeHtml_(formatCurrency_(item.gastos))}</span>
+              <span>${escapeHtml_(formatCurrency_(item.impuestos))}</span>
+              <span class="${netoClass}">${escapeHtml_(formatCurrency_(neto))}</span>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  }
+
+  function renderTrendPlaceholder_() {
+    updateRangeLabel_();
+    var container = document.getElementById('analysis-trends');
+    if (container) container.innerHTML = '';
+  }
+
+  function updateRangeLabel_() {
+    var rangeLabel = document.getElementById('analysis-range-label');
+    if (rangeLabel) rangeLabel.textContent = String(currentRange);
+  }
+
+  function updateComparisonUI_() {
+    var placeholder = document.getElementById('analysis-compare-placeholder');
+    var body = document.getElementById('analysis-compare-body');
+    var toggle = document.getElementById('analysis-compare-toggle');
+    if (placeholder) placeholder.classList.toggle('d-none', comparisonVisible);
+    if (body) body.classList.toggle('d-none', !comparisonVisible);
+    if (toggle) {
+      toggle.classList.toggle('btn-outline-primary', !comparisonVisible);
+      toggle.classList.toggle('btn-primary', comparisonVisible);
+      var label = toggle.querySelector('span');
+      if (label) label.textContent = comparisonVisible ? 'Ocultar' : 'Mostrar';
+    }
+  }
+
+  function renderProjection_(projection) {
+    var container = document.getElementById('analysis-projection');
+    if (!container) return;
+
+    if (!projection || !projection.meses) {
+      container.innerHTML = '<div class="text-muted small">No hay datos suficientes para proyectar.</div>';
+      return;
+    }
+
+    var margen = Number(projection.margenPct) || 0;
+    var margenLabel = margen.toFixed(1).replace(/\\.0$/, '') + '%';
+
+    container.innerHTML = `
+      <div class="analysis-projection">
+        <div class="analysis-projection-note">Promedio de los últimos ${escapeHtml_(projection.meses)} meses</div>
+        <div class="analysis-projection-grid">
+          <div>
+            <div class="analysis-projection-label">Facturación esperada</div>
+            <div class="analysis-projection-value">${escapeHtml_(formatCurrency_(projection.facturacion))}</div>
+          </div>
+          <div>
+            <div class="analysis-projection-label">Sueldos estimados</div>
+            <div class="analysis-projection-value">${escapeHtml_(formatCurrency_(projection.sueldos))}</div>
+          </div>
+          <div>
+            <div class="analysis-projection-label">Impuestos (IVA)</div>
+            <div class="analysis-projection-value">${escapeHtml_(formatCurrency_(projection.impuestos))}</div>
+          </div>
+          <div>
+            <div class="analysis-projection-label">Gastos estimados</div>
+            <div class="analysis-projection-value">${escapeHtml_(formatCurrency_(projection.gastos))}</div>
+          </div>
+          <div>
+            <div class="analysis-projection-label">Neto proyectado</div>
+            <div class="analysis-projection-value">${escapeHtml_(formatCurrency_(projection.neto))}</div>
+          </div>
+          <div>
+            <div class="analysis-projection-label">Horas estimadas</div>
+            <div class="analysis-projection-value">${escapeHtml_(formatHours_(projection.horas))}</div>
+          </div>
+          <div>
+            <div class="analysis-projection-label">Margen estimado</div>
+            <div class="analysis-projection-value">${escapeHtml_(margenLabel)}</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderTopClients_(items) {
+    var container = document.getElementById('analysis-top-clients');
+    if (!container) return;
+
+    if (!items.length) {
+      container.innerHTML = '<div class="text-muted small">No hay datos de clientes para este período.</div>';
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="analysis-list">
+        ${items.map(function (item, idx) {
+          return `
+            <div class="analysis-list-row">
+              <div>
+                <div class="analysis-rank">#${idx + 1}</div>
+                <div class="analysis-name">${escapeHtml_(item.cliente || 'Cliente')}</div>
+                <div class="analysis-subtext">${escapeHtml_(formatHours_(item.horas))} · ${escapeHtml_(item.dias || 0)} días</div>
+              </div>
+              <div class="analysis-value">${escapeHtml_(formatCurrency_(item.totalFacturacion))}</div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  }
+
+  function renderTopEmployees_(items) {
+    var container = document.getElementById('analysis-top-employees');
+    if (!container) return;
+
+    if (!items.length) {
+      container.innerHTML = '<div class="text-muted small">No hay datos de empleados para este período.</div>';
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="analysis-list">
+        ${items.map(function (item, idx) {
+          return `
+            <div class="analysis-list-row">
+              <div>
+                <div class="analysis-rank">#${idx + 1}</div>
+                <div class="analysis-name">${escapeHtml_(item.empleado || 'Empleado')}</div>
+                <div class="analysis-subtext">${escapeHtml_(formatHours_(item.horas))} · ${escapeHtml_(formatCurrency_(item.totalNeto || 0))}</div>
+              </div>
+              <div class="analysis-value">${escapeHtml_(formatHours_(item.horas))}</div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  }
+
+  function formatCurrency_(value) {
+    if (typeof Formatters !== 'undefined' && Formatters && typeof Formatters.formatCurrency === 'function') {
+      return Formatters.formatCurrency(value);
+    }
+    var num = Number(value) || 0;
+    return num.toLocaleString('es-AR', { style: 'currency', currency: 'ARS' });
+  }
+
+  function formatNumber_(value) {
+    if (typeof Formatters !== 'undefined' && Formatters && typeof Formatters.formatNumber === 'function') {
+      return Formatters.formatNumber(value);
+    }
+    var num = Number(value) || 0;
+    return num.toLocaleString('es-AR');
+  }
+
+  function formatHours_(value) {
+    if (typeof Formatters !== 'undefined' && Formatters && typeof Formatters.formatHours === 'function') {
+      return Formatters.formatHours(value);
+    }
+    var num = Number(value) || 0;
+    return num.toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' hs';
+  }
+
+  function escapeHtml_(value) {
+    if (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.escapeHtml === 'function') {
+      return HtmlHelpers.escapeHtml(value);
+    }
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  return { render: render };
+})();
 
 
 /**
@@ -7485,7 +9667,9 @@ var PaymentsPanel = (function () {
     function formatClientLabel(cli) {
         if (!cli) return "";
         if (typeof cli === "string") return cli;
-        const base = cli.razonSocial || cli.nombre || "";
+        const base = (typeof HtmlHelpers !== "undefined" && HtmlHelpers && typeof HtmlHelpers.getClientDisplayName === "function")
+            ? HtmlHelpers.getClientDisplayName(cli)
+            : (cli.nombre || cli.razonSocial || "");
         const id = cli.id != null ? String(cli.id).trim() : "";
         const docLabel = getClientDocLabel_(cli);
         const meta = [];
@@ -7518,10 +9702,16 @@ var PaymentsPanel = (function () {
     }
 
     function formatCurrency(v) {
+        if (typeof Formatters !== "undefined" && Formatters && typeof Formatters.formatCurrency === "function") {
+            return Formatters.formatCurrency(v);
+        }
         return Number(v).toLocaleString("es-AR", { style: "currency", currency: "ARS" });
     }
 
     function formatDateDisplay(v) {
+        if (typeof Formatters !== "undefined" && Formatters && typeof Formatters.formatDateDisplay === "function") {
+            return Formatters.formatDateDisplay(v);
+        }
         if (!v) return "";
         if (typeof v === "string") {
             const m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -10089,11 +12279,17 @@ var ClientMonthlySummaryPanel = (function () {
     }
 
     function formatNumber(v) {
+        if (typeof Formatters !== 'undefined' && Formatters && typeof Formatters.formatNumber === 'function') {
+            return Formatters.formatNumber(v, 2);
+        }
         const n = Number(v);
         return isNaN(n) ? '0.00' : n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
     function formatCurrency(v) {
+        if (typeof Formatters !== 'undefined' && Formatters && typeof Formatters.formatCurrency === 'function') {
+            return Formatters.formatCurrency(v);
+        }
         const n = Number(v);
         return n.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2 });
     }
@@ -10121,7 +12317,9 @@ var ClientMonthlySummaryPanel = (function () {
     function formatClientLabel_(cli) {
         if (!cli) return '';
         if (typeof cli === 'string') return cli;
-        const base = cli.razonSocial || cli.nombre || '';
+        const base = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.getClientDisplayName === 'function')
+            ? HtmlHelpers.getClientDisplayName(cli)
+            : (cli.nombre || cli.razonSocial || '');
         const id = cli.id != null ? String(cli.id).trim() : '';
         const docLabel = getClientDocLabel_(cli);
         const meta = [];
@@ -10294,7 +12492,9 @@ var ClientAccountPanel = (function () {
     function formatClientLabel(cli) {
         if (!cli) return '';
         if (typeof cli === 'string') return cli;
-        const base = cli.razonSocial || cli.nombre || '';
+        const base = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.getClientDisplayName === 'function')
+            ? HtmlHelpers.getClientDisplayName(cli)
+            : (cli.nombre || cli.razonSocial || '');
         const id = cli.id != null ? String(cli.id).trim() : '';
         const docLabel = getClientDocLabel_(cli);
         const meta = [];
@@ -10721,10 +12921,16 @@ var ClientAccountPanel = (function () {
     }
 
     function formatCurrency(v) {
+        if (typeof Formatters !== 'undefined' && Formatters && typeof Formatters.formatCurrency === 'function') {
+            return Formatters.formatCurrency(v);
+        }
         return Number(v).toLocaleString('es-AR', { style: 'currency', currency: 'ARS' });
     }
 
     function formatDateDisplay(v) {
+        if (typeof Formatters !== 'undefined' && Formatters && typeof Formatters.formatDateDisplay === 'function') {
+            return Formatters.formatDateDisplay(v);
+        }
         if (!v) return '';
         if (typeof v === 'string') {
             // yyyy-MM-dd -> dd/MM/yyyy (sin timezone issues)
@@ -10999,8 +13205,10 @@ var ClientReportPanel = (function () {
     function formatClientLabel(cli) {
         if (!cli) return '';
         if (typeof cli === 'string') return cli;
-        // Preferir razón social, luego nombre; agregar documento si está disponible
-        const base = cli.razonSocial || cli.nombre || '';
+        // Preferir nombre, luego razón social; agregar documento si está disponible
+        const base = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.getClientDisplayName === 'function')
+            ? HtmlHelpers.getClientDisplayName(cli)
+            : (cli.nombre || cli.razonSocial || '');
         const id = cli.id != null ? String(cli.id).trim() : '';
         const docLabel = getClientDocLabel_(cli);
         const meta = [];
@@ -11306,6 +13514,9 @@ var ClientReportPanel = (function () {
     }
 
     function formatNumber(val, decimals) {
+        if (typeof Formatters !== 'undefined' && Formatters && typeof Formatters.formatNumber === 'function') {
+            return Formatters.formatNumber(val, typeof decimals === 'number' ? decimals : 2);
+        }
         const num = Number(val);
         if (isNaN(num)) return '0';
         const fractionDigits = typeof decimals === 'number' ? decimals : 2;
@@ -11313,6 +13524,9 @@ var ClientReportPanel = (function () {
     }
 
     function formatCurrency(val) {
+        if (typeof Formatters !== 'undefined' && Formatters && typeof Formatters.formatCurrency === 'function') {
+            return Formatters.formatCurrency(val);
+        }
         const num = Number(val);
         return num.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2 });
     }
@@ -12036,6 +14250,7 @@ var BulkValuesPanel = (function () {
                 const isFull = isSection || field.full;
                 colDiv.className = isFull ? "col-12" : "col-12 col-md-6";
                 if (field.id) colDiv.dataset.fieldId = field.id;
+                if (field.hidden) colDiv.classList.add("d-none");
 
                 const formGroup = FormRenderer.renderField(field, referenceData);
                 colDiv.appendChild(formGroup);
@@ -12068,6 +14283,10 @@ var BulkValuesPanel = (function () {
             }
 
             setupInputMasks(container, formDef);
+
+            if (global.MapsAutocomplete && typeof global.MapsAutocomplete.bind === "function") {
+                global.MapsAutocomplete.bind(container);
+            }
 
             // Actualizar visibilidad del footer
             if (global.FooterManager) {
@@ -12722,7 +14941,8 @@ var BulkValuesPanel = (function () {
   const registroViews = {
     clientes: { format: "CLIENTES", title: "Diccionario de clientes" },
     empleados: { format: "EMPLEADOS", title: "Diccionario de empleados" },
-    adelantos: { format: "ADELANTOS", title: "Adelantos de sueldo" }
+    adelantos: { format: "ADELANTOS", title: "Adelantos de sueldo" },
+    gastos: { format: "GASTOS", title: "Gastos" }
   };
   let currentRegistroFormat = "CLIENTES";
 
@@ -13015,11 +15235,14 @@ var BulkValuesPanel = (function () {
         const viewId = e.detail.view;
         const pageTitle = document.getElementById('page-title');
         const titles = {
+          analisis: 'Análisis',
+          mapa: 'Mapa',
           registro: 'Diccionario',
           clientes: 'Diccionario de clientes',
           empleados: 'Diccionario de empleados',
           adelantos: 'Adelantos de sueldo',
           pagos: 'Pagos',
+          gastos: 'Gastos',
           'asistencia-plan': 'Plan Semanal',
           'asistencia-diaria': 'Tomar Asistencia',
           'asistencia-calendario': 'Calendario Empleado',
@@ -13070,6 +15293,12 @@ var BulkValuesPanel = (function () {
               });
           }
         }
+        if (viewId === 'analisis' && typeof AnalysisPanel !== 'undefined') {
+          AnalysisPanel.render('analysis-panel');
+        }
+        if (viewId === 'mapa' && typeof MapPanel !== 'undefined') {
+          MapPanel.render('maps-panel');
+        }
 
         if (viewId === 'asistencia-diaria' && typeof AttendanceDailyUI !== 'undefined') {
           const container = document.getElementById('daily-attendance-panel');
@@ -13113,7 +15342,7 @@ var BulkValuesPanel = (function () {
       });
 
       if (Sidebar.setActive) {
-        Sidebar.setActive('clientes');
+        Sidebar.setActive('analisis');
       }
     }
   }

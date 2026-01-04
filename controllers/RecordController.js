@@ -70,6 +70,39 @@ var RecordController = (function () {
     }
 
     /**
+     * Obtiene un registro por ID en un formato específico
+     * @param {string} tipoFormato - Tipo de formato
+     * @param {number|string} id - ID del registro
+     * @returns {Object|null} Registro encontrado
+     */
+    function getRecordById(tipoFormato, id) {
+        const sheet = DatabaseService.getDbSheetForFormat(tipoFormato);
+        const rowNumber = DatabaseService.findRowById(sheet, id);
+        if (!rowNumber) return null;
+
+        const lastCol = sheet.getLastColumn();
+        if (!lastCol) return null;
+
+        const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+        const row = sheet.getRange(rowNumber, 1, 1, lastCol).getValues()[0];
+        const record = {};
+
+        headers.forEach(function (h, colIdx) {
+            if (DataUtils && typeof DataUtils.normalizeCellForSearch === 'function') {
+                record[h] = DataUtils.normalizeCellForSearch(row[colIdx]);
+            } else {
+                record[h] = row[colIdx] == null ? '' : String(row[colIdx]);
+            }
+        });
+
+        return {
+            id: record['ID'] || id,
+            rowNumber: rowNumber,
+            record: record
+        };
+    }
+
+    /**
      * Construye un array de valores en el orden de los headers
      * @param {Array} headers - Array de nombres de columnas
      * @param {Object} record - Objeto con los datos del registro
@@ -387,6 +420,7 @@ var RecordController = (function () {
     return {
         getAvailableFormats: getAvailableFormats,
         searchRecords: searchRecords,
+        getRecordById: getRecordById,
         saveRecord: saveRecord,
         updateRecord: updateRecord,
         deleteRecord: deleteRecord,

@@ -8,7 +8,8 @@ const DB_SHEETS_BY_FORMAT = {
   ASISTENCIA_PLAN: 'ASISTENCIA_PLAN_DB',
   ADELANTOS: 'ADELANTOS_DB',
   PAGOS_EMP: 'PAGOS_EMP_DB',
-  PAGOS_CLIENTES: 'PAGOS_CLIENTES_DB'
+  PAGOS_CLIENTES: 'PAGOS_CLIENTES_DB',
+  GASTOS: 'GASTOS_DB'
 };
 
 var DatabaseService = (function () {
@@ -209,6 +210,12 @@ var DatabaseService = (function () {
     const idxDocNumber = headers.indexOf('NUMERO DOCUMENTO');
     const idxCuit = headers.indexOf('CUIT');
     const idxEstado = headers.indexOf('ESTADO');
+    const idxDireccion = headers.indexOf('DIRECCION');
+    const idxTags = headers.indexOf('ETIQUETAS');
+    const idxTipoServicio = headers.indexOf('TIPO SERVICIO');
+    const idxPlaceId = headers.indexOf('MAPS PLACE ID');
+    const idxLat = headers.indexOf('MAPS LAT');
+    const idxLng = headers.indexOf('MAPS LNG');
 
     const data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
     const result = [];
@@ -224,13 +231,23 @@ var DatabaseService = (function () {
       }
 
       if (isActive && (nombre || razon)) {
+        const latRaw = idxLat > -1 ? row[idxLat] : '';
+        const lngRaw = idxLng > -1 ? row[idxLng] : '';
+        const lat = latRaw !== '' && latRaw != null ? Number(latRaw) : null;
+        const lng = lngRaw !== '' && lngRaw != null ? Number(lngRaw) : null;
         result.push({
           id: idxId > -1 ? row[idxId] : '',
           nombre: nombre,
           razonSocial: razon,
           docType: docData.docType,
           docNumber: docData.docNumber,
-          cuit: docData.cuit
+          cuit: docData.cuit,
+          direccion: idxDireccion > -1 ? row[idxDireccion] : '',
+          tags: idxTags > -1 ? row[idxTags] : '',
+          tipoServicio: idxTipoServicio > -1 ? row[idxTipoServicio] : '',
+          placeId: idxPlaceId > -1 ? row[idxPlaceId] : '',
+          lat: isNaN(lat) ? null : lat,
+          lng: isNaN(lng) ? null : lng
         });
       }
     });
@@ -344,6 +361,10 @@ var DatabaseService = (function () {
     const idxId = headers.indexOf('ID');
     const idxNombre = headers.indexOf('EMPLEADO');
     const idxEstado = headers.indexOf('ESTADO');
+    const idxDireccion = headers.indexOf('DIRECCION');
+    const idxPlaceId = headers.indexOf('MAPS PLACE ID');
+    const idxLat = headers.indexOf('MAPS LAT');
+    const idxLng = headers.indexOf('MAPS LNG');
     if (idxNombre === -1) return [];
 
     const data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
@@ -359,9 +380,17 @@ var DatabaseService = (function () {
       }
 
       if (isActive) {
+        const latRaw = idxLat > -1 ? row[idxLat] : '';
+        const lngRaw = idxLng > -1 ? row[idxLng] : '';
+        const lat = latRaw !== '' && latRaw != null ? Number(latRaw) : null;
+        const lng = lngRaw !== '' && lngRaw != null ? Number(lngRaw) : null;
         result.push({
           id: idxId > -1 ? row[idxId] : '',
-          nombre: nombre
+          nombre: nombre,
+          direccion: idxDireccion > -1 ? row[idxDireccion] : '',
+          placeId: idxPlaceId > -1 ? row[idxPlaceId] : '',
+          lat: isNaN(lat) ? null : lat,
+          lng: isNaN(lng) ? null : lng
         });
       }
     });

@@ -8,6 +8,7 @@ if (typeof require === "undefined") {
   const root = __dirname;
   const sources = [
     path.join(root, "src", "utils", "htmlHelpers.js"),
+    path.join(root, "src", "utils", "formatters.js"),
     path.join(root, "src", "utils", "inputUtils.js"),
     path.join(root, "src", "formDefinitions.js"),
     path.join(root, "src", "apiService.js"),
@@ -18,6 +19,9 @@ if (typeof require === "undefined") {
     path.join(root, "src", "ui", "state.js"),
     path.join(root, "src", "config", "dropdownConfigPanel.js"),
     path.join(root, "src", "ui", "formRenderer.js"),
+    path.join(root, "src", "maps", "mapsLoader.js"),
+    path.join(root, "src", "maps", "mapsAutocomplete.js"),
+    path.join(root, "src", "maps", "mapsPanel.js"),
     path.join(root, "src", "ui", "footer.js"),
     path.join(root, "src", "ui", "sidebar.js"),
     path.join(root, "src", "ui", "gridManager.js"),
@@ -29,6 +33,7 @@ if (typeof require === "undefined") {
     path.join(root, "src", "attendance", "attendancePanels.js"),
     path.join(root, "src", "attendance", "employeeCalendarPanel.js"),
     path.join(root, "src", "attendance", "clientCalendarPanel.js"),
+    path.join(root, "src", "analysis", "analysisPanel.js"),
     path.join(root, "src", "payments", "paymentsPanel.js"),
     path.join(root, "src", "invoice", "invoicePanel.js"),
     path.join(root, "src", "hours", "hoursDetailPanel.js"),

@@ -196,8 +196,10 @@ var ClientReportPanel = (function () {
     function formatClientLabel(cli) {
         if (!cli) return '';
         if (typeof cli === 'string') return cli;
-        // Preferir razón social, luego nombre; agregar documento si está disponible
-        const base = cli.razonSocial || cli.nombre || '';
+        // Preferir nombre, luego razón social; agregar documento si está disponible
+        const base = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.getClientDisplayName === 'function')
+            ? HtmlHelpers.getClientDisplayName(cli)
+            : (cli.nombre || cli.razonSocial || '');
         const id = cli.id != null ? String(cli.id).trim() : '';
         const docLabel = getClientDocLabel_(cli);
         const meta = [];
@@ -503,6 +505,9 @@ var ClientReportPanel = (function () {
     }
 
     function formatNumber(val, decimals) {
+        if (typeof Formatters !== 'undefined' && Formatters && typeof Formatters.formatNumber === 'function') {
+            return Formatters.formatNumber(val, typeof decimals === 'number' ? decimals : 2);
+        }
         const num = Number(val);
         if (isNaN(num)) return '0';
         const fractionDigits = typeof decimals === 'number' ? decimals : 2;
@@ -510,6 +515,9 @@ var ClientReportPanel = (function () {
     }
 
     function formatCurrency(val) {
+        if (typeof Formatters !== 'undefined' && Formatters && typeof Formatters.formatCurrency === 'function') {
+            return Formatters.formatCurrency(val);
+        }
         const num = Number(val);
         return num.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2 });
     }

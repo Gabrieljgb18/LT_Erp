@@ -35,6 +35,10 @@ function include(name) {
   return HtmlService.createHtmlOutputFromFile(name).getContent();
 }
 
+function getMapsApiKey() {
+  return PropertiesService.getScriptProperties().getProperty('MAPS_API_KEY') || '';
+}
+
 // ==== API JSON de solo lectura (Sheets) ====
 
 function handleDbApi_(e) {

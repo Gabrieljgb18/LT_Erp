@@ -40,6 +40,12 @@
         return record["RAZÓN SOCIAL"] || "";
       }
     },
+    GASTOS: {
+      entity: "gasto",
+      label: function (record) {
+        return record["DETALLE"] || record["CATEGORIA"] || "";
+      }
+    },
     ASISTENCIA: {
       entity: "registro de asistencia",
       label: function (record) {

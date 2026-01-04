@@ -31,6 +31,15 @@
             return isNaN(num) ? '0' : num.toFixed(1).replace('.0', '');
         }
 
+        function getClienteDisplayName(cliente) {
+            if (!cliente) return '';
+            if (typeof cliente === 'string') return cliente;
+            if (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.getClientDisplayName === 'function') {
+                return HtmlHelpers.getClientDisplayName(cliente);
+            }
+            return cliente.nombre || cliente.cliente || cliente.razonSocial || '';
+        }
+
         function getMondayOfWeek(date) {
             const d = new Date(date);
             const day = d.getDay();
@@ -202,11 +211,11 @@
                         html += `
                             <div class="calendar-client-card" 
                                  data-cliente-id="${escapeHtml(cliente.idCliente)}"
-                                 data-cliente-nombre="${escapeHtml(cliente.cliente)}"
+                                 data-cliente-nombre="${escapeHtml(getClienteDisplayName(cliente))}"
                                  data-dia="${escapeHtml(dia.diaSemana)}">
-                                <div class="calendar-client-name" title="${escapeHtml(cliente.cliente)}">
+                                <div class="calendar-client-name" title="${escapeHtml(getClienteDisplayName(cliente))}">
                                     <i class="bi bi-building me-1"></i>
-                                    ${escapeHtml(cliente.cliente || cliente.razonSocial)}
+                                    ${escapeHtml(getClienteDisplayName(cliente))}
                                 </div>
                                 <div class="calendar-client-time">
                                     <i class="bi bi-clock me-1"></i>
@@ -320,7 +329,7 @@
                                 ${uniqueClientes.length ? `
                                     <div class="calendar-client-employees">
                                         ${uniqueClientes.map(c => {
-                                            const nombre = c.cliente || c.razonSocial || '';
+                                            const nombre = getClienteDisplayName(c);
                                             const detalles = [];
                                             if (c.horaEntrada) detalles.push(c.horaEntrada);
                                             if (c.horasPlan) detalles.push(`${formatHoras(c.horasPlan)} hs`);
@@ -384,7 +393,7 @@
                             <div class="modal-header bg-primary text-white">
                                 <h5 class="modal-title">
                                     <i class="bi bi-building me-2"></i>
-                                    ${escapeHtml(clienteData.cliente || clienteData.razonSocial)}
+                                    ${escapeHtml(getClienteDisplayName(clienteData))}
                                 </h5>
                                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                             </div>

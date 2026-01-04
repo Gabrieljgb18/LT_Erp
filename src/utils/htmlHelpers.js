@@ -90,11 +90,24 @@
             return "";
         }
 
+        function getClientDisplayName(cliente, options) {
+            if (!cliente) return "";
+            if (typeof cliente === "string") return cliente;
+            const opts = options || {};
+            const nombre = cliente.nombre || cliente.NOMBRE || cliente.cliente || cliente.CLIENTE || "";
+            const razon = cliente.razonSocial || cliente["RAZON SOCIAL"] || cliente["RAZÓN SOCIAL"] || "";
+            if (opts.preferRazon) {
+                return (razon || nombre || "").toString().trim();
+            }
+            return (nombre || razon || "").toString().trim();
+        }
+
         return {
             escapeHtml,
             getEmpleadoOptionsHtml,
             getDiaOptionsHtml,
-            formatHoraEntradaForInput
+            formatHoraEntradaForInput,
+            getClientDisplayName
         };
     })();
 

@@ -31,7 +31,10 @@ var Formats = (function () {
         'JUEVES HS',
         'VIERNES HS',
         'SABADO HS',
-        'DOMINGO HS'
+        'DOMINGO HS',
+        'MAPS PLACE ID',
+        'MAPS LAT',
+        'MAPS LNG'
       ],
       // Anchos aproximados, luego los ajustamos si hace falta
       columnWidths: [
@@ -61,7 +64,10 @@ var Formats = (function () {
         90,  // JUEVES HS
         90,  // VIERNES HS
         90,  // SABADO HS
-        90   // DOMINGO HS
+        90,  // DOMINGO HS
+        220, // MAPS PLACE ID
+        120, // MAPS LAT
+        120  // MAPS LNG
       ],
       freezeRows: 1
     },
@@ -84,9 +90,12 @@ var Formats = (function () {
         'DESCRIPCION VIVIENDA',
         'CBU - ALIAS',
         'VALOR DE HORA',
-        'VIATICOS'
+        'VIATICOS',
+        'MAPS PLACE ID',
+        'MAPS LAT',
+        'MAPS LNG'
       ],
-      columnWidths: [60, 100, 180, 120, 160, 220, 120, 200, 150, 160, 240, 160, 120, 110],
+      columnWidths: [60, 100, 180, 120, 160, 220, 120, 200, 150, 160, 240, 160, 120, 110, 220, 120, 120],
       freezeRows: 1
     },
 
@@ -133,6 +142,24 @@ var Formats = (function () {
         'FACTURA_NUMERO'
       ],
       columnWidths: [60, 90, 100, 220, 120, 220, 140, 140, 100, 90, 140],
+      freezeRows: 1
+    },
+
+    GASTOS: {
+      id: 'GASTOS',
+      displayName: 'Gastos',
+      headers: [
+        'ID',
+        'FECHA',
+        'CATEGORIA',
+        'DETALLE',
+        'PROVEEDOR',
+        'MEDIO DE PAGO',
+        'MONTO',
+        'COMPROBANTE',
+        'OBSERVACIONES'
+      ],
+      columnWidths: [60, 100, 160, 260, 200, 140, 120, 140, 250],
       freezeRows: 1
     },
 

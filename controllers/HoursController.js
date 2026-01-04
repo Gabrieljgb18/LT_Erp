@@ -269,7 +269,7 @@ var HoursController = (function () {
         }
         const cli = DatabaseService.findClienteById(idCliente);
         if (!cli) return '';
-        return cli.razonSocial || cli.nombre || '';
+        return cli.nombre || cli.razonSocial || '';
     }
 
     /**

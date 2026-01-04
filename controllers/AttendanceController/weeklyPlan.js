@@ -80,7 +80,7 @@ const AttendanceWeeklyPlan = (function () {
             const horas = Number(val) || 0;
             if (horas > 0) {
                 result.push({
-                    cliente: (rowCliente[idxRazon] || rowCliente[idxNombre] || cliente || ''),
+                    cliente: (rowCliente[idxNombre] || rowCliente[idxRazon] || cliente || ''),
                     idCliente: targetId,
                     empleado: '',
                     diaSemana: d.label,
@@ -144,6 +144,23 @@ const AttendanceWeeklyPlan = (function () {
         if (!targetId) return [];
         const result = [];
 
+        const formatHoraEntrada_ = (value) => {
+            if (!value) return '';
+            if (value instanceof Date && !isNaN(value)) {
+                return Utilities.formatDate(value, Session.getScriptTimeZone(), 'HH:mm');
+            }
+            const s = String(value || '').trim();
+            const match = s.match(/(\d{1,2}):(\d{2})/);
+            if (match) {
+                return match[1].padStart(2, '0') + ':' + match[2];
+            }
+            const d = new Date(s);
+            if (!isNaN(d)) {
+                return Utilities.formatDate(d, Session.getScriptTimeZone(), 'HH:mm');
+            }
+            return '';
+        };
+
         rowsPlan.forEach(function (row) {
             const cli = row[idxCliente];
             const cliNorm = String(cli || '').trim().toLowerCase();
@@ -157,7 +174,7 @@ const AttendanceWeeklyPlan = (function () {
                 empleado: row[idxEmpleado] || '',
                 idEmpleado: idxIdEmpleado > -1 ? row[idxIdEmpleado] : '',
                 diaSemana: row[idxDiaSemana] || '',
-                horaEntrada: row[idxHoraEntrada] || '',
+                horaEntrada: formatHoraEntrada_(row[idxHoraEntrada]),
                 horasPlan: row[idxHorasPlan] || '',
                 vigDesde: idxVigDesde > -1 ? row[idxVigDesde] : '',
                 vigHasta: idxVigHasta > -1 ? row[idxVigHasta] : '',
@@ -184,7 +201,7 @@ const AttendanceWeeklyPlan = (function () {
         if (!cliente && DatabaseService.findClienteById) {
             const cli = DatabaseService.findClienteById(idClienteStr);
             if (cli && (cli.razonSocial || cli.nombre)) {
-                cliente = cli.razonSocial || cli.nombre;
+                cliente = cli.nombre || cli.razonSocial;
             }
         }
         console.log("Iniciando saveWeeklyPlanForClient para:", cliente || idClienteStr);
@@ -235,13 +252,51 @@ const AttendanceWeeklyPlan = (function () {
 
         const defaultIdCliente = idClienteStr;
 
-        // Helper para comparar fechas (strings YYYY-MM-DD o Date objects)
+        // Helper para comparar fechas (Date, yyyy-mm-dd o dd/mm/yyyy)
+        const parseDateValue = (value) => {
+            if (!value) return null;
+            if (value instanceof Date && !isNaN(value)) {
+                return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+            }
+            const s = String(value || '').trim();
+            if (!s) return null;
+            if (s.indexOf('/') >= 0) {
+                const p = s.split('/');
+                if (p.length === 3) {
+                    const dd = Number(p[0]);
+                    const mm = Number(p[1]);
+                    const yyyy = Number(p[2]);
+                    const d = new Date(yyyy, mm - 1, dd);
+                    if (!isNaN(d)) return d;
+                }
+            }
+            if (s.indexOf('-') >= 0) {
+                const p = s.split('-');
+                if (p.length === 3) {
+                    const a = p[0];
+                    const b = p[1];
+                    const c = p[2];
+                    if (a.length === 4) {
+                        const d = new Date(Number(a), Number(b) - 1, Number(c));
+                        if (!isNaN(d)) return d;
+                    }
+                    if (c.length === 4) {
+                        const d = new Date(Number(c), Number(b) - 1, Number(a));
+                        if (!isNaN(d)) return d;
+                    }
+                }
+            }
+            const d = new Date(s);
+            if (isNaN(d)) return null;
+            return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        };
+
         const areDatesEqual = (d1, d2) => {
-            if (!d1 && !d2) return true;
-            if (!d1 || !d2) return false;
-            const t1 = new Date(d1).setHours(0, 0, 0, 0);
-            const t2 = new Date(d2).setHours(0, 0, 0, 0);
-            return t1 === t2;
+            const p1 = parseDateValue(d1);
+            const p2 = parseDateValue(d2);
+            if (!p1 && !p2) return true;
+            if (!p1 || !p2) return false;
+            return p1.getTime() === p2.getTime();
         };
 
         const keptRows = existingData.filter(row => {

@@ -402,7 +402,7 @@ var AccountController = (function () {
         if (!clientName && DatabaseService.findClienteById) {
             const cli = DatabaseService.findClienteById(targetId);
             if (cli && (cli.razonSocial || cli.nombre)) {
-                clientName = cli.razonSocial || cli.nombre;
+                clientName = cli.nombre || cli.razonSocial;
             }
         }
         return { clientName: clientName || '', idCliente: targetId };
@@ -710,7 +710,7 @@ var AccountController = (function () {
         const clienteNameRaw = payload.cliente || payload.CLIENTE || '';
         const filter = normalizeClientFilter_(clienteNameRaw, payload.idCliente || payload.ID_CLIENTE);
         const idCliente = filter.idCliente || '';
-        const clienteName = (payload.razonSocial || filter.clientName || clienteNameRaw || '').toString().trim();
+        const clienteName = (clienteNameRaw || filter.clientName || payload.razonSocial || '').toString().trim();
         const fecha = parseDateFlexible_(fechaRaw);
         const monto = toNumber_(payload.monto || payload.MONTO);
         if (!fecha || isNaN(fecha.getTime()) || monto <= 0 || (!clienteName && !idCliente)) {

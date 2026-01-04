@@ -277,7 +277,7 @@ var InvoiceController = (function () {
         let totalHoras = 0;
         let totalImporte = 0;
         const targetId = normalizeIdString_(clienteData.id);
-        const resolveRateAtDate = buildClientRateResolver_(clienteData.razonSocial || '');
+        const resolveRateAtDate = buildClientRateResolver_(clienteData.nombre || clienteData.razonSocial || '');
 
         data.forEach(row => {
             const fecha = row[idxFecha] instanceof Date ? row[idxFecha] : new Date(row[idxFecha]);
@@ -923,7 +923,7 @@ var InvoiceController = (function () {
                 if (idCliente && DatabaseService.findClienteById) {
                     const cli = DatabaseService.findClienteById(idCliente);
                     if (cli && (cli.razonSocial || cli.nombre)) {
-                        clienteLabel = cli.razonSocial || cli.nombre;
+                        clienteLabel = cli.nombre || cli.razonSocial;
                     }
                 }
                 group = {

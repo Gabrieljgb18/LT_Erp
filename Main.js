@@ -32,6 +32,13 @@ function searchRecords(tipoFormato, query) {
 }
 
 /**
+ * Obtiene un registro por ID
+ */
+function getRecordById(tipoFormato, id) {
+  return RecordController.getRecordById(tipoFormato, id);
+}
+
+/**
  * Guarda un nuevo registro
  */
 function saveFormRecord(tipoFormato, record) {
@@ -287,6 +294,13 @@ function generateClientAccountStatementPdf(clientName, startDateStr, endDateStr,
  */
 function getMonthlySummaryByClient(year, month) {
   return HoursController.getMonthlySummaryByClient(year, month);
+}
+
+/**
+ * Analisis del negocio (KPIs y rankings)
+ */
+function getAnalyticsSummary(params) {
+  return AnalyticsController.getAnalyticsSummary(params);
 }
 
 /**

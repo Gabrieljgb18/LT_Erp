@@ -33,7 +33,7 @@ var ClientMediaController = (function () {
       if (typeof DatabaseService !== 'undefined' && DatabaseService.findClienteById) {
         const cli = DatabaseService.findClienteById(clientId);
         if (cli && (cli.razonSocial || cli.nombre)) {
-          return String(cli.razonSocial || cli.nombre);
+          return String(cli.nombre || cli.razonSocial);
         }
       }
     } catch (e) {

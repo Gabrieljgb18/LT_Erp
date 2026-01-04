@@ -41,6 +41,20 @@
     return wrapper;
   }
 
+  function renderHidden(field) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "mb-1 d-none";
+
+    const input = document.createElement("input");
+    input.type = "hidden";
+    input.id = "field-" + field.id;
+    input.className = "form-control form-control-sm";
+    if (field.placeholder) input.placeholder = field.placeholder;
+
+    wrapper.appendChild(input);
+    return wrapper;
+  }
+
   function renderSection(field) {
     const wrapper = document.createElement("div");
     wrapper.className = "form-section-heading";
@@ -246,6 +260,9 @@
 
   const FormRenderer = {
     renderField: function (field, referenceData) {
+      if (field && field.hidden) {
+        return renderHidden(field);
+      }
       switch (field.type) {
         case "boolean":
           return renderBoolean(field);
@@ -254,10 +271,22 @@
         case "dayOfWeek":
           return renderDayOfWeek(field);
         case "cliente": {
+          const normalizeToken = (val) => String(val || "")
+            .toUpperCase()
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "");
+          const preferRazon = field && (
+            normalizeToken(field.id).indexOf("RAZON") > -1 ||
+            normalizeToken(field.label).indexOf("RAZON") > -1
+          );
           const options =
             (referenceData.clientes || []).map((cli) => ({
-              value: cli.razonSocial || cli.nombre,
-              label: cli.razonSocial || cli.nombre,
+              value: (global.HtmlHelpers && typeof global.HtmlHelpers.getClientDisplayName === "function")
+                ? global.HtmlHelpers.getClientDisplayName(cli, { preferRazon: preferRazon })
+                : (cli.nombre || cli.razonSocial || ""),
+              label: (global.HtmlHelpers && typeof global.HtmlHelpers.getClientDisplayName === "function")
+                ? global.HtmlHelpers.getClientDisplayName(cli, { preferRazon: preferRazon })
+                : (cli.nombre || cli.razonSocial || ""),
               dataset: {
                 id: cli.id != null ? String(cli.id) : "",
                 cuit: cli.cuit || ""

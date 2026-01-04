@@ -7,6 +7,8 @@
     const SearchManager = (() => {
         let searchDebounce = null;
         let suggestionResults = [];
+        let suggestionClickBound = false;
+        const SEARCH_TTL_MS = 60 * 1000;
 
         /**
          * Builds a preview string for a search result based on its content
@@ -29,7 +31,7 @@
             }
 
             // Additional context field
-            if (record["RAZON SOCIAL"]) {
+            if (!record.NOMBRE && !record.CLIENTE && record["RAZON SOCIAL"]) {
                 parts.push(`<strong>RAZÓN SOCIAL:</strong> ${record["RAZON SOCIAL"]}`);
             } else if (record["TIPO DOCUMENTO"] || record["NUMERO DOCUMENTO"]) {
                 const docType = record["TIPO DOCUMENTO"] || "";
@@ -73,16 +75,26 @@
             if (!query || query.length < 2) {
                 sugg.classList.add("d-none");
                 sugg.innerHTML = "";
+                UiState.setGlobalLoading(false);
                 return;
             }
 
-            UiState.setGlobalLoading(true, "Buscando...");
-
             searchDebounce = setTimeout(function () {
+                const cacheKey = String(tipoFormato || "") + "|" + String(query || "").toLowerCase().trim();
+                const cached = getCachedResults(cacheKey);
+                if (cached) {
+                    suggestionResults = cached;
+                    renderSearchResults(suggestionResults);
+                    UiState.setGlobalLoading(false);
+                    return;
+                }
+
+                UiState.setGlobalLoading(true, "Buscando...");
                 ApiService.callLatest('search-' + tipoFormato, 'searchRecords', tipoFormato, query)
                     .then(function (results) {
                         if (results && results.ignored) return;
                         suggestionResults = results || [];
+                        setCachedResults(cacheKey, suggestionResults);
                         renderSearchResults(suggestionResults);
                     })
                     .catch(function (err) {
@@ -93,6 +105,22 @@
                         UiState.setGlobalLoading(false);
                     });
             }, 300);
+        }
+
+        function getCachedResults(key) {
+            if (!global.ApiService || !ApiService.dataCache || !ApiService.dataCache.search) return null;
+            const entry = ApiService.dataCache.search.get(key);
+            if (!entry) return null;
+            if (Date.now() - entry.ts > SEARCH_TTL_MS) {
+                ApiService.dataCache.search.delete(key);
+                return null;
+            }
+            return entry.results || null;
+        }
+
+        function setCachedResults(key, results) {
+            if (!global.ApiService || !ApiService.dataCache || !ApiService.dataCache.search) return;
+            ApiService.dataCache.search.set(key, { ts: Date.now(), results: results || [] });
         }
 
         function renderSearchResults(results) {
@@ -124,6 +152,14 @@
             sugg.innerHTML = "";
             sugg.appendChild(list);
 
+            bindSuggestionClick();
+        }
+
+        function bindSuggestionClick() {
+            if (suggestionClickBound) return;
+            const sugg = document.getElementById("search-suggestions");
+            if (!sugg) return;
+            suggestionClickBound = true;
             sugg.addEventListener("click", function (e) {
                 const li = e.target.closest("[data-suggestion-idx]");
                 if (li) {

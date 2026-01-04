@@ -6,6 +6,8 @@
       loaded: false
     };
     const listeners = new Set();
+    let inFlight = null;
+    let notifyOnResolve = false;
 
     function load(force) {
       const shouldNotify = !!force;
@@ -21,24 +23,31 @@
         return Promise.resolve(state.data);
       }
 
-      return ApiService.call("getReferenceData")
+      if (shouldNotify) notifyOnResolve = true;
+      if (inFlight) return inFlight;
+
+      inFlight = ApiService.call("getReferenceData")
         .then(function (data) {
           if (data && data.ignored) return;
           state.data = data || { clientes: [], empleados: [] };
           ApiService.dataCache.reference = state.data;
           ApiService.dataCache.referenceTs = Date.now();
-          if (shouldNotify) notify(state.data);
+          if (notifyOnResolve) notify(state.data);
           return state.data;
         })
         .catch(function (err) {
           console.error("Error obteniendo referencia:", err);
           state.data = { clientes: [], empleados: [] };
-          if (shouldNotify) notify(state.data);
+          if (notifyOnResolve) notify(state.data);
           return state.data;
         })
         .finally(function () {
           state.loaded = true;
+          inFlight = null;
+          notifyOnResolve = false;
         });
+
+      return inFlight;
     }
 
     function get() {

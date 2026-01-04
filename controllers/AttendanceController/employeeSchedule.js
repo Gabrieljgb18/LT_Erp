@@ -143,8 +143,14 @@ const AttendanceEmployeeSchedule = (function () {
                 razonSocial: '',
                 direccion: '',
                 telefono: '',
+                telefonoAdministracion: '',
                 encargado: '',
                 correoAdministracion: '',
+                correoFacturacion: '',
+                administrador: '',
+                tipoServicio: '',
+                tags: '',
+                descripcion: '',
                 valorHora: 0
             };
         }
@@ -159,8 +165,14 @@ const AttendanceEmployeeSchedule = (function () {
                 razonSocial: cliente.razonSocial || '',
                 direccion: '',
                 telefono: '',
+                telefonoAdministracion: '',
                 encargado: '',
                 correoAdministracion: '',
+                correoFacturacion: '',
+                administrador: '',
+                tipoServicio: '',
+                tags: '',
+                descripcion: '',
                 valorHora: 0
             };
         }
@@ -181,8 +193,14 @@ const AttendanceEmployeeSchedule = (function () {
             razonSocial: getVal('RAZON SOCIAL') || cliente.razonSocial || '',
             direccion: getVal('DIRECCION') || '',
             telefono: getVal('TELEFONO') || '',
+            telefonoAdministracion: getVal('TELEFONO ADMINISTRACION') || '',
             encargado: getVal('ENCARGADO') || '',
             correoAdministracion: getVal('CORREO ADMINISTRACION') || '',
+            correoFacturacion: getVal('CORREO FACTURACION') || '',
+            administrador: getVal('NOMBRE ADMINISTRADOR') || '',
+            tipoServicio: getVal('TIPO SERVICIO') || '',
+            tags: getVal('ETIQUETAS') || '',
+            descripcion: getVal('DESCRIPCION') || '',
             valorHora: Number(getVal('VALOR HORA')) || 0
         };
     }
@@ -295,8 +313,15 @@ const AttendanceEmployeeSchedule = (function () {
                 horasPlan: horas,
                 direccion: clienteData.direccion,
                 telefono: clienteData.telefono,
+                telefonoAdministracion: clienteData.telefonoAdministracion,
                 encargado: clienteData.encargado,
                 correo: clienteData.correoAdministracion,
+                correoAdministracion: clienteData.correoAdministracion,
+                correoFacturacion: clienteData.correoFacturacion,
+                administrador: clienteData.administrador,
+                tipoServicio: clienteData.tipoServicio,
+                tags: clienteData.tags,
+                descripcion: clienteData.descripcion,
                 observaciones: row[idxObs] || ''
             });
         });

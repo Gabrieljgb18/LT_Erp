@@ -21,6 +21,9 @@
         { id: "DESCRIPCION", label: "Descripción", type: "textarea", rows: 3, placeholder: "Descripción del servicio", full: true },
         { id: "ETIQUETAS", label: "Etiquetas", type: "tags", full: true, placeholder: "Agregar etiqueta..." },
         { id: "DIRECCION", label: "Dirección", type: "text", full: true },
+        { id: "MAPS PLACE ID", label: "Maps Place ID", type: "text", hidden: true },
+        { id: "MAPS LAT", label: "Maps Lat", type: "text", hidden: true },
+        { id: "MAPS LNG", label: "Maps Lng", type: "text", hidden: true },
         { id: "SECTION_ADMIN", label: "Administración y facturación", type: "section", icon: "bi-clipboard-check" },
         { id: "NOMBRE ADMINISTRADOR", label: "Administrador", type: "text", placeholder: "Nombre del administrador" },
         { id: "CORREO ADMINISTRACION", label: "Correo administración", type: "email" },
@@ -66,6 +69,9 @@
         { id: "NUMERO DOCUMENTO", label: "Número de documento", type: "docNumber", docTypeField: "TIPO DOCUMENTO", placeholder: "00-00000000-0" },
         { id: "SECTION_CONTACTO", label: "Contacto", type: "section", icon: "bi-telephone" },
         { id: "DIRECCION", label: "Dirección", type: "text", full: true },
+        { id: "MAPS PLACE ID", label: "Maps Place ID", type: "text", hidden: true },
+        { id: "MAPS LAT", label: "Maps Lat", type: "text", hidden: true },
+        { id: "MAPS LNG", label: "Maps Lng", type: "text", hidden: true },
         { id: "TELEFONO", label: "Teléfono", type: "phone" },
         { id: "SECTION_EMERGENCIA", label: "Contacto de emergencia", type: "section", icon: "bi-life-preserver" },
         { id: "CONTACTO EMERGENCIA NOMBRE", label: "Nombre", type: "text", full: true },
@@ -111,6 +117,30 @@
         { id: "MONTO", label: "Monto", type: "number", step: "0.01" },
         { id: "ID_FACTURA", label: "ID Factura", type: "text", hidden: true },
         { id: "FACTURA_NUMERO", label: "Factura número", type: "text" }
+      ]
+    },
+    GASTOS: {
+      title: "Registro de gastos",
+      fields: [
+        { id: "SECTION_GASTOS", label: "Detalle del gasto", type: "section", icon: "bi-receipt-cutoff" },
+        { id: "FECHA", label: "Fecha", type: "date" },
+        {
+          id: "CATEGORIA",
+          label: "Categoría",
+          type: "select",
+          options: ["Servicios", "Insumos", "Transporte", "Impuestos", "Administración", "Mantenimiento", "Otros"]
+        },
+        { id: "DETALLE", label: "Detalle", type: "text", full: true, placeholder: "Detalle del gasto" },
+        { id: "PROVEEDOR", label: "Proveedor", type: "text" },
+        { id: "MONTO", label: "Monto", type: "number", step: "0.01" },
+        {
+          id: "MEDIO DE PAGO",
+          label: "Medio de pago",
+          type: "select",
+          options: ["Uala", "Mercado Pago", "Efectivo", "Santander"]
+        },
+        { id: "COMPROBANTE", label: "Comprobante", type: "text" },
+        { id: "OBSERVACIONES", label: "Observaciones", type: "textarea", full: true }
       ]
     },
     ASISTENCIA_PLAN: {

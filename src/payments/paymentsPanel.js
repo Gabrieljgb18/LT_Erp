@@ -895,7 +895,9 @@ var PaymentsPanel = (function () {
     function formatClientLabel(cli) {
         if (!cli) return "";
         if (typeof cli === "string") return cli;
-        const base = cli.razonSocial || cli.nombre || "";
+        const base = (typeof HtmlHelpers !== "undefined" && HtmlHelpers && typeof HtmlHelpers.getClientDisplayName === "function")
+            ? HtmlHelpers.getClientDisplayName(cli)
+            : (cli.nombre || cli.razonSocial || "");
         const id = cli.id != null ? String(cli.id).trim() : "";
         const docLabel = getClientDocLabel_(cli);
         const meta = [];
@@ -928,10 +930,16 @@ var PaymentsPanel = (function () {
     }
 
     function formatCurrency(v) {
+        if (typeof Formatters !== "undefined" && Formatters && typeof Formatters.formatCurrency === "function") {
+            return Formatters.formatCurrency(v);
+        }
         return Number(v).toLocaleString("es-AR", { style: "currency", currency: "ARS" });
     }
 
     function formatDateDisplay(v) {
+        if (typeof Formatters !== "undefined" && Formatters && typeof Formatters.formatDateDisplay === "function") {
+            return Formatters.formatDateDisplay(v);
+        }
         if (!v) return "";
         if (typeof v === "string") {
             const m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
