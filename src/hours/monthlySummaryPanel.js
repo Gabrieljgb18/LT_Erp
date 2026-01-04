@@ -163,11 +163,17 @@ var MonthlySummaryPanel = (function () {
     }
 
     function formatNumber(v) {
+        if (typeof Formatters !== 'undefined' && Formatters && typeof Formatters.formatNumber === 'function') {
+            return Formatters.formatNumber(v, 2);
+        }
         const n = Number(v);
         return isNaN(n) ? '0.00' : n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
     function formatCurrency(v) {
+        if (typeof Formatters !== 'undefined' && Formatters && typeof Formatters.formatCurrency === 'function') {
+            return Formatters.formatCurrency(v);
+        }
         const n = Number(v);
         return n.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2 });
     }

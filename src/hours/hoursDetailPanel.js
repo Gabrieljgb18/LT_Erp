@@ -397,12 +397,18 @@ var HoursDetailPanel = (function () {
     }
 
     function formatNumber(value) {
+        if (typeof Formatters !== 'undefined' && Formatters && typeof Formatters.formatNumber === 'function') {
+            return Formatters.formatNumber(value, 2);
+        }
         const num = Number(value);
         if (isNaN(num)) return '0';
         return num.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
     function formatCurrency(value) {
+        if (typeof Formatters !== 'undefined' && Formatters && typeof Formatters.formatCurrency === 'function') {
+            return Formatters.formatCurrency(value);
+        }
         const num = Number(value);
         return num.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2 });
     }

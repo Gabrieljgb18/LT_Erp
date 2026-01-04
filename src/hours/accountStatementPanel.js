@@ -233,6 +233,9 @@ var AccountStatementPanel = (function () {
     }
 
     function formatCurrency(v) {
+        if (typeof Formatters !== 'undefined' && Formatters && typeof Formatters.formatCurrency === 'function') {
+            return Formatters.formatCurrency(v);
+        }
         const n = Number(v);
         return n.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2 });
     }
@@ -256,12 +259,14 @@ var AccountStatementPanel = (function () {
     function buildPaymentMethodOptionsHtml_() {
         return getPaymentMethods_()
             .map((method) => {
-                const safe = String(method || '')
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;')
-                    .replace(/"/g, '&quot;')
-                    .replace(/'/g, '&#39;');
+                const safe = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.escapeHtml === 'function')
+                    ? HtmlHelpers.escapeHtml(method)
+                    : String(method || '')
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;')
+                        .replace(/"/g, '&quot;')
+                        .replace(/'/g, '&#39;');
                 return `<option value="${safe}">${safe}</option>`;
             })
             .join('');
