@@ -4694,6 +4694,51 @@ var ClientMediaPanel = (function () {
 
 
 /**
+ * Weekly Plan Templates
+ */
+var WeeklyPlanTemplates = (function () {
+    function buildListPanel(rowsHtml) {
+        const body = rowsHtml || "";
+        return `
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0">Planes de Asistencia Semanal</h5>
+                <div class="d-flex gap-2 align-items-center">
+                    <div class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" id="check-active-plans" checked>
+                        <label class="form-check-label small" for="check-active-plans">Solo vigentes</label>
+                    </div>
+                    <button class="btn btn-primary btn-sm" id="btn-nuevo-plan"><i class="bi bi-plus-lg me-1"></i>Nuevo Plan</button>
+                </div>
+            </div>
+
+            <div class="card shadow-sm border-0">
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Cliente</th>
+                                    <th>Vigencia</th>
+                                    <th class="text-center">Horas Semanales</th>
+                                    <th>Días Programados</th>
+                                    <th class="text-end">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>${body}</tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    return {
+        buildListPanel: buildListPanel
+    };
+})();
+
+
+/**
  * Weekly Plan Panel
  * UI para gestión de planificación semanal de asistencia
  * Version: 3.1 - New Row Appears at Top
@@ -4917,29 +4962,15 @@ var ClientMediaPanel = (function () {
 
             const listaClientes = Object.values(grouped);
 
-            let html = '<div class="d-flex justify-content-between align-items-center mb-3">';
-            html += '<h5 class="mb-0">Planes de Asistencia Semanal</h5>';
-            html += '<div class="d-flex gap-2 align-items-center">';
-            html += '<div class="form-check form-switch mb-0">';
-            html += '<input class="form-check-input" type="checkbox" id="check-active-plans" checked>';
-            html += '<label class="form-check-label small" for="check-active-plans">Solo vigentes</label>';
-            html += '</div>';
-            html += '<button class="btn btn-primary btn-sm" id="btn-nuevo-plan"><i class="bi bi-plus-lg me-1"></i>Nuevo Plan</button>';
-            html += '</div>';
-            html += '</div>';
+            if (typeof WeeklyPlanTemplates === "undefined" || !WeeklyPlanTemplates || typeof WeeklyPlanTemplates.buildListPanel !== "function") {
+                console.error("WeeklyPlanTemplates no disponible");
+                return;
+            }
 
-            html += '<div class="card shadow-sm border-0"><div class="card-body p-0"><div class="table-responsive">';
-            html += '<table class="table table-hover align-middle mb-0">';
-            html += '<thead class="table-light"><tr>';
-            html += '<th>Cliente</th>';
-            html += '<th>Vigencia</th>';
-            html += '<th class="text-center">Horas Semanales</th>';
-            html += '<th>Días Programados</th>';
-            html += '<th class="text-end">Acciones</th>';
-            html += '</tr></thead><tbody>';
+            let rowsHtml = "";
 
             if (listaClientes.length === 0) {
-                html += '<tr><td colspan="4" class="text-center py-5 text-muted">No hay planes registrados.</td></tr>';
+                rowsHtml += '<tr><td colspan="4" class="text-center py-5 text-muted">No hay planes registrados.</td></tr>';
             } else {
                 const today = new Date().toISOString().split('T')[0];
 
@@ -4960,12 +4991,12 @@ var ClientMediaPanel = (function () {
                     const badgeClass = isActive ? 'bg-success' : 'bg-secondary';
                     const textClass = isActive ? 'fw-semibold' : '';
 
-                    html += `<tr class="plan-row" data-active="${isActive}" style="${rowStyle}">`;
-                    html += `<td class="${textClass}">` + HtmlHelpers.escapeHtml(item.cliente) + '</td>';
-                    html += '<td class="small">' + vigenciaStr + '</td>';
-                    html += `<td class="text-center"><span class="badge ${badgeClass} rounded-pill">` + item.horasTotales.toFixed(1) + ' hs</span></td>';
-                    html += '<td class="small">' + (diasStr || '-') + '</td>';
-                    html += '<td class="text-end">';
+                    rowsHtml += `<tr class="plan-row" data-active="${isActive}" style="${rowStyle}">`;
+                    rowsHtml += `<td class="${textClass}">` + HtmlHelpers.escapeHtml(item.cliente) + '</td>';
+                    rowsHtml += '<td class="small">' + vigenciaStr + '</td>';
+                    rowsHtml += `<td class="text-center"><span class="badge ${badgeClass} rounded-pill">` + item.horasTotales.toFixed(1) + ' hs</span></td>';
+                    rowsHtml += '<td class="small">' + (diasStr || '-') + '</td>';
+                    rowsHtml += '<td class="text-end">';
                     // Guardamos key en data-key para recuperar
                     if (!item.idCliente) return;
                     const keyBase = `id:${item.idCliente}`;
@@ -4974,15 +5005,13 @@ var ClientMediaPanel = (function () {
                     // Guardar filas en caché para recuperación segura
                     planGroupsCache[key] = item.rows;
 
-                    html += `<button class="btn btn-sm btn-outline-primary me-1 btn-editar-plan" data-key="${HtmlHelpers.escapeHtml(key)}" data-id-cliente="${HtmlHelpers.escapeHtml(item.idCliente)}" data-cliente-label="${HtmlHelpers.escapeHtml(item.cliente)}"><i class="bi bi-pencil-square me-1"></i>Editar</button>`;
-                    html += '</td>';
-                    html += '</tr>';
+                    rowsHtml += `<button class="btn btn-sm btn-outline-primary me-1 btn-editar-plan" data-key="${HtmlHelpers.escapeHtml(key)}" data-id-cliente="${HtmlHelpers.escapeHtml(item.idCliente)}" data-cliente-label="${HtmlHelpers.escapeHtml(item.cliente)}"><i class="bi bi-pencil-square me-1"></i>Editar</button>`;
+                    rowsHtml += '</td>';
+                    rowsHtml += '</tr>';
                 });
             }
 
-            html += '</tbody></table></div></div></div>';
-
-            container.innerHTML = html;
+            container.innerHTML = WeeklyPlanTemplates.buildListPanel(rowsHtml);
 
             // Bind events
             const checkActive = container.querySelector('#check-active-plans');
