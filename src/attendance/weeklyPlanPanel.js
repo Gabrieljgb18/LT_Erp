@@ -556,6 +556,10 @@
             if (!panel) panel = document.getElementById("plan-semanal-panel");
 
             if (!panel) return;
+            if (typeof WeeklyPlanTemplates === "undefined" || !WeeklyPlanTemplates || typeof WeeklyPlanTemplates.buildEditorTopSection !== "function") {
+                console.error("WeeklyPlanTemplates no disponible");
+                return;
+            }
 
             // Ocultar footer del modal si estamos en un modal
             const modalFooter = document.querySelector('.modal-footer-custom');
@@ -593,20 +597,10 @@
             });
 
             let html = "";
-
-            // Header solo si estamos en fallback
-            if (panel.id === "plan-semanal-panel") {
-                html += '<div class="mt-2 p-3 lt-surface lt-surface--subtle">';
-                html += '<div class="d-flex justify-content-between align-items-center mb-3">';
-                html += '<div>';
-                html += '<div class="fw-bold mb-1 text-primary"><i class="bi bi-calendar-week me-1"></i>Plan semanal del cliente</div>';
-                html += '<div class="small mb-2">Cliente: <strong class="text-primary-emphasis">' + HtmlHelpers.escapeHtml(cliente) + "</strong></div>";
-                html += '</div>';
-                html += '</div>';
+            const needsWrapper = panel.id === "plan-semanal-panel";
+            if (needsWrapper) {
+                html += WeeklyPlanTemplates.buildEditorWrapperStart(HtmlHelpers.escapeHtml(cliente));
             }
-
-            // Sección superior: Horas contratadas y Botón Agregar
-            html += '<div class="d-flex flex-wrap justify-content-between align-items-start mb-3 gap-2">';
 
             // Horas contratadas
             let horasHtml = '';
@@ -635,13 +629,7 @@
                 }
             }
             if (!horasHtml) horasHtml = '<div></div>'; // Spacer
-            html += horasHtml;
-
-            // Botón Agregar día (Movido arriba)
-            html += '<button type="button" class="btn btn-sm btn-outline-secondary lt-btn-compact text-nowrap" data-action="add-plan-row">';
-            html += '<i class="bi bi-plus-lg me-1"></i>Agregar día</button>';
-
-            html += '</div>'; // End top section
+            html += WeeklyPlanTemplates.buildEditorTopSection(horasHtml);
 
             // Cards por empleado
             html += '<div id="weekly-plan-cards" class="d-flex flex-column gap-3">';
@@ -665,30 +653,16 @@
                 const hasOpenState = openGroupKeys && openGroupKeys.size > 0;
                 const isOpen = hasOpenState ? openGroupKeys.has(key) : isSinAsignar;
 
-                html += '<div class="card shadow-sm border-0" data-emp-key="' + HtmlHelpers.escapeHtml(key) + '">';
-
-                // Card Header
-                html += '<div class="card-header py-2 px-3 bg-white d-flex flex-wrap justify-content-between align-items-center gap-2 lt-clickable" ';
-                html += 'data-bs-toggle="collapse" data-bs-target="#' + collapseId + '" ';
-                html += 'aria-expanded="' + isOpen + '" aria-controls="' + collapseId + '" role="button">';
-
-                html += '<div class="d-flex flex-wrap gap-2 align-items-center">';
-                html += '<span class="fw-semibold text-dark"><i class="bi bi-person-circle me-1"></i>' + HtmlHelpers.escapeHtml(empleado) + '</span>';
-                html += '<span class="badge bg-primary bg-opacity-75">' + diasLabel + '</span>';
-                html += '<span class="badge text-bg-success">' + totalHoras.toFixed(1) + ' hs totales</span>';
-                html += '</div>';
-
-                html += '<div class="d-flex gap-2 align-items-center">';
-                html += '<span class="text-muted small">' + activeDays + ' día(s)</span>';
-                html += '<span class="text-muted fw-semibold" data-role="collapse-arrow">' + (isOpen ? '▲' : '▼') + '</span>';
-                html += '</div>';
-
-                html += '</div>';
-
-                // Card Body (collapsible)
-                // Fix: Quitar 'show' por defecto, solo ponerlo si isOpen es true
-                html += '<div id="' + collapseId + '" class="collapse ' + (isOpen ? 'show' : '') + '">';
-                html += '<div class="card-body pt-2 pb-3 px-3">';
+                html += WeeklyPlanTemplates.buildEmployeeCardStart({
+                    empKey: HtmlHelpers.escapeHtml(key),
+                    collapseId: collapseId,
+                    isOpen: isOpen,
+                    empleadoLabel: HtmlHelpers.escapeHtml(empleado),
+                    diasLabel: diasLabel,
+                    totalHoras: totalHoras.toFixed(1),
+                    activeDays: activeDays,
+                    arrowLabel: isOpen ? '▲' : '▼'
+                });
 
                 // Días del empleado
                 empleadoRows.forEach((r) => {
@@ -696,69 +670,32 @@
                     const empleadoOptions = HtmlHelpers.getEmpleadoOptionsHtml(r.idEmpleado || "", referenceData.empleados);
                     const diaOptions = HtmlHelpers.getDiaOptionsHtml(r.diaSemana || "");
                     const horaFormatted = HtmlHelpers.formatHoraEntradaForInput(r.horaEntrada);
-                    html += '<div class="lt-surface lt-surface--subtle p-3 mb-2">';
-
-                    // Header de día
-                    html += '<div class="d-flex justify-content-between align-items-center mb-2">';
-                    html += '<div class="d-flex gap-2 align-items-center">';
-                    html += '<span class="badge bg-primary bg-opacity-75 text-white">Plan</span>';
-                    html += '<span class="fw-semibold">' + (r.diaSemana || 'Día no seleccionado') + '</span>';
-                    if (r.horasPlan) {
-                        html += '<span class="text-muted">• ' + r.horasPlan + ' hs</span>';
-                    }
-                    html += '</div>';
-                    html += '<button type="button" class="btn btn-sm btn-outline-danger lt-btn-icon" data-action="delete-plan-row" data-idx="' + r.originalIdx + '"><i class="bi bi-trash"></i></button>';
-                    html += '</div>';
-
-                    // Campos del día
-                    html += '<div class="row g-2">';
-
-                    html += '<div class="col-12 col-md-6">';
-                    html += '<label class="small text-muted fw-semibold d-block mb-1">Empleado</label>';
-                    html += '<select class="form-select form-select-sm bg-white border" id="' + rowId + '-empleado">' + empleadoOptions + '</select>';
-                    html += '</div>';
-
-                    html += '<div class="col-6 col-md-3">';
-                    html += '<label class="small text-muted fw-semibold d-block mb-1">Día</label>';
-                    html += '<select class="form-select form-select-sm text-center bg-white border" id="' + rowId + '-dia">' + diaOptions + '</select>';
-                    html += '</div>';
-
-                    html += '<div class="col-6 col-md-3">';
-                    html += '<label class="small text-muted fw-semibold d-block mb-1">Hora entrada</label>';
-                    html += '<input type="time" class="form-control form-control-sm text-center" id="' + rowId + '-horaEntrada" value="' + HtmlHelpers.escapeHtml(horaFormatted) + '" step="1800">';
-                    html += '</div>';
-
-                    html += '<div class="col-6 col-md-3">';
-                    html += '<label class="small text-muted fw-semibold d-block mb-1">Horas plan</label>';
-                    html += '<input type="number" step="0.5" min="0" class="form-control form-control-sm text-end" id="' + rowId + '-horasPlan" value="' + HtmlHelpers.escapeHtml(r.horasPlan != null ? String(r.horasPlan) : "") + '">';
-                    html += '</div>';
-
-                    html += '<div class="col-12 col-md-6">';
-                    html += '<label class="small text-muted fw-semibold d-block mb-1">Observaciones</label>';
-                    html += '<input type="text" class="form-control form-control-sm" id="' + rowId + '-obs" value="' + HtmlHelpers.escapeHtml(r.observaciones || "") + '">';
-                    html += '</div>';
-
-                    html += '<input type="hidden" id="' + rowId + '-id" value="' + HtmlHelpers.escapeHtml(r.id || "") + '">';
-
-                    html += '</div>'; // row
-                    html += '</div>'; // border rounded
+                    const horasLabel = r.horasPlan
+                        ? '<span class="text-muted">• ' + HtmlHelpers.escapeHtml(String(r.horasPlan)) + ' hs</span>'
+                        : '';
+                    html += WeeklyPlanTemplates.buildPlanRowCard({
+                        rowId: rowId,
+                        diaLabel: HtmlHelpers.escapeHtml(r.diaSemana || 'Día no seleccionado'),
+                        horasLabel: horasLabel,
+                        originalIdx: r.originalIdx,
+                        empleadoOptions: empleadoOptions,
+                        diaOptions: diaOptions,
+                        horaEntrada: HtmlHelpers.escapeHtml(horaFormatted),
+                        horasPlan: HtmlHelpers.escapeHtml(r.horasPlan != null ? String(r.horasPlan) : ""),
+                        observaciones: HtmlHelpers.escapeHtml(r.observaciones || ""),
+                        recordId: HtmlHelpers.escapeHtml(r.id || "")
+                    });
                 });
 
-                html += '</div>'; // card-body
-                html += '</div>'; // collapse
-                html += '</div>'; // card
+                html += WeeklyPlanTemplates.buildEmployeeCardEnd();
             });
 
             html += '</div>'; // weekly-plan-cards
 
             // Botones de acción (Solo Guardar, Agregar se movió arriba)
-            html += '<div class="d-flex justify-content-end align-items-center mt-3 pt-3 border-top">';
-            html += '<button type="button" class="btn btn-sm btn-success lt-btn-compact" ';
-            html += 'data-action="save-weekly-plan" id="btn-save-weekly"><i class="bi bi-save2 me-1"></i>Guardar plan del cliente</button>';
-            html += "</div>";
-
-            if (panel.id === "plan-semanal-panel") {
-                html += "</div>";
+            html += WeeklyPlanTemplates.buildEditorFooter();
+            if (needsWrapper) {
+                html += WeeklyPlanTemplates.buildEditorWrapperEnd();
             }
 
             panel.innerHTML = html;
