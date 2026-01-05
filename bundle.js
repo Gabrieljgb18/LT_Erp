@@ -103,12 +103,42 @@
             return (nombre || razon || "").toString().trim();
         }
 
+        function getClientDocLabel(cliente) {
+            if (!cliente || typeof cliente !== "object") return "";
+            const docType = (cliente.docType || cliente["TIPO DOCUMENTO"] || "").toString().trim();
+            const rawDoc = cliente.docNumber || cliente["NUMERO DOCUMENTO"] || cliente.cuit || "";
+            if (!rawDoc) return "";
+            const fallbackType = docType || (cliente.cuit ? "CUIT" : "");
+            if (global.InputUtils && typeof global.InputUtils.formatDocLabel === "function") {
+                return global.InputUtils.formatDocLabel(fallbackType, rawDoc);
+            }
+            return (fallbackType ? fallbackType + " " : "") + rawDoc;
+        }
+
+        function formatClientLabel(cliente, options) {
+            if (!cliente) return "";
+            if (typeof cliente === "string") return cliente;
+            const opts = options || {};
+            const base = getClientDisplayName(cliente, { preferRazon: !!opts.preferRazon });
+            const id = cliente.id != null ? String(cliente.id).trim() : "";
+            const includeId = opts.includeId !== false;
+            const includeDoc = opts.includeDoc !== false;
+            const docLabel = includeDoc ? getClientDocLabel(cliente) : "";
+            const meta = [];
+            if (includeId && id) meta.push(`ID: ${id}`);
+            if (docLabel) meta.push(docLabel);
+            const metaSuffix = meta.length ? ` (${meta.join(" | ")})` : "";
+            return (base + metaSuffix).trim();
+        }
+
         return {
             escapeHtml,
             getEmpleadoOptionsHtml,
             getDiaOptionsHtml,
             formatHoraEntradaForInput,
-            getClientDisplayName
+            getClientDisplayName,
+            getClientDocLabel,
+            formatClientLabel
         };
     })();
 
@@ -4672,6 +4702,26 @@ var ClientMediaPanel = (function () {
 (function (global) {
     const WeeklyPlanPanel = (() => {
         let referenceData = { clientes: [], empleados: [] };
+        const formatClientLabel_ = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.formatClientLabel === 'function')
+            ? HtmlHelpers.formatClientLabel
+            : function (cli) {
+                if (!cli) return '';
+                if (typeof cli === 'string') return cli;
+                const base = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.getClientDisplayName === 'function')
+                    ? HtmlHelpers.getClientDisplayName(cli)
+                    : (cli.nombre || cli.razonSocial || '');
+                const id = cli.id != null ? String(cli.id).trim() : '';
+                const docType = (cli.docType || cli["TIPO DOCUMENTO"] || '').toString().trim();
+                const rawDoc = cli.docNumber || cli["NUMERO DOCUMENTO"] || cli.cuit || '';
+                const docLabel = rawDoc && (typeof InputUtils !== 'undefined' && InputUtils && typeof InputUtils.formatDocLabel === 'function')
+                    ? InputUtils.formatDocLabel(docType || (cli.cuit ? 'CUIT' : ''), rawDoc)
+                    : '';
+                const meta = [];
+                if (id) meta.push(`ID: ${id}`);
+                if (docLabel) meta.push(docLabel);
+                const metaSuffix = meta.length ? ` (${meta.join(' | ')})` : '';
+                return (base + metaSuffix).trim();
+            };
 
         // Estado interno para navegación
         let currentContainer = null;
@@ -4684,33 +4734,6 @@ var ClientMediaPanel = (function () {
 
         function init(refData) {
             referenceData = refData;
-        }
-
-        function formatClientLabel_(cli) {
-            if (!cli) return '';
-            if (typeof cli === 'string') return cli;
-            const base = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.getClientDisplayName === 'function')
-                ? HtmlHelpers.getClientDisplayName(cli)
-                : (cli.nombre || cli.razonSocial || '');
-            const id = cli.id != null ? String(cli.id).trim() : '';
-            const docLabel = getClientDocLabel_(cli);
-            const meta = [];
-            if (id) meta.push(`ID: ${id}`);
-            if (docLabel) meta.push(docLabel);
-            const metaSuffix = meta.length ? ` (${meta.join(' | ')})` : '';
-            return (base + metaSuffix).trim();
-        }
-
-        function getClientDocLabel_(cli) {
-            if (!cli || typeof cli !== 'object') return '';
-            const docType = (cli.docType || cli["TIPO DOCUMENTO"] || '').toString().trim();
-            const rawDoc = cli.docNumber || cli["NUMERO DOCUMENTO"] || cli.cuit || '';
-            if (!rawDoc) return '';
-            const fallbackType = docType || (cli.cuit ? 'CUIT' : '');
-            if (typeof InputUtils !== 'undefined' && InputUtils && typeof InputUtils.formatDocLabel === 'function') {
-                return InputUtils.formatDocLabel(fallbackType, rawDoc);
-            }
-            return (fallbackType ? (fallbackType + ' ') : '') + rawDoc;
         }
 
         // IDs vienen desde el select, sin fallback por nombre.
@@ -8791,6 +8814,26 @@ var PaymentsPanel = (function () {
                 .replace(/"/g, "&quot;")
                 .replace(/'/g, "&#39;");
         };
+    const formatClientLabel = (typeof HtmlHelpers !== "undefined" && HtmlHelpers && typeof HtmlHelpers.formatClientLabel === "function")
+        ? HtmlHelpers.formatClientLabel
+        : function (cli) {
+            if (!cli) return "";
+            if (typeof cli === "string") return cli;
+            const base = (typeof HtmlHelpers !== "undefined" && HtmlHelpers && typeof HtmlHelpers.getClientDisplayName === "function")
+                ? HtmlHelpers.getClientDisplayName(cli)
+                : (cli.nombre || cli.razonSocial || "");
+            const id = cli.id != null ? String(cli.id).trim() : "";
+            const docType = (cli.docType || cli["TIPO DOCUMENTO"] || "").toString().trim();
+            const rawDoc = cli.docNumber || cli["NUMERO DOCUMENTO"] || cli.cuit || "";
+            const docLabel = rawDoc && (typeof InputUtils !== "undefined" && InputUtils && typeof InputUtils.formatDocLabel === "function")
+                ? InputUtils.formatDocLabel(docType || (cli.cuit ? "CUIT" : ""), rawDoc)
+                : "";
+            const meta = [];
+            if (id) meta.push(`ID: ${id}`);
+            if (docLabel) meta.push(docLabel);
+            const metaSuffix = meta.length ? ` (${meta.join(" | ")})` : "";
+            return (base + metaSuffix).trim();
+        };
 
     function render() {
         const container = document.getElementById(containerId);
@@ -9673,33 +9716,6 @@ var PaymentsPanel = (function () {
         if (wrapper) wrapper.classList.toggle("d-none", show);
     }
 
-    function formatClientLabel(cli) {
-        if (!cli) return "";
-        if (typeof cli === "string") return cli;
-        const base = (typeof HtmlHelpers !== "undefined" && HtmlHelpers && typeof HtmlHelpers.getClientDisplayName === "function")
-            ? HtmlHelpers.getClientDisplayName(cli)
-            : (cli.nombre || cli.razonSocial || "");
-        const id = cli.id != null ? String(cli.id).trim() : "";
-        const docLabel = getClientDocLabel_(cli);
-        const meta = [];
-        if (id) meta.push(`ID: ${id}`);
-        if (docLabel) meta.push(docLabel);
-        const metaSuffix = meta.length ? ` (${meta.join(" | ")})` : "";
-        return (base + metaSuffix).trim();
-    }
-
-    function getClientDocLabel_(cli) {
-        if (!cli || typeof cli !== "object") return "";
-        const docType = (cli.docType || cli["TIPO DOCUMENTO"] || "").toString().trim();
-        const rawDoc = cli.docNumber || cli["NUMERO DOCUMENTO"] || cli.cuit || "";
-        if (!rawDoc) return "";
-        const fallbackType = docType || (cli.cuit ? "CUIT" : "");
-        if (typeof InputUtils !== "undefined" && InputUtils && typeof InputUtils.formatDocLabel === "function") {
-            return InputUtils.formatDocLabel(fallbackType, rawDoc);
-        }
-        return (fallbackType ? fallbackType + " " : "") + rawDoc;
-    }
-
     function extractClientIdFromLabel_(label) {
         const match = String(label || "").match(/ID\\s*:\\s*([^|)]+)/i);
         return match ? match[1].trim() : "";
@@ -9779,6 +9795,26 @@ var InvoicePanel = (function () {
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#39;');
+        };
+    const formatClientLabel = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.formatClientLabel === 'function')
+        ? function (cli) {
+            return HtmlHelpers.formatClientLabel(cli, { preferRazon: true });
+        }
+        : function (cli) {
+            if (!cli) return '';
+            if (typeof cli === 'string') return cli;
+            const base = cli.razonSocial || cli.nombre || '';
+            const id = cli.id != null ? String(cli.id).trim() : '';
+            const docType = (cli.docType || cli["TIPO DOCUMENTO"] || '').toString().trim();
+            const rawDoc = cli.docNumber || cli["NUMERO DOCUMENTO"] || cli.cuit || '';
+            const docLabel = rawDoc && (typeof InputUtils !== 'undefined' && InputUtils && typeof InputUtils.formatDocLabel === 'function')
+                ? InputUtils.formatDocLabel(docType || (cli.cuit ? 'CUIT' : ''), rawDoc)
+                : '';
+            const meta = [];
+            if (id) meta.push(`ID: ${id}`);
+            if (docLabel) meta.push(docLabel);
+            const metaSuffix = meta.length ? ` (${meta.join(' | ')})` : '';
+            return (base + metaSuffix).trim();
         };
 
     function buildOnClick_(fnName, arg) {
@@ -10515,19 +10551,6 @@ var InvoicePanel = (function () {
         });
     }
 
-    function formatClientLabel(cli) {
-        if (!cli) return '';
-        if (typeof cli === 'string') return cli;
-        const base = cli.razonSocial || cli.nombre || '';
-        const id = cli.id != null ? String(cli.id).trim() : '';
-        const docLabel = getClientDocLabel_(cli);
-        const meta = [];
-        if (id) meta.push(`ID: ${id}`);
-        if (docLabel) meta.push(docLabel);
-        const metaSuffix = meta.length ? ` (${meta.join(' | ')})` : '';
-        return (base + metaSuffix).trim();
-    }
-
     function getClientLabelById_(idCliente) {
         const idStr = idCliente != null ? String(idCliente).trim() : '';
         if (!idStr) return '';
@@ -10544,18 +10567,6 @@ var InvoicePanel = (function () {
         const clientes = refs && refs.clientes ? refs.clientes : [];
         const match = clientes.find(c => c && typeof c === 'object' && String(c.id || '').trim() === idStr);
         return match ? formatClientLabel(match) : '';
-    }
-
-    function getClientDocLabel_(cli) {
-        if (!cli || typeof cli !== 'object') return '';
-        const docType = (cli.docType || cli["TIPO DOCUMENTO"] || '').toString().trim();
-        const rawDoc = cli.docNumber || cli["NUMERO DOCUMENTO"] || cli.cuit || '';
-        if (!rawDoc) return '';
-        const fallbackType = docType || (cli.cuit ? 'CUIT' : '');
-        if (typeof InputUtils !== 'undefined' && InputUtils && typeof InputUtils.formatDocLabel === 'function') {
-            return InputUtils.formatDocLabel(fallbackType, rawDoc);
-        }
-        return (fallbackType ? (fallbackType + ' ') : '') + rawDoc;
     }
 
     function autocompleteCUIT() {
@@ -12132,6 +12143,26 @@ var ClientMonthlySummaryPanel = (function () {
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#39;');
         };
+    const formatClientLabel_ = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.formatClientLabel === 'function')
+        ? HtmlHelpers.formatClientLabel
+        : function (cli) {
+            if (!cli) return '';
+            if (typeof cli === 'string') return cli;
+            const base = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.getClientDisplayName === 'function')
+                ? HtmlHelpers.getClientDisplayName(cli)
+                : (cli.nombre || cli.razonSocial || '');
+            const id = cli.id != null ? String(cli.id).trim() : '';
+            const docType = (cli.docType || cli["TIPO DOCUMENTO"] || '').toString().trim();
+            const rawDoc = cli.docNumber || cli["NUMERO DOCUMENTO"] || cli.cuit || '';
+            const docLabel = rawDoc && (typeof InputUtils !== 'undefined' && InputUtils && typeof InputUtils.formatDocLabel === 'function')
+                ? InputUtils.formatDocLabel(docType || (cli.cuit ? 'CUIT' : ''), rawDoc)
+                : '';
+            const meta = [];
+            if (id) meta.push(`ID: ${id}`);
+            if (docLabel) meta.push(docLabel);
+            const metaSuffix = meta.length ? ` (${meta.join(' | ')})` : '';
+            return (base + metaSuffix).trim();
+        };
 
     function render() {
         const container = document.getElementById(containerId);
@@ -12314,33 +12345,6 @@ var ClientMonthlySummaryPanel = (function () {
         return name ? `${name} (ID: ${id})` : `ID: ${id}`;
     }
 
-    function formatClientLabel_(cli) {
-        if (!cli) return '';
-        if (typeof cli === 'string') return cli;
-        const base = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.getClientDisplayName === 'function')
-            ? HtmlHelpers.getClientDisplayName(cli)
-            : (cli.nombre || cli.razonSocial || '');
-        const id = cli.id != null ? String(cli.id).trim() : '';
-        const docLabel = getClientDocLabel_(cli);
-        const meta = [];
-        if (id) meta.push(`ID: ${id}`);
-        if (docLabel) meta.push(docLabel);
-        const metaSuffix = meta.length ? ` (${meta.join(' | ')})` : '';
-        return (base + metaSuffix).trim();
-    }
-
-    function getClientDocLabel_(cli) {
-        if (!cli || typeof cli !== 'object') return '';
-        const docType = (cli.docType || cli["TIPO DOCUMENTO"] || '').toString().trim();
-        const rawDoc = cli.docNumber || cli["NUMERO DOCUMENTO"] || cli.cuit || '';
-        if (!rawDoc) return '';
-        const fallbackType = docType || (cli.cuit ? 'CUIT' : '');
-        if (typeof InputUtils !== 'undefined' && InputUtils && typeof InputUtils.formatDocLabel === 'function') {
-            return InputUtils.formatDocLabel(fallbackType, rawDoc);
-        }
-        return (fallbackType ? (fallbackType + ' ') : '') + rawDoc;
-    }
-
     function getClientLabelById_(idCliente) {
         const idStr = String(idCliente || '').trim();
         if (!idStr || !ReferenceService || typeof ReferenceService.get !== 'function') return '';
@@ -12372,6 +12376,26 @@ var ClientAccountPanel = (function () {
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#39;');
+        };
+    const formatClientLabel = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.formatClientLabel === 'function')
+        ? HtmlHelpers.formatClientLabel
+        : function (cli) {
+            if (!cli) return '';
+            if (typeof cli === 'string') return cli;
+            const base = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.getClientDisplayName === 'function')
+                ? HtmlHelpers.getClientDisplayName(cli)
+                : (cli.nombre || cli.razonSocial || '');
+            const id = cli.id != null ? String(cli.id).trim() : '';
+            const docType = (cli.docType || cli["TIPO DOCUMENTO"] || '').toString().trim();
+            const rawDoc = cli.docNumber || cli["NUMERO DOCUMENTO"] || cli.cuit || '';
+            const docLabel = rawDoc && (typeof InputUtils !== 'undefined' && InputUtils && typeof InputUtils.formatDocLabel === 'function')
+                ? InputUtils.formatDocLabel(docType || (cli.cuit ? 'CUIT' : ''), rawDoc)
+                : '';
+            const meta = [];
+            if (id) meta.push(`ID: ${id}`);
+            if (docLabel) meta.push(docLabel);
+            const metaSuffix = meta.length ? ` (${meta.join(' | ')})` : '';
+            return (base + metaSuffix).trim();
         };
 
     function render() {
@@ -12497,33 +12521,6 @@ var ClientAccountPanel = (function () {
                 loadClients();
             }
         });
-    }
-
-    function formatClientLabel(cli) {
-        if (!cli) return '';
-        if (typeof cli === 'string') return cli;
-        const base = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.getClientDisplayName === 'function')
-            ? HtmlHelpers.getClientDisplayName(cli)
-            : (cli.nombre || cli.razonSocial || '');
-        const id = cli.id != null ? String(cli.id).trim() : '';
-        const docLabel = getClientDocLabel_(cli);
-        const meta = [];
-        if (id) meta.push(`ID: ${id}`);
-        if (docLabel) meta.push(docLabel);
-        const metaSuffix = meta.length ? ` (${meta.join(' | ')})` : '';
-        return (base + metaSuffix).trim();
-    }
-
-    function getClientDocLabel_(cli) {
-        if (!cli || typeof cli !== 'object') return '';
-        const docType = (cli.docType || cli["TIPO DOCUMENTO"] || '').toString().trim();
-        const rawDoc = cli.docNumber || cli["NUMERO DOCUMENTO"] || cli.cuit || '';
-        if (!rawDoc) return '';
-        const fallbackType = docType || (cli.cuit ? 'CUIT' : '');
-        if (typeof InputUtils !== 'undefined' && InputUtils && typeof InputUtils.formatDocLabel === 'function') {
-            return InputUtils.formatDocLabel(fallbackType, rawDoc);
-        }
-        return (fallbackType ? (fallbackType + ' ') : '') + rawDoc;
     }
 
     function extractClientIdFromLabel_(label) {
@@ -13022,6 +13019,26 @@ var ClientReportPanel = (function () {
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#39;');
         };
+    const formatClientLabel = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.formatClientLabel === 'function')
+        ? HtmlHelpers.formatClientLabel
+        : function (cli) {
+            if (!cli) return '';
+            if (typeof cli === 'string') return cli;
+            const base = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.getClientDisplayName === 'function')
+                ? HtmlHelpers.getClientDisplayName(cli)
+                : (cli.nombre || cli.razonSocial || '');
+            const id = cli.id != null ? String(cli.id).trim() : '';
+            const docType = (cli.docType || cli["TIPO DOCUMENTO"] || '').toString().trim();
+            const rawDoc = cli.docNumber || cli["NUMERO DOCUMENTO"] || cli.cuit || '';
+            const docLabel = rawDoc && (typeof InputUtils !== 'undefined' && InputUtils && typeof InputUtils.formatDocLabel === 'function')
+                ? InputUtils.formatDocLabel(docType || (cli.cuit ? 'CUIT' : ''), rawDoc)
+                : '';
+            const meta = [];
+            if (id) meta.push(`ID: ${id}`);
+            if (docLabel) meta.push(docLabel);
+            const metaSuffix = meta.length ? ` (${meta.join(' | ')})` : '';
+            return (base + metaSuffix).trim();
+        };
 
     function render() {
         const container = document.getElementById(containerId);
@@ -13208,34 +13225,6 @@ var ClientReportPanel = (function () {
                 console.error('Error cargando clientes:', err);
                 Alerts && Alerts.showAlert('No se pudieron cargar clientes. Reintentá.', 'warning');
             });
-    }
-
-    function formatClientLabel(cli) {
-        if (!cli) return '';
-        if (typeof cli === 'string') return cli;
-        // Preferir nombre, luego razón social; agregar documento si está disponible
-        const base = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.getClientDisplayName === 'function')
-            ? HtmlHelpers.getClientDisplayName(cli)
-            : (cli.nombre || cli.razonSocial || '');
-        const id = cli.id != null ? String(cli.id).trim() : '';
-        const docLabel = getClientDocLabel_(cli);
-        const meta = [];
-        if (id) meta.push(`ID: ${id}`);
-        if (docLabel) meta.push(docLabel);
-        const metaSuffix = meta.length ? ` (${meta.join(' | ')})` : '';
-        return (base + metaSuffix).trim();
-    }
-
-    function getClientDocLabel_(cli) {
-        if (!cli || typeof cli !== 'object') return '';
-        const docType = (cli.docType || cli["TIPO DOCUMENTO"] || '').toString().trim();
-        const rawDoc = cli.docNumber || cli["NUMERO DOCUMENTO"] || cli.cuit || '';
-        if (!rawDoc) return '';
-        const fallbackType = docType || (cli.cuit ? 'CUIT' : '');
-        if (typeof InputUtils !== 'undefined' && InputUtils && typeof InputUtils.formatDocLabel === 'function') {
-            return InputUtils.formatDocLabel(fallbackType, rawDoc);
-        }
-        return (fallbackType ? (fallbackType + ' ') : '') + rawDoc;
     }
 
     function populateClientList(clients) {

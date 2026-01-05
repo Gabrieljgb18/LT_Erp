@@ -15,6 +15,26 @@ var ClientReportPanel = (function () {
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#39;');
         };
+    const formatClientLabel = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.formatClientLabel === 'function')
+        ? HtmlHelpers.formatClientLabel
+        : function (cli) {
+            if (!cli) return '';
+            if (typeof cli === 'string') return cli;
+            const base = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.getClientDisplayName === 'function')
+                ? HtmlHelpers.getClientDisplayName(cli)
+                : (cli.nombre || cli.razonSocial || '');
+            const id = cli.id != null ? String(cli.id).trim() : '';
+            const docType = (cli.docType || cli["TIPO DOCUMENTO"] || '').toString().trim();
+            const rawDoc = cli.docNumber || cli["NUMERO DOCUMENTO"] || cli.cuit || '';
+            const docLabel = rawDoc && (typeof InputUtils !== 'undefined' && InputUtils && typeof InputUtils.formatDocLabel === 'function')
+                ? InputUtils.formatDocLabel(docType || (cli.cuit ? 'CUIT' : ''), rawDoc)
+                : '';
+            const meta = [];
+            if (id) meta.push(`ID: ${id}`);
+            if (docLabel) meta.push(docLabel);
+            const metaSuffix = meta.length ? ` (${meta.join(' | ')})` : '';
+            return (base + metaSuffix).trim();
+        };
 
     function render() {
         const container = document.getElementById(containerId);
@@ -201,34 +221,6 @@ var ClientReportPanel = (function () {
                 console.error('Error cargando clientes:', err);
                 Alerts && Alerts.showAlert('No se pudieron cargar clientes. Reintentá.', 'warning');
             });
-    }
-
-    function formatClientLabel(cli) {
-        if (!cli) return '';
-        if (typeof cli === 'string') return cli;
-        // Preferir nombre, luego razón social; agregar documento si está disponible
-        const base = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.getClientDisplayName === 'function')
-            ? HtmlHelpers.getClientDisplayName(cli)
-            : (cli.nombre || cli.razonSocial || '');
-        const id = cli.id != null ? String(cli.id).trim() : '';
-        const docLabel = getClientDocLabel_(cli);
-        const meta = [];
-        if (id) meta.push(`ID: ${id}`);
-        if (docLabel) meta.push(docLabel);
-        const metaSuffix = meta.length ? ` (${meta.join(' | ')})` : '';
-        return (base + metaSuffix).trim();
-    }
-
-    function getClientDocLabel_(cli) {
-        if (!cli || typeof cli !== 'object') return '';
-        const docType = (cli.docType || cli["TIPO DOCUMENTO"] || '').toString().trim();
-        const rawDoc = cli.docNumber || cli["NUMERO DOCUMENTO"] || cli.cuit || '';
-        if (!rawDoc) return '';
-        const fallbackType = docType || (cli.cuit ? 'CUIT' : '');
-        if (typeof InputUtils !== 'undefined' && InputUtils && typeof InputUtils.formatDocLabel === 'function') {
-            return InputUtils.formatDocLabel(fallbackType, rawDoc);
-        }
-        return (fallbackType ? (fallbackType + ' ') : '') + rawDoc;
     }
 
     function populateClientList(clients) {

@@ -26,6 +26,26 @@ var InvoicePanel = (function () {
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#39;');
         };
+    const formatClientLabel = (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.formatClientLabel === 'function')
+        ? function (cli) {
+            return HtmlHelpers.formatClientLabel(cli, { preferRazon: true });
+        }
+        : function (cli) {
+            if (!cli) return '';
+            if (typeof cli === 'string') return cli;
+            const base = cli.razonSocial || cli.nombre || '';
+            const id = cli.id != null ? String(cli.id).trim() : '';
+            const docType = (cli.docType || cli["TIPO DOCUMENTO"] || '').toString().trim();
+            const rawDoc = cli.docNumber || cli["NUMERO DOCUMENTO"] || cli.cuit || '';
+            const docLabel = rawDoc && (typeof InputUtils !== 'undefined' && InputUtils && typeof InputUtils.formatDocLabel === 'function')
+                ? InputUtils.formatDocLabel(docType || (cli.cuit ? 'CUIT' : ''), rawDoc)
+                : '';
+            const meta = [];
+            if (id) meta.push(`ID: ${id}`);
+            if (docLabel) meta.push(docLabel);
+            const metaSuffix = meta.length ? ` (${meta.join(' | ')})` : '';
+            return (base + metaSuffix).trim();
+        };
 
     function buildOnClick_(fnName, arg) {
         const safeArg = JSON.stringify(arg == null ? '' : String(arg));
@@ -761,19 +781,6 @@ var InvoicePanel = (function () {
         });
     }
 
-    function formatClientLabel(cli) {
-        if (!cli) return '';
-        if (typeof cli === 'string') return cli;
-        const base = cli.razonSocial || cli.nombre || '';
-        const id = cli.id != null ? String(cli.id).trim() : '';
-        const docLabel = getClientDocLabel_(cli);
-        const meta = [];
-        if (id) meta.push(`ID: ${id}`);
-        if (docLabel) meta.push(docLabel);
-        const metaSuffix = meta.length ? ` (${meta.join(' | ')})` : '';
-        return (base + metaSuffix).trim();
-    }
-
     function getClientLabelById_(idCliente) {
         const idStr = idCliente != null ? String(idCliente).trim() : '';
         if (!idStr) return '';
@@ -790,18 +797,6 @@ var InvoicePanel = (function () {
         const clientes = refs && refs.clientes ? refs.clientes : [];
         const match = clientes.find(c => c && typeof c === 'object' && String(c.id || '').trim() === idStr);
         return match ? formatClientLabel(match) : '';
-    }
-
-    function getClientDocLabel_(cli) {
-        if (!cli || typeof cli !== 'object') return '';
-        const docType = (cli.docType || cli["TIPO DOCUMENTO"] || '').toString().trim();
-        const rawDoc = cli.docNumber || cli["NUMERO DOCUMENTO"] || cli.cuit || '';
-        if (!rawDoc) return '';
-        const fallbackType = docType || (cli.cuit ? 'CUIT' : '');
-        if (typeof InputUtils !== 'undefined' && InputUtils && typeof InputUtils.formatDocLabel === 'function') {
-            return InputUtils.formatDocLabel(fallbackType, rawDoc);
-        }
-        return (fallbackType ? (fallbackType + ' ') : '') + rawDoc;
     }
 
     function autocompleteCUIT() {
