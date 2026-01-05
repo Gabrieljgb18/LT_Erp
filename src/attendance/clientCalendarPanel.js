@@ -68,80 +68,14 @@
                 currentWeekStart = getMondayOfWeek(new Date());
             }
 
-            container.innerHTML = buildPanelHtml();
+            if (typeof AttendanceTemplates === "undefined" || !AttendanceTemplates || typeof AttendanceTemplates.buildClientCalendarPanelHtml !== "function") {
+                console.error("AttendanceTemplates no disponible");
+                return;
+            }
+            container.innerHTML = AttendanceTemplates.buildClientCalendarPanelHtml();
             attachEvents(container);
             loadClients();
             loadSchedule();
-        }
-
-        function buildPanelHtml() {
-            return `
-                <div class="employee-calendar-container">
-                    <div class="lt-surface lt-surface--subtle p-3 mb-3">
-                        <div class="row g-3 align-items-end">
-                            <div class="col-12 col-md-4">
-                                <label class="form-label small mb-1 fw-semibold d-flex align-items-center gap-2">
-                                    <i class="bi bi-buildings text-primary"></i>
-                                    <span>Cliente</span>
-                                </label>
-                                <select id="client-calendar-select" class="form-select">
-                                    <option value="">Todos los clientes</option>
-                                </select>
-                            </div>
-                            <div class="col-12 col-md-5">
-                                <label class="form-label small mb-1 fw-semibold d-flex align-items-center gap-2">
-                                    <i class="bi bi-calendar-week text-primary"></i>
-                                    <span>Semana</span>
-                                </label>
-                                <div class="d-flex align-items-center gap-2">
-                                    <button id="client-calendar-prev" class="btn btn-outline-secondary btn-sm" title="Semana anterior">
-                                        <i class="bi bi-chevron-left"></i>
-                                    </button>
-                                    <div id="client-calendar-week-label" class="flex-grow-1 text-center fw-medium">Semana</div>
-                                    <button id="client-calendar-next" class="btn btn-outline-secondary btn-sm" title="Semana siguiente">
-                                        <i class="bi bi-chevron-right"></i>
-                                    </button>
-                                    <button id="client-calendar-today" class="btn btn-outline-primary btn-sm" title="Ir a hoy">
-                                        <i class="bi bi-calendar-check"></i>
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="col-12 col-md-3 text-end">
-                                <button id="client-calendar-refresh" class="btn btn-outline-primary d-flex align-items-center gap-2 ms-auto">
-                                    <i class="bi bi-arrow-repeat"></i>
-                                    <span>Actualizar</span>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div id="client-calendar-grid" class="calendar-grid-wrapper">
-                        <div class="text-center text-muted py-5">
-                            <i class="bi bi-calendar3 display-4 mb-3 d-block opacity-50"></i>
-                            <p class="mb-0">Cargando calendario...</p>
-                        </div>
-                    </div>
-
-                    <div id="client-calendar-summary" class="mt-3 d-none">
-                        <div class="lt-surface p-3">
-                            <div class="d-flex justify-content-around text-center">
-                                <div>
-                                    <div class="h4 mb-0 text-primary" id="client-summary-horas">0</div>
-                                    <small class="text-muted">Horas</small>
-                                </div>
-                                <div>
-                                    <div class="h4 mb-0 text-primary" id="client-summary-clientes">0</div>
-                                    <small class="text-muted">Clientes</small>
-                                </div>
-                                <div>
-                                    <div class="h4 mb-0 text-primary" id="client-summary-dias">0</div>
-                                    <small class="text-muted">Días</small>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
         }
 
         function loadClients() {

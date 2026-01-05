@@ -30,7 +30,11 @@
             resetState(initialDate);
             pendingFecha = null;
 
-            container.innerHTML = buildBaseLayout();
+            if (typeof AttendanceTemplates === "undefined" || !AttendanceTemplates || typeof AttendanceTemplates.buildDailyAttendanceLayout !== "function") {
+                console.error("AttendanceTemplates no disponible");
+                return;
+            }
+            container.innerHTML = AttendanceTemplates.buildDailyAttendanceLayout(state.fecha);
             bindBaseEvents();
             loadPlan(state.fecha);
         }
@@ -41,40 +45,6 @@
             const mm = String(now.getMonth() + 1).padStart(2, "0");
             const dd = String(now.getDate()).padStart(2, "0");
             return `${yyyy}-${mm}-${dd}`;
-        }
-
-        function buildBaseLayout() {
-            return `
-                <div id="attendance-daily-root" class="d-flex flex-column gap-3">
-                    <div class="lt-surface lt-surface--subtle p-2">
-                        <div class="lt-toolbar">
-                            <div class="d-flex align-items-center gap-2 flex-shrink-0">
-                                <label class="form-label small fw-semibold text-muted mb-0">Fecha</label>
-                                <input type="date" id="attendance-date" class="form-control form-control-sm" value="${state.fecha}" style="width: 140px;">
-                            </div>
-                            <div class="d-flex align-items-center gap-2 flex-shrink-0">
-                                <button type="button" id="attendance-add-extra" class="btn btn-sm btn-primary lt-btn-compact text-nowrap">
-                                    <i class="bi bi-plus-circle me-1"></i>Fuera de plan
-                                </button>
-                            </div>
-                            <div id="attendance-summary" class="d-flex flex-nowrap gap-2 flex-shrink-0"></div>
-                        </div>
-                    </div>
-
-                    <div class="lt-surface p-0 position-relative">
-                        <div id="attendance-loading" class="position-absolute top-0 start-0 end-0 bottom-0 d-flex align-items-center justify-content-center bg-white bg-opacity-75 d-none">
-                            <div class="text-center">
-                                <div class="spinner-border text-primary mb-2" role="status"></div>
-                                <div class="small text-muted">Cargando asistencia del día...</div>
-                            </div>
-                        </div>
-
-                        <div id="attendance-cards" class="d-flex flex-column gap-3 p-2">
-                            <div class="text-center text-muted py-4">Cargando...</div>
-                        </div>
-                    </div>
-                </div>
-            `;
         }
 
         function bindBaseEvents() {

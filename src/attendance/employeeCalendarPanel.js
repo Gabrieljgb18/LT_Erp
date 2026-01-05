@@ -78,87 +78,13 @@
                 currentWeekStart = getMondayOfWeek(new Date());
             }
 
-            container.innerHTML = buildPanelHtml();
+            if (typeof AttendanceTemplates === "undefined" || !AttendanceTemplates || typeof AttendanceTemplates.buildEmployeeCalendarPanelHtml !== "function") {
+                console.error("AttendanceTemplates no disponible");
+                return;
+            }
+            container.innerHTML = AttendanceTemplates.buildEmployeeCalendarPanelHtml();
             attachEvents(container);
             loadEmpleados();
-        }
-
-        /**
-         * Construye el HTML del panel
-         */
-        function buildPanelHtml() {
-            return `
-                <div class="employee-calendar-container">
-                    <!-- Header con controles -->
-                    <div class="lt-surface lt-surface--subtle p-3 mb-3">
-                        <div class="row g-3 align-items-end">
-                            <div class="col-12 col-md-4">
-                                <label class="form-label small mb-1 fw-semibold d-flex align-items-center gap-2">
-                                    <i class="bi bi-person-badge text-primary"></i>
-                                    <span>Empleado</span>
-                                </label>
-                                <select id="calendar-empleado-select" class="form-select">
-                                    <option value="">Seleccionar empleado...</option>
-                                </select>
-                            </div>
-                            <div class="col-12 col-md-5">
-                                <label class="form-label small mb-1 fw-semibold d-flex align-items-center gap-2">
-                                    <i class="bi bi-calendar-week text-primary"></i>
-                                    <span>Semana</span>
-                                </label>
-                                <div class="d-flex align-items-center gap-2">
-                                    <button id="calendar-prev-week" class="btn btn-outline-secondary btn-sm" title="Semana anterior">
-                                        <i class="bi bi-chevron-left"></i>
-                                    </button>
-                                    <div id="calendar-week-label" class="flex-grow-1 text-center fw-medium">
-                                        Seleccione un empleado
-                                    </div>
-                                    <button id="calendar-next-week" class="btn btn-outline-secondary btn-sm" title="Semana siguiente">
-                                        <i class="bi bi-chevron-right"></i>
-                                    </button>
-                                    <button id="calendar-today" class="btn btn-outline-primary btn-sm" title="Ir a hoy">
-                                        <i class="bi bi-calendar-check"></i>
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="col-12 col-md-3 text-end">
-                                <button id="calendar-generate-pdf" class="btn btn-success d-flex align-items-center gap-2 ms-auto" disabled>
-                                    <i class="bi bi-file-earmark-pdf"></i>
-                                    <span>Generar PDF</span>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Calendario semanal -->
-                    <div id="calendar-grid-container" class="calendar-grid-wrapper">
-                        <div class="text-center text-muted py-5">
-                            <i class="bi bi-calendar3 display-4 mb-3 d-block opacity-50"></i>
-                            <p class="mb-0">Selecciona un empleado para ver su calendario</p>
-                        </div>
-                    </div>
-
-                    <!-- Resumen -->
-                    <div id="calendar-summary" class="mt-3 d-none">
-                        <div class="lt-surface p-3">
-                            <div class="d-flex justify-content-around text-center">
-                                <div>
-                                    <div class="h4 mb-0 text-primary" id="summary-horas">0</div>
-                                    <small class="text-muted">Horas</small>
-                                </div>
-                                <div>
-                                    <div class="h4 mb-0 text-primary" id="summary-clientes">0</div>
-                                    <small class="text-muted" id="summary-clientes-label">Clientes</small>
-                                </div>
-                                <div>
-                                    <div class="h4 mb-0 text-primary" id="summary-dias">0</div>
-                                    <small class="text-muted">Días</small>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
         }
 
         /**
