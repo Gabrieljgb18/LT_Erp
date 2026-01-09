@@ -14,7 +14,7 @@
         function escapeHtml(str) {
             return String(str || "")
                 .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
+                .replace(/[<]/g, "&lt;")
                 .replace(/>/g, "&gt;")
                 .replace(/"/g, "&quot;")
                 .replace(/'/g, "&#39;");
@@ -76,6 +76,17 @@
                 const hh = String(horaEntrada.getHours()).padStart(2, "0");
                 const mm = String(horaEntrada.getMinutes()).padStart(2, "0");
                 return `${hh}:${mm}`;
+            }
+
+            const numericVal = Number(horaEntrada);
+            if (Number.isFinite(numericVal)) {
+                const fraction = numericVal >= 1 ? (numericVal % 1) : numericVal;
+                if (fraction > 0) {
+                    const totalMinutes = Math.round(fraction * 24 * 60);
+                    const hh = String(Math.floor(totalMinutes / 60)).padStart(2, "0");
+                    const mm = String(totalMinutes % 60).padStart(2, "0");
+                    return `${hh}:${mm}`;
+                }
             }
 
             // Si viene como string, tratamos de rescatar hh:mm

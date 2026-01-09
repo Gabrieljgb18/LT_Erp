@@ -9,15 +9,47 @@ var DataUtils = (function () {
      * @param {*} cell - Valor de la celda
      * @returns {string} Valor normalizado
      */
-    function normalizeCellForSearch(cell) {
+    function isTimeHeader(header) {
+        const key = String(header || "").trim().toUpperCase();
+        if (!key || key.indexOf("HORA") === -1) return false;
+        if (key.indexOf("HORAS") !== -1) return false;
+        if (key.indexOf("VALOR") !== -1) return false;
+        return true;
+    }
+
+    function formatTimeValue_(cell) {
+        if (cell instanceof Date && !isNaN(cell)) {
+            return Utilities.formatDate(
+                cell,
+                Session.getScriptTimeZone(),
+                'HH:mm'
+            );
+        }
+        if (typeof cell === "number" && isFinite(cell)) {
+            const totalMinutes = Math.round(cell * 24 * 60);
+            const hh = String(Math.floor(totalMinutes / 60)).padStart(2, "0");
+            const mm = String(totalMinutes % 60).padStart(2, "0");
+            return hh + ":" + mm;
+        }
+        return String(cell);
+    }
+
+    function normalizeCellForSearch(cell, header) {
         if (cell === null || cell === '') return '';
 
         if (cell instanceof Date) {
+            if (isTimeHeader(header)) {
+                return formatTimeValue_(cell);
+            }
             return Utilities.formatDate(
                 cell,
                 Session.getScriptTimeZone(),
                 'yyyy-MM-dd'
             );
+        }
+
+        if (isTimeHeader(header)) {
+            return formatTimeValue_(cell);
         }
 
         return String(cell);

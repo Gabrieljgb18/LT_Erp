@@ -59,8 +59,21 @@ var BulkValuesController = (function () {
         const idx = headers.indexOf(columnName);
         if (idx === -1) return;
 
+        let normalizedValue = value;
+        if (typeof ValidationService !== 'undefined' && ValidationService && typeof ValidationService.validateAndNormalizeRecord === 'function') {
+            const payload = {};
+            payload[columnName] = value;
+            const validation = ValidationService.validateAndNormalizeRecord(formatId, payload, 'update', { headers: [columnName], partial: true });
+            if (!validation.ok) {
+                throw new Error('Validacion: ' + validation.errors.join(' '));
+            }
+            if (Object.prototype.hasOwnProperty.call(validation.record, columnName)) {
+                normalizedValue = validation.record[columnName];
+            }
+        }
+
         const range = sheet.getRange(2, idx + 1, lastRow - 1, 1);
-        const values = range.getValues().map(() => [value]);
+        const values = range.getValues().map(() => [normalizedValue]);
         range.setValues(values);
     }
 

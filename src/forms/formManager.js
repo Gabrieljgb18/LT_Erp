@@ -7,6 +7,28 @@
     const FormManager = (() => {
         let currentFormat = null;
         let referenceData = { clientes: [], empleados: [] };
+        let eventsController = null;
+        const Dom = global.DomHelpers;
+        const RecordsData = global.RecordsData || null;
+
+        function resetEventsController() {
+            if (eventsController) {
+                eventsController.abort();
+            }
+            eventsController = new AbortController();
+        }
+
+        function bindEvent(el, evt, handler, opts) {
+            if (!el) return;
+            if (!eventsController) {
+                eventsController = new AbortController();
+            }
+            const options = Object.assign({}, opts || {});
+            if (eventsController && eventsController.signal) {
+                options.signal = eventsController.signal;
+            }
+            el.addEventListener(evt, handler, options);
+        }
 
         /**
          * Inicializa el form manager con datos de referencia
@@ -19,7 +41,12 @@
          * Carga los formatos disponibles desde el servidor
          */
         function loadFormats() {
-            return ApiService.call('getAvailableFormats')
+            if (!RecordsData || typeof RecordsData.getAvailableFormats !== "function") {
+                renderFormatsOptions(buildLocalFormats());
+                if (Alerts) Alerts.showAlert("No pudimos cargar los formatos del servidor. Se usan formatos locales.", "warning");
+                return Promise.resolve();
+            }
+            return RecordsData.getAvailableFormats()
                 .then(function (formats) {
                     if (!Array.isArray(formats) || !formats.length) {
                         renderFormatsOptions(buildLocalFormats());
@@ -55,12 +82,9 @@
             const select = document.getElementById("formato");
             if (!select) return;
 
-            select.innerHTML = "";
+            Dom.clear(select);
             formats.forEach(function (f) {
-                const option = document.createElement("option");
-                option.value = f.id;
-                option.textContent = f.name;
-                select.appendChild(option);
+                select.appendChild(Dom.el("option", { value: f.id, text: f.name }));
             });
 
             if (formats.length > 0) {
@@ -77,6 +101,7 @@
          */
         function renderForm(tipoFormato, containerId) {
             currentFormat = tipoFormato;
+            resetEventsController();
 
             if (Alerts) Alerts.clearAlerts();
 
@@ -96,7 +121,7 @@
 
             // Renderizado custom para asistencia diaria
             if (tipoFormato === "ASISTENCIA" && global.AttendanceDailyUI) {
-                container.innerHTML = "";
+                Dom.clear(container);
                 if (titleEl) titleEl.textContent = formDef ? formDef.title : "Registro";
                 global.AttendanceDailyUI.render(container);
                 // Actualizar visibilidad del footer si aplica
@@ -108,7 +133,7 @@
 
             // Renderizado custom para Plan Semanal
             if (tipoFormato === "ASISTENCIA_PLAN" && global.WeeklyPlanPanel) {
-                container.innerHTML = "";
+                Dom.clear(container);
                 if (titleEl) titleEl.textContent = formDef ? formDef.title : "Plan Semanal";
                 global.WeeklyPlanPanel.render(container);
                 if (global.FooterManager) {
@@ -117,21 +142,25 @@
                 // Evitar que se cargue la grilla por defecto
                 if (global.GridManager) {
                     const gridContainer = document.getElementById("grid-container");
-                    if (gridContainer) gridContainer.innerHTML = "";
+                    if (gridContainer) Dom.clear(gridContainer);
                 }
                 return;
             }
 
-            container.innerHTML = "";
+            Dom.clear(container);
             if (sugg) {
                 sugg.classList.add("d-none");
-                sugg.innerHTML = "";
+                Dom.clear(sugg);
             }
 
             if (!formDef) {
                 if (titleEl) titleEl.textContent = "Registro";
-                container.innerHTML =
-                    '<p class="text-muted small mb-0">No hay formulario definido para este formato.</p>';
+                container.appendChild(
+                    Dom.el("p", {
+                        className: "text-muted small mb-0",
+                        text: "No hay formulario definido para este formato."
+                    })
+                );
                 return;
             }
 
@@ -196,7 +225,9 @@
             const inputUtils = global.InputUtils || {};
 
             if (rsSelect && cuitInput) {
-                rsSelect.addEventListener("change", function () {
+                if (rsSelect.dataset.cuitBound) return;
+                rsSelect.dataset.cuitBound = "1";
+                bindEvent(rsSelect, "change", function () {
                     const selectedOption = this.selectedOptions ? this.selectedOptions[0] : null;
                     const selectedId = selectedOption && selectedOption.dataset ? selectedOption.dataset.id : "";
                     const cli = selectedId
@@ -230,6 +261,8 @@
                 const idField = field.type === "cliente" ? "ID_CLIENTE" : "ID_EMPLEADO";
                 const idInput = document.getElementById("field-" + idField);
                 if (!select || !idInput) return;
+                if (select.dataset.idSyncBound) return;
+                select.dataset.idSyncBound = "1";
 
                 const updateIdFromSelection = (force) => {
                     const selectedOption = select.selectedOptions ? select.selectedOptions[0] : null;
@@ -239,7 +272,7 @@
                     }
                 };
 
-                select.addEventListener("change", function () {
+                bindEvent(select, "change", function () {
                     updateIdFromSelection(true);
                 });
 
@@ -320,7 +353,10 @@
         function setupClientesEncargadoToggle() {
             const toggle = document.getElementById("field-TIENE ENCARGADO");
             if (!toggle) return;
-            toggle.onchange = applyClientesEncargadoVisibility;
+            if (!toggle.dataset.encargadoBound) {
+                toggle.dataset.encargadoBound = "1";
+                bindEvent(toggle, "change", applyClientesEncargadoVisibility);
+            }
             applyClientesEncargadoVisibility();
         }
 
@@ -365,7 +401,7 @@
                 if (field.type === "phone") {
                     if (!input.dataset.maskPhone) {
                         input.dataset.maskPhone = "1";
-                        input.addEventListener("input", function () {
+                        bindEvent(input, "input", function () {
                             if (typeof inputUtils.sanitizePhone === "function") {
                                 const clean = inputUtils.sanitizePhone(input.value);
                                 if (clean !== input.value) input.value = clean;
@@ -416,13 +452,13 @@
 
                 if (!input.dataset.maskDoc) {
                     input.dataset.maskDoc = "1";
-                    input.addEventListener("input", applyMask);
-                    input.addEventListener("blur", applyMask);
+                    bindEvent(input, "input", applyMask);
+                    bindEvent(input, "blur", applyMask);
                 }
 
                 if (typeInput && !typeInput.dataset.maskDoc) {
                     typeInput.dataset.maskDoc = "1";
-                    typeInput.addEventListener("change", applyMask);
+                    bindEvent(typeInput, "change", applyMask);
                 }
 
                 applyMask();

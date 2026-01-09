@@ -23,30 +23,77 @@
     return;
   }
 
+  const globals = typeof window !== 'undefined' ? window : this;
+  const {
+    ReferenceData,
+    FormManager,
+    WeeklyPlanPanel,
+    DropdownConfig,
+    InvoicePanel,
+    GridManager,
+    RecordsData,
+    PaymentsPanelHandlers,
+    ClientAccountPanel,
+    Alerts,
+    RecordManager,
+    Footer,
+    HoursDetailPanel,
+    MonthlySummaryPanel,
+    AccountStatementPanel,
+    ClientReportPanel,
+    ClientMonthlySummaryPanel,
+    BulkValuesPanel,
+    DropdownConfigPanel,
+    AnalysisPanel,
+    MapPanel,
+    AttendanceDailyUI,
+    EmployeeCalendarPanel,
+    ClientCalendarPanel,
+    PaymentsPanel,
+    AttendancePanelsData,
+    EmptyState,
+    DomainMeta,
+    Sidebar
+  } = globals;
+
   // ===== Bootstrap Application =====
 
+  let appInitialized = false;
+  let handlersBound = false;
+  let referenceSubscribed = false;
+  let referenceUnsubscribe = null;
+  let activeViewId = null;
+  const referenceUpdateRegistry = new Map();
+
   function initApp() {
+    if (appInitialized) return;
+    appInitialized = true;
     // 1. Load reference data
-    ReferenceService.load()
-      .then(function () {
-        const refData = ReferenceService.get();
+    if (!ReferenceData || typeof ReferenceData.ensureLoaded !== "function") {
+      console.warn("ReferenceData.ensureLoaded no disponible");
+    } else {
+      const loadPromise = ReferenceData.ensureLoaded();
+      loadPromise
+        .then(function () {
+          const refData = ReferenceData.get();
 
-        // Initialize modules with reference data
-        if (FormManager) {
-          FormManager.init(refData);
-          // Update UI with loaded data
-          FormManager.updateReferenceData(refData);
-        }
+          // Initialize modules with reference data
+          if (FormManager) {
+            FormManager.init(refData);
+            // Update UI with loaded data
+            FormManager.updateReferenceData(refData);
+          }
 
-        if (WeeklyPlanPanel) {
-          WeeklyPlanPanel.init(refData);
-        }
-      })
-      .catch(function (err) {
-        console.error("Error loading reference data:", err);
-      });
+          if (WeeklyPlanPanel) {
+            WeeklyPlanPanel.init(refData);
+          }
+        })
+        .catch(function (err) {
+          console.error("Error loading reference data:", err);
+        });
+    }
 
-    if (typeof DropdownConfig !== "undefined" && DropdownConfig && typeof DropdownConfig.load === "function") {
+    if (DropdownConfig && typeof DropdownConfig.load === "function") {
       DropdownConfig.load().then(() => {
         if (FormManager && typeof FormManager.refreshCurrent === "function") {
           FormManager.refreshCurrent();
@@ -60,6 +107,7 @@
 
     // Setup event handlers
     setupEventHandlers();
+    bindReferenceUpdates();
   }
 
   const registroViews = {
@@ -98,7 +146,11 @@
       GridManager.renderLoading(tipoFormato, "Cargando registros...");
     }
 
-    ApiService.call("searchRecords", tipoFormato, "")
+    if (!RecordsData || typeof RecordsData.searchRecords !== "function") {
+      console.error("RecordsData.searchRecords no disponible");
+      return;
+    }
+    RecordsData.searchRecords(tipoFormato, "")
       .then(function (records) {
         if (GridManager) {
           GridManager.renderGrid(tipoFormato, records || []);
@@ -112,11 +164,49 @@
       });
   }
 
+  function registerReferenceHandler(viewId, handler) {
+    if (!viewId || typeof handler !== "function") return;
+    referenceUpdateRegistry.set(viewId, handler);
+  }
+
+  function bindReferenceUpdates() {
+    if (referenceSubscribed) return;
+    if (!ReferenceData || typeof ReferenceData.subscribe !== "function") return;
+    referenceSubscribed = true;
+    referenceUnsubscribe = ReferenceData.subscribe(handleReferenceUpdate);
+  }
+
+  function handleReferenceUpdate(data) {
+    if (!activeViewId) return;
+    const handler = referenceUpdateRegistry.get(activeViewId);
+    if (handler) handler(data);
+    const globalHandler = referenceUpdateRegistry.get("*");
+    if (globalHandler) globalHandler(data);
+  }
+
   function setupEventHandlers() {
-    document.addEventListener("reference-data:updated", function () {
-      const registroView = document.getElementById("view-registro");
-      if (registroView && !registroView.classList.contains("d-none") && GridManager) {
-        GridManager.refreshGrid();
+    if (handlersBound) return;
+    handlersBound = true;
+    registerReferenceHandler("clientes", () => {
+      if (GridManager) GridManager.refreshGrid();
+    });
+    registerReferenceHandler("empleados", () => {
+      if (GridManager) GridManager.refreshGrid();
+    });
+    registerReferenceHandler("adelantos", () => {
+      if (GridManager) GridManager.refreshGrid();
+    });
+    registerReferenceHandler("gastos", () => {
+      if (GridManager) GridManager.refreshGrid();
+    });
+    registerReferenceHandler("pagos", (detail) => {
+      if (PaymentsPanelHandlers && typeof PaymentsPanelHandlers.handleReferenceUpdate === "function") {
+        PaymentsPanelHandlers.handleReferenceUpdate(detail || null);
+      }
+    });
+    registerReferenceHandler("reportes-clientes", (detail) => {
+      if (ClientAccountPanel && typeof ClientAccountPanel.handleReferenceUpdate === "function") {
+        ClientAccountPanel.handleReferenceUpdate(detail || null);
       }
     });
 
@@ -134,7 +224,11 @@
         }
 
         // Buscar y actualizar grilla
-        ApiService.call("searchRecords", tipoFormato, this.value)
+        if (!RecordsData || typeof RecordsData.searchRecords !== "function") {
+          console.error("RecordsData.searchRecords no disponible");
+          return;
+        }
+        RecordsData.searchRecords(tipoFormato, this.value)
           .then(function (records) {
             if (GridManager) {
               GridManager.renderGrid(tipoFormato, records || []);
@@ -215,12 +309,7 @@
                 const currentFormat = FormManager && typeof FormManager.getCurrentFormat === "function"
                   ? FormManager.getCurrentFormat()
                   : null;
-                const meta = typeof DomainMeta !== "undefined" && DomainMeta && typeof DomainMeta.getMeta === "function"
-                  ? DomainMeta.getMeta(currentFormat)
-                  : null;
-                if (!meta || !meta.refreshReference) {
-                  GridManager.refreshGrid();
-                }
+                GridManager.refreshGrid();
               }
             }, 500);
           };
@@ -246,12 +335,7 @@
               const currentFormat = FormManager && typeof FormManager.getCurrentFormat === "function"
                 ? FormManager.getCurrentFormat()
                 : null;
-              const meta = typeof DomainMeta !== "undefined" && DomainMeta && typeof DomainMeta.getMeta === "function"
-                ? DomainMeta.getMeta(currentFormat)
-                : null;
-              if (!meta || !meta.refreshReference) {
-                GridManager.refreshGrid();
-              }
+              GridManager.refreshGrid();
             }
           }, 500);
         }
@@ -261,10 +345,25 @@
     // Cerrar modal al hacer clic fuera
     const modalOverlay = document.getElementById("form-modal");
     if (modalOverlay) {
+      let overlayClickEligible = false;
+
+      modalOverlay.addEventListener("pointerdown", function (e) {
+        overlayClickEligible = e.target === modalOverlay;
+      });
+
+      modalOverlay.addEventListener("pointermove", function () {
+        if (overlayClickEligible) overlayClickEligible = false;
+      });
+
+      modalOverlay.addEventListener("pointercancel", function () {
+        overlayClickEligible = false;
+      });
+
       modalOverlay.addEventListener("click", function (e) {
-        if (e.target === modalOverlay && GridManager) {
+        if (e.target === modalOverlay && overlayClickEligible && GridManager) {
           GridManager.closeModal();
         }
+        overlayClickEligible = false;
       });
     }
 
@@ -350,13 +449,9 @@
       });
     }
 
-    // Sidebar Initialization
-    if (Sidebar) {
-      Sidebar.init();
-
-      // Handle view changes
-      document.addEventListener('view-change', (e) => {
-        const viewId = e.detail.view;
+    function handleViewChange(viewId) {
+      if (!viewId) return;
+      activeViewId = viewId;
         const pageTitle = document.getElementById('page-title');
         const titles = {
           analisis: 'Análisis',
@@ -406,34 +501,80 @@
         if (viewId === 'asistencia-plan' && typeof WeeklyPlanPanel !== 'undefined') {
           const container = document.getElementById('weekly-plan-panel');
           if (container) {
-            container.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary"></div><div class="mt-2">Cargando planes...</div></div>';
-            ApiService.call('searchRecords', 'ASISTENCIA_PLAN', '')
+            if (EmptyState) {
+              EmptyState.render(container, { variant: 'loading', message: 'Cargando planes...' });
+            } else {
+              container.textContent = 'Cargando planes...';
+            }
+            if (!AttendancePanelsData || typeof AttendancePanelsData.searchWeeklyPlans !== "function") {
+              console.error("AttendancePanelsData.searchWeeklyPlans no disponible");
+              return;
+            }
+            AttendancePanelsData.searchWeeklyPlans("")
               .then(records => {
                 WeeklyPlanPanel.renderList(container, records || []);
               })
               .catch(err => {
                 console.error('Error cargando planes:', err);
-                container.innerHTML = '<div class="alert alert-danger">Error al cargar planes</div>';
+                if (EmptyState) {
+                  EmptyState.render(container, {
+                    variant: 'error',
+                    title: 'Error al cargar planes',
+                    message: 'No se pudo cargar la lista de planes.'
+                  });
+                } else {
+                  container.textContent = 'Error al cargar planes';
+                }
               });
           }
         }
-        if (viewId === 'analisis' && typeof AnalysisPanel !== 'undefined') {
-          AnalysisPanel.render('analysis-panel');
+        if (viewId === 'analisis') {
+          const container = document.getElementById('analysis-panel');
+          if (!AnalysisPanel || !container) {
+            if (container) {
+              if (EmptyState) {
+                EmptyState.render(container, {
+                  variant: 'error',
+                  title: 'Módulo no disponible',
+                  message: 'No se pudo cargar el análisis.'
+                });
+              } else {
+                container.textContent = 'No se pudo cargar el análisis.';
+              }
+            }
+          } else {
+            AnalysisPanel.render('analysis-panel');
+          }
         }
-        if (viewId === 'mapa' && typeof MapPanel !== 'undefined') {
-          MapPanel.render('maps-panel');
+        if (viewId === 'mapa') {
+          const container = document.getElementById('maps-panel');
+          if (!MapPanel || !container) {
+            if (container) {
+              if (EmptyState) {
+                EmptyState.render(container, {
+                  variant: 'error',
+                  title: 'Mapa no disponible',
+                  message: 'No se pudo cargar el mapa.'
+                });
+              } else {
+                container.textContent = 'No se pudo cargar el mapa.';
+              }
+            }
+          } else {
+            MapPanel.render('maps-panel');
+          }
         }
 
-        if (viewId === 'asistencia-diaria' && typeof AttendanceDailyUI !== 'undefined') {
+        if (viewId === 'asistencia-diaria' && AttendanceDailyUI) {
           const container = document.getElementById('daily-attendance-panel');
           if (container) AttendanceDailyUI.render(container);
         }
 
-        if (viewId === 'asistencia-calendario' && typeof EmployeeCalendarPanel !== 'undefined') {
+        if (viewId === 'asistencia-calendario' && EmployeeCalendarPanel) {
           EmployeeCalendarPanel.render('employee-calendar-panel');
         }
 
-        if (viewId === 'asistencia-clientes' && typeof ClientCalendarPanel !== 'undefined') {
+        if (viewId === 'asistencia-clientes' && ClientCalendarPanel) {
           ClientCalendarPanel.render('client-calendar-panel');
         }
 
@@ -442,32 +583,46 @@
           HoursDetailPanel.render();
           if (AccountStatementPanel) AccountStatementPanel.render();
         }
-        if (viewId === 'reportes-clientes' && typeof ClientReportPanel !== 'undefined') {
-          if (typeof ClientMonthlySummaryPanel !== 'undefined') {
+        if (viewId === 'reportes-clientes' && ClientReportPanel) {
+          if (ClientMonthlySummaryPanel) {
             ClientMonthlySummaryPanel.render();
           }
-          if (typeof ClientAccountPanel !== 'undefined') {
+          if (ClientAccountPanel) {
             ClientAccountPanel.render();
           }
           ClientReportPanel.render();
         }
         if (viewId === 'configuracion') {
           if (BulkValuesPanel) BulkValuesPanel.render();
-          if (typeof DropdownConfigPanel !== 'undefined' && DropdownConfigPanel) {
+          if (DropdownConfigPanel) {
             DropdownConfigPanel.render();
           }
         }
-        if (viewId === 'facturacion' && typeof InvoicePanel !== 'undefined') {
+        if (viewId === 'facturacion' && InvoicePanel) {
           InvoicePanel.render();
         }
-        if (viewId === 'pagos' && typeof PaymentsPanel !== 'undefined') {
+        if (viewId === 'pagos' && PaymentsPanel) {
           PaymentsPanel.render();
         }
+    }
+
+    // Sidebar Initialization
+    if (typeof Sidebar !== 'undefined' && Sidebar) {
+      Sidebar.init();
+
+      // Handle view changes
+      document.addEventListener('view-change', (e) => {
+        const viewId = e.detail ? e.detail.view : null;
+        handleViewChange(viewId);
       });
 
       if (Sidebar.setActive) {
         Sidebar.setActive('analisis');
+      } else {
+        handleViewChange('analisis');
       }
+    } else {
+      handleViewChange('analisis');
     }
   }
 

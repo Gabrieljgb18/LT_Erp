@@ -5,6 +5,48 @@
 
 const AttendancePlanVsReal = (function () {
 
+    function buildAttendanceIndexForDate_(sheet, fecha) {
+        const map = new Map();
+        if (!sheet) return map;
+        const lastRow = sheet.getLastRow();
+        const lastCol = sheet.getLastColumn();
+        if (lastRow < 2 || lastCol === 0) return map;
+
+        const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+        const idxId = headers.indexOf('ID');
+        const idxFecha = headers.indexOf('FECHA');
+        const idxIdCliente = headers.indexOf('ID_CLIENTE');
+        const idxIdEmpleado = headers.indexOf('ID_EMPLEADO');
+
+        if (idxFecha === -1 || idxIdCliente === -1 || idxIdEmpleado === -1) return map;
+
+        const fechaKey = DataUtils && DataUtils.normalizeCellForSearch
+            ? DataUtils.normalizeCellForSearch(fecha, 'FECHA')
+            : String(fecha || '').trim();
+
+        if (!fechaKey) return map;
+
+        const data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+        data.forEach(function (row) {
+            const rowFecha = DataUtils && DataUtils.normalizeCellForSearch
+                ? DataUtils.normalizeCellForSearch(row[idxFecha], 'FECHA')
+                : String(row[idxFecha] || '').trim();
+            if (rowFecha !== fechaKey) return;
+
+            const idCliente = String(row[idxIdCliente] || '').trim();
+            const idEmpleado = String(row[idxIdEmpleado] || '').trim();
+            if (!idCliente || !idEmpleado) return;
+
+            const rowId = idxId > -1 ? row[idxId] : row[0];
+            if (!rowId) return;
+
+            const key = idCliente + '||' + idEmpleado;
+            if (!map.has(key)) map.set(key, rowId);
+        });
+
+        return map;
+    }
+
     /**
      * Obtiene la comparación entre plan y asistencia real para una fecha y cliente
      * @param {string} fechaStr - Fecha en formato string
@@ -177,6 +219,9 @@ const AttendancePlanVsReal = (function () {
             throw new Error('Falta ID_EMPLEADO en la asistencia real.');
         }
 
+        const sheetAsis = DatabaseService.getDbSheetForFormat('ASISTENCIA');
+        const attendanceIndex = buildAttendanceIndexForDate_(sheetAsis, fecha);
+
         items.forEach(function (it) {
             if (!it.empleado) return;
 
@@ -192,22 +237,31 @@ const AttendancePlanVsReal = (function () {
             };
 
             const idAsistencia = it.idAsistencia || it.realId || it.id || '';
+            const key = String(record.ID_CLIENTE || '').trim() + '||' + String(record.ID_EMPLEADO || '').trim();
             if (idAsistencia) {
                 RecordController.updateRecord('ASISTENCIA', idAsistencia, record);
+                if (key) attendanceIndex.set(key, idAsistencia);
+            } else if (key && attendanceIndex.has(key)) {
+                const existingId = attendanceIndex.get(key);
+                RecordController.updateRecord('ASISTENCIA', existingId, record);
             } else if (it.realRowNumber) {
                 try {
                     const sheetAsis = DatabaseService.getDbSheetForFormat('ASISTENCIA');
                     const existingId = sheetAsis.getRange(Number(it.realRowNumber), 1).getValue();
                     if (existingId) {
                         RecordController.updateRecord('ASISTENCIA', existingId, record);
+                        if (key) attendanceIndex.set(key, existingId);
                     } else {
-                        RecordController.saveRecord('ASISTENCIA', record);
+                        const newId = RecordController.saveRecord('ASISTENCIA', record);
+                        if (key) attendanceIndex.set(key, newId);
                     }
                 } catch (e) {
-                    RecordController.saveRecord('ASISTENCIA', record);
+                    const newId = RecordController.saveRecord('ASISTENCIA', record);
+                    if (key) attendanceIndex.set(key, newId);
                 }
             } else {
-                RecordController.saveRecord('ASISTENCIA', record);
+                const newId = RecordController.saveRecord('ASISTENCIA', record);
+                if (key) attendanceIndex.set(key, newId);
             }
         });
     }

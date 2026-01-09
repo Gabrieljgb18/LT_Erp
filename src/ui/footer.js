@@ -21,6 +21,7 @@
         function render() {
             const container = document.getElementById('footer-container');
             if (container) {
+                // safe static: HTML fijo sin datos externos.
                 container.innerHTML = footerHtml;
                 attachEvents();
             }
@@ -31,6 +32,8 @@
             const btnGrabar = document.getElementById('btn-grabar');
 
             if (btnNuevo) {
+                if (btnNuevo.dataset.bound === "true") return;
+                btnNuevo.dataset.bound = "true";
                 btnNuevo.addEventListener('click', function () {
                     if (global.FormManager) {
                         global.FormManager.resetForm();
@@ -43,6 +46,8 @@
             }
 
             if (btnGrabar) {
+                if (btnGrabar.dataset.bound === "true") return;
+                btnGrabar.dataset.bound = "true";
                 btnGrabar.addEventListener('click', function () {
                     if (global.FormManager) {
                         global.FormManager.submitForm();

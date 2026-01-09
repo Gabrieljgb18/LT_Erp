@@ -46,16 +46,7 @@
         return out;
     }
 
-    const escapeHtml_ = (global.HtmlHelpers && typeof global.HtmlHelpers.escapeHtml === "function")
-        ? global.HtmlHelpers.escapeHtml
-        : function (value) {
-            return String(value || "")
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;")
-                .replace(/"/g, "&quot;")
-                .replace(/'/g, "&#39;");
-        };
+    const Dom = global.DomHelpers;
 
     function buildDefaultOptions_() {
         const map = {};
@@ -156,13 +147,14 @@
         }
 
         function load() {
-            if (!global.ApiService || !ApiService.call) {
+            const data = global.DropdownConfigData;
+            if (!data || typeof data.loadOptions !== "function") {
                 optionsMap = mergeOptions_(defaultOptions, {});
                 loaded = true;
                 applyToFormDefinitions_();
                 return Promise.resolve(optionsMap);
             }
-            return ApiService.call("getDropdownOptions")
+            return data.loadOptions()
                 .then((res) => {
                     optionsMap = mergeOptions_(defaultOptions, res || {});
                     loaded = true;
@@ -179,11 +171,12 @@
         }
 
         function save(map) {
-            if (!global.ApiService || !ApiService.call) {
+            const data = global.DropdownConfigData;
+            if (!data || typeof data.saveOptions !== "function") {
                 return Promise.reject(new Error("ApiService no disponible"));
             }
             const payload = mergeOptions_(defaultOptions, map || {});
-            return ApiService.call("saveDropdownOptions", payload)
+            return data.saveOptions(payload)
                 .then((res) => {
                     optionsMap = mergeOptions_(defaultOptions, res || payload);
                     loaded = true;
@@ -291,53 +284,12 @@
             const content = document.getElementById("dropdown-config-content");
             if (!list || !loading || !content) return;
 
-            list.innerHTML = "";
+            Dom.clear(list);
+            const fragment = document.createDocumentFragment();
             state.entries.forEach((entry) => {
-                const options = Array.isArray(state.options[entry.key])
-                    ? state.options[entry.key]
-                    : entry.options || [];
-                const sources = entry.sources && entry.sources.length
-                    ? entry.sources.join(", ")
-                    : "General";
-
-                const chips = options.length
-                    ? options.map((opt) => {
-                        const safeOpt = escapeHtml_(opt);
-                        const safeKey = escapeHtml_(entry.key);
-                        return `
-                            <span class="badge rounded-pill bg-light text-dark border d-flex align-items-center gap-2">
-                                ${safeOpt}
-                                <button type="button" class="btn btn-sm btn-outline-danger lt-btn-icon" data-action="remove-option" data-key="${safeKey}" data-value="${safeOpt}">
-                                    <i class="bi bi-x"></i>
-                                </button>
-                            </span>
-                        `;
-                    }).join("")
-                    : '<span class="text-muted small">Sin opciones</span>';
-
-                const safeLabel = escapeHtml_(entry.label);
-                const safeSources = escapeHtml_(sources);
-                const safeKey = escapeHtml_(entry.key);
-                list.innerHTML += `
-                    <div class="lt-surface lt-surface--subtle p-3 rounded-3">
-                        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
-                            <div>
-                                <div class="fw-semibold">${safeLabel}</div>
-                                <div class="small text-muted">${safeSources}</div>
-                            </div>
-                            <div class="input-group input-group-sm dropdown-config-input">
-                                <input type="text" class="form-control" placeholder="Agregar opcion" data-role="option-input" data-key="${safeKey}">
-                                <button type="button" class="btn btn-outline-primary" data-action="add-option" data-key="${safeKey}">
-                                    Agregar
-                                </button>
-                            </div>
-                        </div>
-                        <div class="d-flex flex-wrap gap-2 mt-3">
-                            ${chips}
-                        </div>
-                    </div>
-                `;
+                fragment.appendChild(renderEntryCard_(entry));
             });
+            list.appendChild(fragment);
 
             loading.classList.add("d-none");
             content.classList.remove("d-none");
@@ -346,45 +298,116 @@
             bindActionButtons_();
         }
 
+        function renderEntryCard_(entry) {
+            const options = Array.isArray(state.options[entry.key])
+                ? state.options[entry.key]
+                : entry.options || [];
+            const sources = entry.sources && entry.sources.length
+                ? entry.sources.join(", ")
+                : "General";
+
+            const card = Dom.el("div", { class: "lt-surface lt-surface--subtle p-3 rounded-3" });
+            const headerRow = Dom.el("div", { class: "d-flex flex-wrap justify-content-between align-items-center gap-3" });
+            const titleBlock = Dom.el("div");
+            Dom.append(titleBlock, [
+                Dom.el("div", { class: "fw-semibold", text: entry.label || entry.key }),
+                Dom.el("div", { class: "small text-muted", text: sources })
+            ]);
+
+            const inputGroup = Dom.el("div", { class: "input-group input-group-sm dropdown-config-input" });
+            const input = Dom.el("input", {
+                type: "text",
+                class: "form-control",
+                placeholder: "Agregar opcion",
+                dataset: { role: "option-input", key: entry.key }
+            });
+            const addBtn = Dom.el("button", {
+                type: "button",
+                class: "btn btn-outline-primary",
+                dataset: { action: "add-option", key: entry.key },
+                text: "Agregar"
+            });
+            Dom.append(inputGroup, [input, addBtn]);
+            Dom.append(headerRow, [titleBlock, inputGroup]);
+
+            const chipsRow = Dom.el("div", { class: "d-flex flex-wrap gap-2 mt-3" });
+            if (options.length) {
+                const chipFragment = document.createDocumentFragment();
+                options.forEach((opt) => {
+                    chipFragment.appendChild(renderChip_(opt, entry.key));
+                });
+                chipsRow.appendChild(chipFragment);
+            } else {
+                chipsRow.appendChild(Dom.el("span", { class: "text-muted small", text: "Sin opciones" }));
+            }
+
+            Dom.append(card, [headerRow, chipsRow]);
+            return card;
+        }
+
+        function renderChip_(value, key) {
+            const chip = Dom.el("span", {
+                class: "badge rounded-pill bg-light text-dark border d-flex align-items-center gap-2"
+            });
+            Dom.append(chip, Dom.el("span", { text: value }));
+            const removeBtn = Dom.el("button", {
+                type: "button",
+                class: "btn btn-sm btn-outline-danger lt-btn-icon",
+                dataset: { action: "remove-option", key: key, value: value }
+            }, Dom.el("i", { class: "bi bi-x" }));
+            Dom.append(chip, removeBtn);
+            return chip;
+        }
+
         function bindListEvents_() {
             const list = document.getElementById("dropdown-config-list");
             if (!list) return;
+            if (list.dataset.bound === "true") return;
+            list.dataset.bound = "true";
 
-            list.querySelectorAll('[data-action="add-option"]').forEach((btn) => {
-                btn.addEventListener("click", () => {
-                    const key = btn.dataset.key || "";
+            list.addEventListener("click", (e) => {
+                const actionBtn = e.target.closest("[data-action]");
+                if (!actionBtn || !list.contains(actionBtn)) return;
+                const action = actionBtn.dataset.action;
+                const key = actionBtn.dataset.key || "";
+
+                if (action === "add-option") {
                     const input = list.querySelector(`input[data-role="option-input"][data-key="${key}"]`);
                     const value = input ? input.value : "";
                     handleAddOption_(key, value);
                     if (input) input.value = "";
-                });
-            });
+                    return;
+                }
 
-            list.querySelectorAll('[data-role="option-input"]').forEach((input) => {
-                input.addEventListener("keydown", (e) => {
-                    if (e.key !== "Enter") return;
-                    e.preventDefault();
-                    const key = input.dataset.key || "";
-                    handleAddOption_(key, input.value);
-                    input.value = "";
-                });
-            });
-
-            list.querySelectorAll('[data-action="remove-option"]').forEach((btn) => {
-                btn.addEventListener("click", () => {
-                    const key = btn.dataset.key || "";
-                    const value = btn.dataset.value || "";
+                if (action === "remove-option") {
+                    const value = actionBtn.dataset.value || "";
                     handleRemoveOption_(key, value);
-                });
+                }
+            });
+
+            list.addEventListener("keydown", (e) => {
+                if (e.key !== "Enter") return;
+                const input = e.target.closest('input[data-role="option-input"]');
+                if (!input || !list.contains(input)) return;
+                e.preventDefault();
+                const key = input.dataset.key || "";
+                handleAddOption_(key, input.value);
+                input.value = "";
             });
         }
 
         function bindActionButtons_() {
             const saveBtn = document.getElementById("dropdown-config-save");
-            if (saveBtn) saveBtn.addEventListener("click", handleSave_);
+            if (saveBtn && saveBtn.dataset.bound !== "true") {
+                saveBtn.dataset.bound = "true";
+                saveBtn.addEventListener("click", handleSave_);
+            }
 
             const resetBtn = document.getElementById("dropdown-config-reset");
-            if (resetBtn) resetBtn.addEventListener("click", handleReset_);
+            if (resetBtn && resetBtn.dataset.bound !== "true") {
+                resetBtn.dataset.bound = "true";
+                resetBtn.addEventListener("click", handleReset_);
+            }
         }
 
         function handleAddOption_(key, value) {

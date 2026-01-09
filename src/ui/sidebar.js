@@ -2,12 +2,14 @@
  * Sidebar Component
  * Handles the responsive sidebar navigation logic
  */
-const Sidebar = (() => {
+(function (global) {
+    const Sidebar = (() => {
     // State
     let isOpen = false;
     let isCollapsed = false;
     let activeItem = null;
     const storageKey = 'lt-erp-sidebar-collapsed';
+    let initialized = false;
 
     // DOM Elements
     const elements = {
@@ -21,6 +23,8 @@ const Sidebar = (() => {
      * Initialize the sidebar
      */
     function init() {
+        if (initialized) return;
+        initialized = true;
         elements.sidebar = document.getElementById('app-sidebar');
         elements.overlay = document.getElementById('sidebar-overlay');
         elements.toggleBtn = document.getElementById('sidebar-toggle');
@@ -30,20 +34,27 @@ const Sidebar = (() => {
         hydrateCollapsedState();
         syncResponsiveState();
 
-        window.addEventListener('resize', syncResponsiveState);
+        if (elements.sidebar.dataset.resizeBound !== "true") {
+            window.addEventListener('resize', syncResponsiveState);
+            elements.sidebar.dataset.resizeBound = "true";
+        }
 
         // Setup event listeners
-        if (elements.toggleBtn) {
+        if (elements.toggleBtn && elements.toggleBtn.dataset.bound !== "true") {
+            elements.toggleBtn.dataset.bound = "true";
             elements.toggleBtn.addEventListener('click', toggle);
         }
 
-        if (elements.overlay) {
+        if (elements.overlay && elements.overlay.dataset.bound !== "true") {
+            elements.overlay.dataset.bound = "true";
             elements.overlay.addEventListener('click', close);
         }
 
         // Setup menu items
         const links = elements.sidebar.querySelectorAll('.nav-link[data-target]');
         links.forEach(link => {
+            if (link.dataset.bound === "true") return;
+            link.dataset.bound = "true";
             link.addEventListener('click', (e) => {
                 const targetId = link.getAttribute('data-target');
                 if (targetId) {
@@ -70,6 +81,8 @@ const Sidebar = (() => {
         // Setup submenu toggles
         const submenuToggles = elements.sidebar.querySelectorAll('[data-toggle-submenu]');
         submenuToggles.forEach(toggle => {
+            if (toggle.dataset.bound === "true") return;
+            toggle.dataset.bound = "true";
             toggle.addEventListener('click', (e) => {
                 e.preventDefault();
                 const submenuId = toggle.getAttribute('data-toggle-submenu');
@@ -202,11 +215,14 @@ const Sidebar = (() => {
         document.dispatchEvent(event);
     }
 
-    return {
-        init,
-        toggle,
-        open,
-        close,
-        setActive
-    };
-})();
+        return {
+            init,
+            toggle,
+            open,
+            close,
+            setActive
+        };
+    })();
+
+    global.Sidebar = Sidebar;
+})(typeof window !== "undefined" ? window : this);

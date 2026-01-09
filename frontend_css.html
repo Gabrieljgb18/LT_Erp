@@ -952,15 +952,23 @@ display: inline-block;
 }
 
 .map-legend__dot--employee {
-background: #8b5cf6;
+background: #22c55e;
 }
 
 .map-legend__dot--client {
-background: #3b82f6;
+background: #ef4444;
 }
 
 .map-legend__dot--planned {
-background: #10b981;
+background: #7c3aed;
+}
+
+.map-legend__dot--assigned {
+background: #2563eb;
+}
+
+.map-legend__dot--unassigned {
+background: #f59e0b;
 }
 
 .map-filters {
@@ -1064,7 +1072,7 @@ padding-right: 0.25rem;
 .map-item {
 border: 1px solid var(--border-color);
 border-radius: 0.75rem;
-padding: 0.75rem 0.85rem;
+padding: 0.6rem 0.75rem;
 background: #fff;
 text-align: left;
 transition: transform 0.15s ease, box-shadow 0.15s ease;
@@ -1076,7 +1084,7 @@ box-shadow: var(--shadow-md);
 }
 
 .map-item__title {
-font-weight: 700;
+font-weight: 600;
 color: #0f172a;
 display: flex;
 align-items: center;
@@ -1098,7 +1106,7 @@ text-decoration: underline;
 }
 
 .map-item__meta {
-font-size: 0.8rem;
+font-size: 0.75rem;
 color: var(--text-muted);
 margin-top: 0.15rem;
 }
@@ -1107,12 +1115,17 @@ margin-top: 0.15rem;
 display: flex;
 flex-wrap: wrap;
 gap: 0.5rem;
-margin-top: 0.55rem;
+margin-top: 0.45rem;
 }
 
 .map-item__actions .btn {
-font-size: 0.75rem;
-padding: 0.25rem 0.65rem;
+font-size: 0.7rem;
+padding: 0.2rem 0.55rem;
+}
+
+.map-item--active {
+border-color: rgba(37, 99, 235, 0.45);
+box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
 }
 
 .map-item__badges {
@@ -1152,6 +1165,16 @@ color: #047857;
 .map-status--unplanned {
 background: rgba(148, 163, 184, 0.25);
 color: #475569;
+}
+
+.map-status--assigned {
+background: rgba(37, 99, 235, 0.18);
+color: #1d4ed8;
+}
+
+.map-status--unassigned {
+background: rgba(245, 158, 11, 0.2);
+color: #b45309;
 }
 
 .map-employee-card {

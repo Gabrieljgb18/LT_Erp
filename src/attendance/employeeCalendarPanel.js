@@ -13,20 +13,67 @@
         let scheduleData = null;
         let empleadosList = [];
         let isAllEmployees = false;
+        let eventsController = null;
 
         const ALL_EMPLOYEES_VALUE = '__ALL__';
+        const Dom = global.DomHelpers || (function () {
+            function text(value) {
+                return document.createTextNode(value == null ? "" : String(value));
+            }
+            function setAttrs(el, attrs) {
+                if (!attrs) return;
+                Object.keys(attrs).forEach(key => {
+                    const val = attrs[key];
+                    if (val == null) return;
+                    if (key === "class" || key === "className") {
+                        el.className = String(val);
+                        return;
+                    }
+                    if (key === "text") {
+                        el.textContent = String(val);
+                        return;
+                    }
+                    if (key === "dataset" && typeof val === "object") {
+                        Object.keys(val).forEach(dataKey => {
+                            if (val[dataKey] != null) el.dataset[dataKey] = String(val[dataKey]);
+                        });
+                        return;
+                    }
+                    if (key === "style" && typeof val === "object") {
+                        Object.keys(val).forEach(styleKey => {
+                            el.style[styleKey] = val[styleKey];
+                        });
+                        return;
+                    }
+                    el.setAttribute(key, String(val));
+                });
+            }
+            function append(parent, child) {
+                if (!parent || child == null) return;
+                if (Array.isArray(child)) {
+                    child.forEach(c => append(parent, c));
+                    return;
+                }
+                if (typeof child === "string" || typeof child === "number") {
+                    parent.appendChild(text(child));
+                    return;
+                }
+                parent.appendChild(child);
+            }
+            function el(tag, attrs, children) {
+                const node = document.createElement(tag);
+                setAttrs(node, attrs);
+                append(node, children);
+                return node;
+            }
+            function clear(el) {
+                if (!el) return;
+                while (el.firstChild) el.removeChild(el.firstChild);
+            }
+            return { el, text, clear, append };
+        })();
 
-        // Helpers
-        const escapeHtml = (global.HtmlHelpers && typeof global.HtmlHelpers.escapeHtml === 'function')
-            ? global.HtmlHelpers.escapeHtml
-            : function (str) {
-                return String(str || '')
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;')
-                    .replace(/"/g, '&quot;')
-                    .replace(/'/g, '&#39;');
-            };
+        const EmployeeCalendarData = global.EmployeeCalendarData || null;
 
         function formatHoras(h) {
             const num = Number(h);
@@ -34,11 +81,11 @@
         }
 
         function getClienteDisplayName(cliente) {
+            if (typeof DomainHelpers !== 'undefined' && DomainHelpers && typeof DomainHelpers.getClientDisplayName === 'function') {
+                return DomainHelpers.getClientDisplayName(cliente);
+            }
             if (!cliente) return '';
             if (typeof cliente === 'string') return cliente;
-            if (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.getClientDisplayName === 'function') {
-                return HtmlHelpers.getClientDisplayName(cliente);
-            }
             return cliente.nombre || cliente.cliente || cliente.razonSocial || '';
         }
 
@@ -49,7 +96,40 @@
             return new Date(d.setDate(diff));
         }
 
+        function renderEmptyState(container, message) {
+            if (!container) return;
+            if (typeof EmptyState !== 'undefined' && EmptyState) {
+                EmptyState.render(container, { variant: 'empty', title: 'Sin datos', message: message });
+                return;
+            }
+            Dom.clear(container);
+            container.appendChild(
+                Dom.el('div', { className: 'text-center text-muted py-5' }, [
+                    Dom.el('i', { className: 'bi bi-calendar3 display-4 mb-3 d-block opacity-50' }),
+                    Dom.el('p', { className: 'mb-0', text: message })
+                ])
+            );
+        }
+
+        function renderLoadingState(container, message) {
+            if (!container) return;
+            if (typeof EmptyState !== 'undefined' && EmptyState) {
+                EmptyState.render(container, { variant: 'loading', message: message || 'Cargando...' });
+                return;
+            }
+            Dom.clear(container);
+            container.appendChild(
+                Dom.el('div', { className: 'text-center py-5' }, [
+                    Dom.el('div', { className: 'spinner-border text-primary' }),
+                    Dom.el('div', { className: 'mt-2 text-muted', text: message || 'Cargando...' })
+                ])
+            );
+        }
+
         function formatDateISO(date) {
+            if (typeof DomainHelpers !== 'undefined' && DomainHelpers && typeof DomainHelpers.formatDateISO === 'function') {
+                return DomainHelpers.formatDateISO(date);
+            }
             const d = new Date(date);
             const yyyy = d.getFullYear();
             const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -82,7 +162,12 @@
                 console.error("AttendanceTemplates no disponible");
                 return;
             }
+            // safe static: layout fijo sin datos externos.
             container.innerHTML = AttendanceTemplates.buildEmployeeCalendarPanelHtml();
+            const gridContainer = container.querySelector('#calendar-grid-container');
+            if (gridContainer) {
+                renderEmptyState(gridContainer, 'Selecciona un empleado para ver su calendario');
+            }
             attachEvents(container);
             loadEmpleados();
         }
@@ -94,40 +179,32 @@
             const container = document.getElementById('calendar-grid-container');
             if (!container) return;
             if (!data || !data.dias) {
-                container.innerHTML = `
-                    <div class="text-center text-muted py-5">
-                        <i class="bi bi-calendar3 display-4 mb-3 d-block opacity-50"></i>
-                        <p class="mb-0">Sin datos para mostrar</p>
-                    </div>
-                `;
+                renderEmptyState(container, 'Sin datos para mostrar');
                 return;
             }
 
             const dias = data.dias;
 
-            // Construir grid semanal
-            let html = `
-                <div class="calendar-week-grid">
-                    <div class="calendar-days-row">
-            `;
+            Dom.clear(container);
+            const grid = Dom.el('div', { className: 'calendar-week-grid' });
+            const row = Dom.el('div', { className: 'calendar-days-row' });
+            grid.appendChild(row);
 
             dias.forEach((dia, idx) => {
                 const hasClients = dia.clientes && dia.clientes.length > 0;
-                const isWeekend = idx >= 5; // Sábado y Domingo
+                const isWeekend = idx >= 5;
                 const dayClasses = [
                     'calendar-day',
                     hasClients ? 'calendar-day--has-work' : 'calendar-day--free',
                     isWeekend ? 'calendar-day--weekend' : ''
                 ].filter(Boolean).join(' ');
 
-                html += `
-                    <div class="${dayClasses}">
-                        <div class="calendar-day-header">
-                            <span class="calendar-day-name">${escapeHtml(dia.diaDisplay)}</span>
-                            <span class="calendar-day-date">${escapeHtml(dia.fechaDisplay)}</span>
-                        </div>
-                        <div class="calendar-day-content">
-                `;
+                const day = Dom.el('div', { className: dayClasses });
+                const header = Dom.el('div', { className: 'calendar-day-header' }, [
+                    Dom.el('span', { className: 'calendar-day-name', text: dia.diaDisplay || '' }),
+                    Dom.el('span', { className: 'calendar-day-date', text: dia.fechaDisplay || '' })
+                ]);
+                const content = Dom.el('div', { className: 'calendar-day-content' });
 
                 if (hasClients) {
                     dia.clientes.forEach(cliente => {
@@ -135,64 +212,63 @@
                         const direccionShort = cliente.direccion
                             ? (cliente.direccion.length > 30 ? cliente.direccion.substring(0, 30) + '...' : cliente.direccion)
                             : '';
+                        const displayName = getClienteDisplayName(cliente);
 
-                        html += `
-                            <div class="calendar-client-card" 
-                                 data-cliente-id="${escapeHtml(cliente.idCliente)}"
-                                 data-cliente-nombre="${escapeHtml(getClienteDisplayName(cliente))}"
-                                 data-dia="${escapeHtml(dia.diaSemana)}">
-                                <div class="calendar-client-name" title="${escapeHtml(getClienteDisplayName(cliente))}">
-                                    <i class="bi bi-building me-1"></i>
-                                    ${escapeHtml(getClienteDisplayName(cliente))}
-                                </div>
-                                <div class="calendar-client-time">
-                                    <i class="bi bi-clock me-1"></i>
-                                    ${escapeHtml(cliente.horaEntrada || '--:--')} 
-                                    <span class="badge bg-primary ms-1">${horasDisplay} hs</span>
-                                </div>
-                                ${direccionShort ? `
-                                    <div class="calendar-client-address" title="${escapeHtml(cliente.direccion)}">
-                                        <i class="bi bi-geo-alt me-1"></i>
-                                        ${escapeHtml(direccionShort)}
-                                    </div>
-                                ` : ''}
-                                <div class="calendar-client-expand">
-                                    <i class="bi bi-eye"></i> Ver detalles
-                                </div>
-                            </div>
-                        `;
+                        const card = Dom.el('div', {
+                            className: 'calendar-client-card',
+                            dataset: {
+                                clienteId: cliente.idCliente || '',
+                                clienteNombre: displayName,
+                                dia: dia.diaSemana || ''
+                            }
+                        });
+                        card.appendChild(
+                            Dom.el('div', { className: 'calendar-client-name', title: displayName }, [
+                                Dom.el('i', { className: 'bi bi-building me-1' }),
+                                Dom.text(displayName)
+                            ])
+                        );
+                        card.appendChild(
+                            Dom.el('div', { className: 'calendar-client-time' }, [
+                                Dom.el('i', { className: 'bi bi-clock me-1' }),
+                                Dom.text(cliente.horaEntrada || '--:--'),
+                                Dom.el('span', { className: 'badge bg-primary ms-1', text: `${horasDisplay} hs` })
+                            ])
+                        );
+                        if (direccionShort) {
+                            card.appendChild(
+                                Dom.el('div', { className: 'calendar-client-address', title: cliente.direccion || '' }, [
+                                    Dom.el('i', { className: 'bi bi-geo-alt me-1' }),
+                                    Dom.text(direccionShort)
+                                ])
+                            );
+                        }
+                        card.appendChild(
+                            Dom.el('div', { className: 'calendar-client-expand' }, [
+                                Dom.el('i', { className: 'bi bi-eye' }),
+                                Dom.text(' Ver detalles')
+                            ])
+                        );
+                        card.addEventListener('click', () => {
+                            showClientDetails(card.dataset.clienteId, card.dataset.clienteNombre, card.dataset.dia);
+                        });
+                        content.appendChild(card);
                     });
                 } else {
-                    html += `
-                        <div class="calendar-no-work">
-                            <i class="bi bi-moon-stars opacity-50"></i>
-                            <span>Sin asignación</span>
-                        </div>
-                    `;
+                    content.appendChild(
+                        Dom.el('div', { className: 'calendar-no-work' }, [
+                            Dom.el('i', { className: 'bi bi-moon-stars opacity-50' }),
+                            Dom.el('span', { text: 'Sin asignación' })
+                        ])
+                    );
                 }
 
-                html += `
-                        </div>
-                    </div>
-                `;
+                day.appendChild(header);
+                day.appendChild(content);
+                row.appendChild(day);
             });
 
-            html += `
-                    </div>
-                </div>
-            `;
-
-            container.innerHTML = html;
-
-            // Attach events a las tarjetas
-            container.querySelectorAll('.calendar-client-card').forEach(card => {
-                card.addEventListener('click', () => {
-                    const clienteId = card.dataset.clienteId;
-                    const clienteNombre = card.dataset.clienteNombre;
-                    const dia = card.dataset.dia;
-                    showClientDetails(clienteId, clienteNombre, dia);
-                });
-            });
+            container.appendChild(grid);
         }
 
         function renderAllEmployeesGrid(data) {
@@ -200,19 +276,14 @@
             if (!container) return;
 
             if (!data || !data.dias || data.dias.length === 0) {
-                container.innerHTML = `
-                    <div class="text-center text-muted py-5">
-                        <i class="bi bi-calendar3 display-4 mb-3 d-block opacity-50"></i>
-                        <p class="mb-0">Sin datos para mostrar</p>
-                    </div>
-                `;
+                renderEmptyState(container, 'Sin datos para mostrar');
                 return;
             }
 
-            let html = `
-                <div class="calendar-week-grid">
-                    <div class="calendar-days-row">
-            `;
+            Dom.clear(container);
+            const grid = Dom.el('div', { className: 'calendar-week-grid' });
+            const row = Dom.el('div', { className: 'calendar-days-row' });
+            grid.appendChild(row);
 
             data.dias.forEach((dia, idx) => {
                 const hasEmployees = dia.empleados && dia.empleados.length > 0;
@@ -223,14 +294,12 @@
                     isWeekend ? 'calendar-day--weekend' : ''
                 ].filter(Boolean).join(' ');
 
-                html += `
-                    <div class="${dayClasses}">
-                        <div class="calendar-day-header">
-                            <span class="calendar-day-name">${escapeHtml(dia.diaDisplay || '')}</span>
-                            <span class="calendar-day-date">${escapeHtml(dia.fechaDisplay || '')}</span>
-                        </div>
-                        <div class="calendar-day-content">
-                `;
+                const day = Dom.el('div', { className: dayClasses });
+                const header = Dom.el('div', { className: 'calendar-day-header' }, [
+                    Dom.el('span', { className: 'calendar-day-name', text: dia.diaDisplay || '' }),
+                    Dom.el('span', { className: 'calendar-day-date', text: dia.fechaDisplay || '' })
+                ]);
+                const content = Dom.el('div', { className: 'calendar-day-content' });
 
                 if (hasEmployees) {
                     dia.empleados.forEach(emp => {
@@ -244,52 +313,64 @@
                             uniqueClientes.push(c);
                         });
 
-                        html += `
-                            <div class="calendar-client-card calendar-client-card--summary">
-                                <div class="calendar-client-name" title="${escapeHtml(emp.empleado || '')}">
-                                    <i class="bi bi-person-workspace me-1"></i>
-                                    ${escapeHtml(emp.empleado || 'Sin asignar')}
-                                </div>
-                                <div class="calendar-client-time">
-                                    <i class="bi bi-clock me-1"></i>
-                                    ${formatHoras(emp.totalHoras)} hs
-                                </div>
-                                ${uniqueClientes.length ? `
-                                    <div class="calendar-client-employees">
-                                        ${uniqueClientes.map(c => {
-                                            const nombre = getClienteDisplayName(c);
-                                            const detalles = [];
-                                            if (c.horaEntrada) detalles.push(c.horaEntrada);
-                                            if (c.horasPlan) detalles.push(`${formatHoras(c.horasPlan)} hs`);
-                                            const title = detalles.length ? `${nombre} · ${detalles.join(' · ')}` : nombre;
-                                            return `<span class="calendar-emp-chip" title="${escapeHtml(title)}">${escapeHtml(nombre)}</span>`;
-                                        }).join('')}
-                                    </div>
-                                ` : ''}
-                            </div>
-                        `;
+                        const card = Dom.el('div', { className: 'calendar-client-card calendar-client-card--summary' });
+                        card.appendChild(
+                            Dom.el('div', { className: 'calendar-client-name', title: emp.empleado || '' }, [
+                                Dom.el('i', { className: 'bi bi-person-workspace me-1' }),
+                                Dom.text(emp.empleado || 'Sin asignar')
+                            ])
+                        );
+                        card.appendChild(
+                            Dom.el('div', { className: 'calendar-client-time' }, [
+                                Dom.el('i', { className: 'bi bi-clock me-1' }),
+                                Dom.text(`${formatHoras(emp.totalHoras)} hs`)
+                            ])
+                        );
+                        if (uniqueClientes.length) {
+                            const chips = Dom.el('div', { className: 'calendar-client-employees' });
+                            uniqueClientes.forEach(c => {
+                                const nombre = getClienteDisplayName(c);
+                                const detalles = [];
+                                if (c.horaEntrada) detalles.push(c.horaEntrada);
+                                if (c.horasPlan) detalles.push(`${formatHoras(c.horasPlan)} hs`);
+                                const title = detalles.length ? `${nombre} · ${detalles.join(' · ')}` : nombre;
+                                chips.appendChild(Dom.el('span', { className: 'calendar-emp-chip', title: title, text: nombre }));
+                            });
+                            card.appendChild(chips);
+                        }
+                        content.appendChild(card);
                     });
                 } else {
-                    html += `
-                        <div class="calendar-no-work">
-                            <i class="bi bi-moon-stars opacity-50"></i>
-                            <span>Sin asignaciones</span>
-                        </div>
-                    `;
+                    content.appendChild(
+                        Dom.el('div', { className: 'calendar-no-work' }, [
+                            Dom.el('i', { className: 'bi bi-moon-stars opacity-50' }),
+                            Dom.el('span', { text: 'Sin asignaciones' })
+                        ])
+                    );
                 }
 
-                html += `
-                        </div>
-                    </div>
-                `;
+                day.appendChild(header);
+                day.appendChild(content);
+                row.appendChild(day);
             });
 
-            html += `
-                    </div>
-                </div>
-            `;
+            container.appendChild(grid);
+        }
 
-            container.innerHTML = html;
+        function buildInfoRow(iconClass, content, alignStart) {
+            const row = Dom.el('div', {
+                className: alignStart ? 'd-flex align-items-start gap-2' : 'd-flex align-items-center gap-2'
+            });
+            row.appendChild(Dom.el('i', { className: iconClass + (alignStart ? ' mt-1' : '') }));
+            Dom.append(row, content);
+            return row;
+        }
+
+        function buildLabelValue(label, value) {
+            return Dom.el('span', null, [
+                Dom.el('strong', { text: label }),
+                Dom.text(' ' + value)
+            ]);
         }
 
         /**
@@ -313,124 +394,143 @@
 
             if (!clienteData) return;
 
-            // Crear modal
-            const modalHtml = `
-                <div class="modal fade" id="client-detail-modal" tabindex="-1">
-                    <div class="modal-dialog modal-lg modal-dialog-centered">
-                        <div class="modal-content">
-                            <div class="modal-header bg-primary text-white">
-                                <h5 class="modal-title">
-                                    <i class="bi bi-building me-2"></i>
-                                    ${escapeHtml(getClienteDisplayName(clienteData))}
-                                </h5>
-                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                            </div>
-                            <div class="modal-body">
-                                <div class="row g-4">
-                                    <div class="col-md-6">
-                                        <h6 class="text-muted text-uppercase small mb-3">
-                                            <i class="bi bi-info-circle me-1"></i> Información de la visita
-                                        </h6>
-                                        <div class="d-flex flex-column gap-2">
-                                            <div class="d-flex align-items-center gap-2">
-                                                <i class="bi bi-clock text-primary"></i>
-                                                <span><strong>Horario:</strong> ${escapeHtml(clienteData.horaEntrada || 'No especificado')}</span>
-                                            </div>
-                                            <div class="d-flex align-items-center gap-2">
-                                                <i class="bi bi-hourglass-split text-primary"></i>
-                                                <span><strong>Horas:</strong> ${formatHoras(clienteData.horasPlan)} hs</span>
-                                            </div>
-                                            ${clienteData.observaciones ? `
-                                                <div class="d-flex align-items-start gap-2">
-                                                    <i class="bi bi-sticky text-warning mt-1"></i>
-                                                    <span><strong>Obs:</strong> ${escapeHtml(clienteData.observaciones)}</span>
-                                                </div>
-                                            ` : ''}
-                                        </div>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <h6 class="text-muted text-uppercase small mb-3">
-                                            <i class="bi bi-building me-1"></i> Datos del cliente
-                                        </h6>
-                                        <div class="d-flex flex-column gap-2">
-                                            ${clienteData.idCliente ? `
-                                                <div class="d-flex align-items-center gap-2">
-                                                    <i class="bi bi-hash text-secondary"></i>
-                                                    <span><strong>ID:</strong> ${escapeHtml(clienteData.idCliente)}</span>
-                                                </div>
-                                            ` : ''}
-                                            ${clienteData.direccion ? `
-                                                <div class="d-flex align-items-start gap-2">
-                                                    <i class="bi bi-geo-alt text-danger mt-1"></i>
-                                                    <span>${escapeHtml(clienteData.direccion)}</span>
-                                                </div>
-                                            ` : ''}
-                                            ${clienteData.telefono ? `
-                                                <div class="d-flex align-items-center gap-2">
-                                                    <i class="bi bi-telephone text-success"></i>
-                                                    <a href="tel:${escapeHtml(clienteData.telefono)}">${escapeHtml(clienteData.telefono)}</a>
-                                                </div>
-                                            ` : ''}
-                                            ${clienteData.encargado ? `
-                                                <div class="d-flex align-items-center gap-2">
-                                                    <i class="bi bi-person text-info"></i>
-                                                    <span><strong>Contacto:</strong> ${escapeHtml(clienteData.encargado)}</span>
-                                                </div>
-                                            ` : ''}
-                                            ${clienteData.correo ? `
-                                                <div class="d-flex align-items-center gap-2">
-                                                    <i class="bi bi-envelope text-primary"></i>
-                                                    <a href="mailto:${escapeHtml(clienteData.correo)}">${escapeHtml(clienteData.correo)}</a>
-                                                </div>
-                                            ` : ''}
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <!-- Fotos (si existe ClientMediaController) -->
-                                <div id="client-detail-photos" class="mt-4 d-none">
-                                    <h6 class="text-muted text-uppercase small mb-3">
-                                        <i class="bi bi-images me-1"></i> Fotos del local
-                                    </h6>
-                                    <div class="row g-3" id="client-photos-container">
-                                        <div class="text-center text-muted py-3">
-                                            <div class="spinner-border spinner-border-sm"></div>
-                                            Cargando fotos...
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="modal-footer">
-                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
-                                ${clienteData.direccion ? `
-                                    <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(clienteData.direccion)}" 
-                                       target="_blank" class="btn btn-outline-primary">
-                                        <i class="bi bi-map me-1"></i> Ver en mapa
-                                    </a>
-                                ` : ''}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
-
-            // Remover modal anterior si existe
-            const oldModal = document.getElementById('client-detail-modal');
+            const modalId = 'client-detail-modal';
+            const oldModal = document.getElementById(modalId);
             if (oldModal) oldModal.remove();
 
-            // Insertar y mostrar modal
-            document.body.insertAdjacentHTML('beforeend', modalHtml);
-            const modalEl = document.getElementById('client-detail-modal');
+            const titleText = getClienteDisplayName(clienteData) || clienteNombre || 'Cliente';
+            const header = Dom.el('div', { className: 'modal-header bg-primary text-white' }, [
+                Dom.el('h5', { className: 'modal-title' }, [
+                    Dom.el('i', { className: 'bi bi-building me-2' }),
+                    Dom.text(titleText)
+                ]),
+                Dom.el('button', {
+                    type: 'button',
+                    className: 'btn-close btn-close-white',
+                    'data-bs-dismiss': 'modal',
+                    'aria-label': 'Cerrar'
+                })
+            ]);
+
+            const visitInfoList = Dom.el('div', { className: 'd-flex flex-column gap-2' }, [
+                buildInfoRow('bi bi-clock text-primary', buildLabelValue('Horario:', clienteData.horaEntrada || 'No especificado')),
+                buildInfoRow('bi bi-hourglass-split text-primary', buildLabelValue('Horas:', `${formatHoras(clienteData.horasPlan)} hs`))
+            ]);
+
+            const visitInfo = Dom.el('div', { className: 'col-md-6' }, [
+                Dom.el('h6', { className: 'text-muted text-uppercase small mb-3' }, [
+                    Dom.el('i', { className: 'bi bi-info-circle me-1' }),
+                    Dom.text('Información de la visita')
+                ]),
+                visitInfoList
+            ]);
+
+            if (clienteData.observaciones) {
+                visitInfoList.appendChild(
+                    buildInfoRow(
+                        'bi bi-sticky text-warning',
+                        buildLabelValue('Obs:', String(clienteData.observaciones || '')),
+                        true
+                    )
+                );
+            }
+
+            const clientInfoList = Dom.el('div', { className: 'd-flex flex-column gap-2' });
+            if (clienteData.idCliente) {
+                clientInfoList.appendChild(
+                    buildInfoRow('bi bi-hash text-secondary', buildLabelValue('ID:', String(clienteData.idCliente)))
+                );
+            }
+            if (clienteData.direccion) {
+                clientInfoList.appendChild(
+                    buildInfoRow('bi bi-geo-alt text-danger', Dom.el('span', { text: String(clienteData.direccion) }), true)
+                );
+            }
+            if (clienteData.telefono) {
+                const tel = String(clienteData.telefono);
+                clientInfoList.appendChild(
+                    buildInfoRow('bi bi-telephone text-success', Dom.el('a', { href: 'tel:' + tel, text: tel }))
+                );
+            }
+            if (clienteData.encargado) {
+                clientInfoList.appendChild(
+                    buildInfoRow('bi bi-person text-info', buildLabelValue('Contacto:', String(clienteData.encargado)))
+                );
+            }
+            if (clienteData.correo) {
+                const mail = String(clienteData.correo);
+                clientInfoList.appendChild(
+                    buildInfoRow('bi bi-envelope text-primary', Dom.el('a', { href: 'mailto:' + mail, text: mail }))
+                );
+            }
+
+            const clientInfo = Dom.el('div', { className: 'col-md-6' }, [
+                Dom.el('h6', { className: 'text-muted text-uppercase small mb-3' }, [
+                    Dom.el('i', { className: 'bi bi-building me-1' }),
+                    Dom.text('Datos del cliente')
+                ]),
+                clientInfoList
+            ]);
+
+            const photosContainer = Dom.el('div', {
+                className: 'row g-3',
+                id: 'client-photos-container'
+            });
+
+            const photosSection = Dom.el('div', { id: 'client-detail-photos', className: 'mt-4 d-none' }, [
+                Dom.el('h6', { className: 'text-muted text-uppercase small mb-3' }, [
+                    Dom.el('i', { className: 'bi bi-images me-1' }),
+                    Dom.text('Fotos del local')
+                ]),
+                photosContainer
+            ]);
+
+            const body = Dom.el('div', { className: 'modal-body' }, [
+                Dom.el('div', { className: 'row g-4' }, [visitInfo, clientInfo]),
+                photosSection
+            ]);
+
+            const footer = Dom.el('div', { className: 'modal-footer' }, [
+                Dom.el('button', {
+                    type: 'button',
+                    className: 'btn btn-secondary',
+                    'data-bs-dismiss': 'modal'
+                }, 'Cerrar')
+            ]);
+
+            if (clienteData.direccion) {
+                const mapUrl = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(String(clienteData.direccion));
+                footer.appendChild(
+                    Dom.el('a', {
+                        href: mapUrl,
+                        target: '_blank',
+                        className: 'btn btn-outline-primary'
+                    }, [
+                        Dom.el('i', { className: 'bi bi-map me-1' }),
+                        Dom.text('Ver en mapa')
+                    ])
+                );
+            }
+
+            const modalEl = Dom.el('div', { className: 'modal fade', id: modalId, tabindex: '-1' }, [
+                Dom.el('div', { className: 'modal-dialog modal-lg modal-dialog-centered' }, [
+                    Dom.el('div', { className: 'modal-content' }, [
+                        header,
+                        body,
+                        footer
+                    ])
+                ])
+            ]);
+
+            document.body.appendChild(modalEl);
             const modal = new bootstrap.Modal(modalEl);
             modal.show();
 
-            // Limpiar al cerrar
             modalEl.addEventListener('hidden.bs.modal', () => {
                 modalEl.remove();
             });
 
-            // Cargar fotos si existe ApiService
-            if (clienteId && typeof ApiService !== 'undefined') {
+            if (clienteId && EmployeeCalendarData && typeof EmployeeCalendarData.listClientMedia === 'function') {
                 loadClientPhotos(clienteId);
             }
         }
@@ -444,14 +544,14 @@
 
             if (!photosSection || !photosContainer) return;
 
-            photosContainer.innerHTML = `
-                <div class="text-center text-muted py-3">
-                    <div class="spinner-border spinner-border-sm"></div>
-                    Cargando fotos...
-                </div>
-            `;
+            renderLoadingState(photosContainer, 'Cargando fotos...');
 
-            ApiService.call('listClientMedia', clienteId)
+            if (!EmployeeCalendarData || typeof EmployeeCalendarData.listClientMedia !== 'function') {
+                photosSection.classList.add('d-none');
+                return;
+            }
+
+            EmployeeCalendarData.listClientMedia(clienteId)
                 .then(media => {
                     const fachada = media && Array.isArray(media.fachada) ? media.fachada : [];
                     const llave = media && Array.isArray(media.llave) ? media.llave : [];
@@ -462,44 +562,51 @@
                     }
 
                     photosSection.classList.remove('d-none');
+                    Dom.clear(photosContainer);
 
                     const buildGroup = (items, title, icon, iconClass) => {
                         const count = items.length;
-                        const thumbs = count
-                            ? items.map(photo => {
+                        const header = Dom.el('div', { className: 'd-flex align-items-center justify-content-between mb-2' }, [
+                            Dom.el('div', { className: 'd-flex align-items-center gap-2' }, [
+                                Dom.el('i', { className: `bi ${icon} ${iconClass}` }),
+                                Dom.el('span', { className: 'fw-semibold small', text: title })
+                            ]),
+                            Dom.el('span', { className: 'small text-muted', text: `${count} foto${count === 1 ? '' : 's'}` })
+                        ]);
+
+                        const thumbs = Dom.el('div', { className: 'd-flex flex-wrap gap-2' });
+                        if (count) {
+                            items.forEach(photo => {
                                 const mime = photo.mimeType || 'image/jpeg';
                                 const base64 = photo.thumbnailBase64 || '';
                                 const dataUrl = base64 ? `data:${mime};base64,${base64}` : '';
-                                return `
-                                    <button type="button" class="client-photo-thumb" data-photo-id="${escapeHtml(photo.fileId || '')}" title="${escapeHtml(photo.name || title)}">
-                                        ${dataUrl ? `<img src="${dataUrl}" alt="${escapeHtml(title)}">` : '<i class=\"bi bi-image\"></i>'}
-                                    </button>
-                                `;
-                            }).join('')
-                            : '<div class="text-muted small">Sin fotos</div>';
+                                const btn = Dom.el('button', {
+                                    type: 'button',
+                                    className: 'client-photo-thumb',
+                                    dataset: { photoId: photo.fileId || '' },
+                                    title: photo.name || title
+                                });
+                                if (dataUrl) {
+                                    btn.appendChild(Dom.el('img', { src: dataUrl, alt: title }));
+                                } else {
+                                    btn.appendChild(Dom.el('i', { className: 'bi bi-image' }));
+                                }
+                                thumbs.appendChild(btn);
+                            });
+                        } else {
+                            thumbs.appendChild(Dom.el('div', { className: 'text-muted small', text: 'Sin fotos' }));
+                        }
 
-                        return `
-                            <div class="col-12 col-md-6">
-                                <div class="lt-surface p-2 h-100">
-                                    <div class="d-flex align-items-center justify-content-between mb-2">
-                                        <div class="d-flex align-items-center gap-2">
-                                            <i class="bi ${icon} ${iconClass}"></i>
-                                            <span class="fw-semibold small">${escapeHtml(title)}</span>
-                                        </div>
-                                        <span class="small text-muted">${count} foto${count === 1 ? '' : 's'}</span>
-                                    </div>
-                                    <div class="d-flex flex-wrap gap-2">
-                                        ${thumbs}
-                                    </div>
-                                </div>
-                            </div>
-                        `;
+                        return Dom.el('div', { className: 'col-12 col-md-6' }, [
+                            Dom.el('div', { className: 'lt-surface p-2 h-100' }, [
+                                header,
+                                thumbs
+                            ])
+                        ]);
                     };
 
-                    photosContainer.innerHTML = `
-                        ${buildGroup(fachada, 'Fachadas', 'bi-building', 'text-primary')}
-                        ${buildGroup(llave, 'Llaves', 'bi-key-fill', 'text-warning')}
-                    `;
+                    photosContainer.appendChild(buildGroup(fachada, 'Fachadas', 'bi-building', 'text-primary'));
+                    photosContainer.appendChild(buildGroup(llave, 'Llaves', 'bi-key-fill', 'text-warning'));
 
                     photosContainer.querySelectorAll('[data-photo-id]').forEach(btn => {
                         btn.addEventListener('click', () => {
@@ -517,32 +624,38 @@
          * Ver foto en tamaño completo
          */
         function viewPhoto(fileId) {
-            if (!fileId || typeof ApiService === 'undefined') return;
+            if (!fileId || !EmployeeCalendarData || typeof EmployeeCalendarData.getClientMediaImage !== 'function') return;
 
-            ApiService.call('getClientMediaImage', fileId, 1600)
+            EmployeeCalendarData.getClientMediaImage(fileId, 1600)
                 .then(imgData => {
                     if (imgData && imgData.base64) {
                         const dataUrl = `data:${imgData.mimeType || 'image/jpeg'};base64,${imgData.base64}`;
-                        const modalHtml = `
-                            <div class="modal fade" id="photo-viewer-modal" tabindex="-1">
-                                <div class="modal-dialog modal-xl modal-dialog-centered">
-                                    <div class="modal-content bg-dark">
-                                        <div class="modal-body p-0 text-center">
-                                            <button type="button" class="btn-close btn-close-white position-absolute top-0 end-0 m-3" 
-                                                    data-bs-dismiss="modal" style="z-index: 10;"></button>
-                                            <img src="${dataUrl}" alt="Foto" 
-                                                 style="max-width: 100%; max-height: 90vh; object-fit: contain;">
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        `;
-
-                        const oldModal = document.getElementById('photo-viewer-modal');
+                        const modalId = 'photo-viewer-modal';
+                        const oldModal = document.getElementById(modalId);
                         if (oldModal) oldModal.remove();
 
-                        document.body.insertAdjacentHTML('beforeend', modalHtml);
-                        const modalEl = document.getElementById('photo-viewer-modal');
+                        const modalEl = Dom.el('div', { className: 'modal fade', id: modalId, tabindex: '-1' }, [
+                            Dom.el('div', { className: 'modal-dialog modal-xl modal-dialog-centered' }, [
+                                Dom.el('div', { className: 'modal-content bg-dark' }, [
+                                    Dom.el('div', { className: 'modal-body p-0 text-center position-relative' }, [
+                                        Dom.el('button', {
+                                            type: 'button',
+                                            className: 'btn-close btn-close-white position-absolute top-0 end-0 m-3',
+                                            'data-bs-dismiss': 'modal',
+                                            'aria-label': 'Cerrar',
+                                            style: 'z-index: 10;'
+                                        }),
+                                        Dom.el('img', {
+                                            src: dataUrl,
+                                            alt: 'Foto',
+                                            style: 'max-width: 100%; max-height: 90vh; object-fit: contain;'
+                                        })
+                                    ])
+                                ])
+                            ])
+                        ]);
+
+                        document.body.appendChild(modalEl);
                         const modal = new bootstrap.Modal(modalEl);
                         modal.show();
 
@@ -584,21 +697,27 @@
 
             const container = document.getElementById('calendar-grid-container');
             if (container) {
-                container.innerHTML = `
-                    <div class="text-center py-5">
-                        <div class="spinner-border text-primary"></div>
-                        <div class="mt-2 text-muted">Cargando agenda...</div>
-                    </div>
-                `;
+                renderLoadingState(container, 'Cargando agenda...');
             }
 
             const weekStartStr = formatDateISO(currentWeekStart);
-            const apiName = isAllEmployees ? 'getWeeklyEmployeeOverview' : 'getEmployeeWeeklySchedule';
-            const payload = isAllEmployees
-                ? { weekStartDate: weekStartStr }
-                : { empleado: currentEmpleado, idEmpleado: currentIdEmpleado, weekStartDate: weekStartStr };
+            if (!EmployeeCalendarData || typeof EmployeeCalendarData.fetchSchedule !== 'function') {
+                if (container) {
+                    EmptyState.render(container, {
+                        variant: 'error',
+                        title: 'Error al cargar',
+                        message: 'No se pudo cargar la agenda.'
+                    });
+                }
+                return;
+            }
 
-            ApiService.call(apiName, payload)
+            EmployeeCalendarData.fetchSchedule({
+                weekStartDate: weekStartStr,
+                empleado: currentEmpleado,
+                idEmpleado: currentIdEmpleado,
+                allEmployees: isAllEmployees
+            })
                 .then(data => {
                     if (data && data.error) {
                         throw new Error(data.error);
@@ -619,12 +738,21 @@
                 .catch(err => {
                     console.error('Error cargando agenda:', err);
                     if (container) {
-                        container.innerHTML = `
-                            <div class="alert alert-danger">
-                                <i class="bi bi-exclamation-triangle me-2"></i>
-                                Error al cargar la agenda: ${escapeHtml(err.message || err)}
-                            </div>
-                        `;
+                        if (typeof EmptyState !== 'undefined' && EmptyState) {
+                            EmptyState.render(container, {
+                                variant: 'error',
+                                title: 'Error al cargar',
+                                message: (err && err.message ? err.message : err)
+                            });
+                        } else {
+                            Dom.clear(container);
+                            container.appendChild(
+                                Dom.el('div', { className: 'alert alert-danger' }, [
+                                    Dom.el('i', { className: 'bi bi-exclamation-triangle me-2' }),
+                                    Dom.text('Error al cargar la agenda: ' + (err && err.message ? err.message : err))
+                                ])
+                            );
+                        }
                     }
                 });
         }
@@ -653,53 +781,37 @@
             const select = document.getElementById('calendar-empleado-select');
             if (!select) return;
 
-            ApiService.call('getEmpleadosConId')
+            if (!EmployeeCalendarData || typeof EmployeeCalendarData.loadEmployees !== 'function') {
+                console.warn('EmployeeCalendarData.loadEmployees no disponible');
+                return;
+            }
+
+            EmployeeCalendarData.loadEmployees()
                 .then(empleados => {
                     empleadosList = empleados || [];
 
-                    select.innerHTML = '<option value="">Seleccionar empleado...</option>';
-                    const allOpt = document.createElement('option');
-                    allOpt.value = ALL_EMPLOYEES_VALUE;
-                    allOpt.textContent = 'Todos los empleados';
-                    select.appendChild(allOpt);
+                    Dom.clear(select);
+                    select.appendChild(Dom.el('option', { value: '', text: 'Seleccionar empleado...' }));
+                    select.appendChild(Dom.el('option', { value: ALL_EMPLOYEES_VALUE, text: 'Todos los empleados' }));
 
                     empleadosList.forEach(emp => {
-                        const id = emp && emp.id != null ? String(emp.id).trim() : '';
-                        const nombre = emp && emp.nombre ? String(emp.nombre).trim() : '';
-                        if (!id || !nombre) return;
-                        const opt = document.createElement('option');
-                        opt.value = id;
-                        opt.textContent = nombre;
-                        opt.dataset.id = id;
-                        opt.dataset.nombre = nombre;
-                        select.appendChild(opt);
+                        const nombre = typeof emp === 'string'
+                            ? String(emp).trim()
+                            : String(emp.nombre || emp.empleado || emp.label || '').trim();
+                        const id = emp && typeof emp === 'object' && emp.id != null ? String(emp.id).trim() : '';
+                        if (!nombre) return;
+                        const value = id || nombre;
+                        select.appendChild(
+                            Dom.el('option', {
+                                value: value,
+                                text: nombre,
+                                dataset: { id: id, nombre: nombre }
+                            })
+                        );
                     });
                 })
                 .catch(err => {
                     console.error('Error cargando empleados:', err);
-                    // Fallback: usar referenceData
-                    if (typeof ReferenceService !== 'undefined') {
-                        const refData = ReferenceService.get();
-                        if (refData && refData.empleados) {
-                            select.innerHTML = '<option value="">Seleccionar empleado...</option>';
-                            const allOpt = document.createElement('option');
-                            allOpt.value = ALL_EMPLOYEES_VALUE;
-                            allOpt.textContent = 'Todos los empleados';
-                            select.appendChild(allOpt);
-
-                            refData.empleados.forEach(emp => {
-                                const nombre = typeof emp === 'string' ? String(emp).trim() : String(emp.nombre || '').trim();
-                                const id = emp && typeof emp === 'object' && emp.id != null ? String(emp.id).trim() : '';
-                                if (!id || !nombre) return;
-                                const opt = document.createElement('option');
-                                opt.value = id;
-                                opt.textContent = nombre;
-                                opt.dataset.nombre = nombre;
-                                opt.dataset.id = id;
-                                select.appendChild(opt);
-                            });
-                        }
-                    }
                 });
         }
 
@@ -719,13 +831,30 @@
 
             const btn = document.getElementById('calendar-generate-pdf');
             if (btn) {
-                btn.disabled = true;
-                btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Generando...';
+                const ui = global.UIHelpers;
+                if (ui && typeof ui.withSpinner === "function") {
+                    ui.withSpinner(btn, true, "Generando...");
+                } else {
+                    btn.disabled = true;
+                }
             }
 
             const weekStartStr = formatDateISO(currentWeekStart);
 
-            ApiService.call('generateEmployeeSchedulePdf', {
+            if (!EmployeeCalendarData || typeof EmployeeCalendarData.generatePdf !== 'function') {
+                if (Alerts) Alerts.showAlert('No se pudo generar el PDF.', 'danger');
+                if (btn) {
+                    const ui = global.UIHelpers;
+                    if (ui && typeof ui.withSpinner === "function") {
+                        ui.withSpinner(btn, false);
+                    } else {
+                        btn.disabled = false;
+                    }
+                }
+                return;
+            }
+
+            EmployeeCalendarData.generatePdf({
                 empleado: currentEmpleado,
                 idEmpleado: currentIdEmpleado,
                 weekStartDate: weekStartStr
@@ -751,8 +880,12 @@
                 })
                 .finally(() => {
                     if (btn) {
-                        btn.disabled = false;
-                        btn.innerHTML = '<i class="bi bi-file-earmark-pdf"></i><span>Generar PDF</span>';
+                        const ui = global.UIHelpers;
+                        if (ui && typeof ui.withSpinner === "function") {
+                            ui.withSpinner(btn, false);
+                        } else {
+                            btn.disabled = false;
+                        }
                     }
                 });
         }
@@ -761,10 +894,20 @@
          * Attacha eventos a los elementos del panel
          */
         function attachEvents(container) {
+            if (eventsController) {
+                eventsController.abort();
+            }
+            eventsController = new AbortController();
+            const signal = eventsController.signal;
+            const on = (el, evt, handler) => {
+                if (!el) return;
+                el.addEventListener(evt, handler, { signal });
+            };
+
             // Selector de empleado
             const empleadoSelect = container.querySelector('#calendar-empleado-select');
             if (empleadoSelect) {
-                empleadoSelect.addEventListener('change', function () {
+                on(empleadoSelect, 'change', function () {
                     const selected = this.options[this.selectedIndex];
                     const selectedValue = this.value || '';
                     isAllEmployees = selectedValue === ALL_EMPLOYEES_VALUE;
@@ -780,12 +923,8 @@
                     } else {
                         isAllEmployees = false;
                         scheduleData = null;
-                        document.getElementById('calendar-grid-container').innerHTML = `
-                            <div class="text-center text-muted py-5">
-                                <i class="bi bi-calendar3 display-4 mb-3 d-block opacity-50"></i>
-                                <p class="mb-0">Selecciona un empleado para ver su calendario</p>
-                            </div>
-                        `;
+                        const grid = document.getElementById('calendar-grid-container');
+                        renderEmptyState(grid, 'Selecciona un empleado para ver su calendario');
                         document.getElementById('calendar-summary').classList.add('d-none');
                         document.getElementById('calendar-generate-pdf').disabled = true;
                     }
@@ -795,7 +934,7 @@
             // Navegación semanal
             const prevBtn = container.querySelector('#calendar-prev-week');
             if (prevBtn) {
-                prevBtn.addEventListener('click', () => {
+                on(prevBtn, 'click', () => {
                     currentWeekStart = addDays(currentWeekStart, -7);
                     if (isAllEmployees || currentEmpleado || currentIdEmpleado) {
                         loadSchedule();
@@ -807,7 +946,7 @@
 
             const nextBtn = container.querySelector('#calendar-next-week');
             if (nextBtn) {
-                nextBtn.addEventListener('click', () => {
+                on(nextBtn, 'click', () => {
                     currentWeekStart = addDays(currentWeekStart, 7);
                     if (isAllEmployees || currentEmpleado || currentIdEmpleado) {
                         loadSchedule();
@@ -819,7 +958,7 @@
 
             const todayBtn = container.querySelector('#calendar-today');
             if (todayBtn) {
-                todayBtn.addEventListener('click', () => {
+                on(todayBtn, 'click', () => {
                     currentWeekStart = getMondayOfWeek(new Date());
                     if (isAllEmployees || currentEmpleado || currentIdEmpleado) {
                         loadSchedule();
@@ -832,7 +971,7 @@
             // Generar PDF
             const pdfBtn = container.querySelector('#calendar-generate-pdf');
             if (pdfBtn) {
-                pdfBtn.addEventListener('click', generatePdf);
+                on(pdfBtn, 'click', generatePdf);
             }
         }
 

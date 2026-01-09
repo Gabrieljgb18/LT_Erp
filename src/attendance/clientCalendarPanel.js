@@ -10,17 +10,65 @@
         let currentClientName = '';
         let scheduleData = null;
         let clientList = [];
+        let eventsController = null;
+        const Dom = global.DomHelpers || (function () {
+            function text(value) {
+                return document.createTextNode(value == null ? "" : String(value));
+            }
+            function setAttrs(el, attrs) {
+                if (!attrs) return;
+                Object.keys(attrs).forEach(key => {
+                    const val = attrs[key];
+                    if (val == null) return;
+                    if (key === "class" || key === "className") {
+                        el.className = String(val);
+                        return;
+                    }
+                    if (key === "text") {
+                        el.textContent = String(val);
+                        return;
+                    }
+                    if (key === "dataset" && typeof val === "object") {
+                        Object.keys(val).forEach(dataKey => {
+                            if (val[dataKey] != null) el.dataset[dataKey] = String(val[dataKey]);
+                        });
+                        return;
+                    }
+                    if (key === "style" && typeof val === "object") {
+                        Object.keys(val).forEach(styleKey => {
+                            el.style[styleKey] = val[styleKey];
+                        });
+                        return;
+                    }
+                    el.setAttribute(key, String(val));
+                });
+            }
+            function append(parent, child) {
+                if (!parent || child == null) return;
+                if (Array.isArray(child)) {
+                    child.forEach(c => append(parent, c));
+                    return;
+                }
+                if (typeof child === "string" || typeof child === "number") {
+                    parent.appendChild(text(child));
+                    return;
+                }
+                parent.appendChild(child);
+            }
+            function el(tag, attrs, children) {
+                const node = document.createElement(tag);
+                setAttrs(node, attrs);
+                append(node, children);
+                return node;
+            }
+            function clear(el) {
+                if (!el) return;
+                while (el.firstChild) el.removeChild(el.firstChild);
+            }
+            return { el, text, clear, append };
+        })();
 
-        const escapeHtml = (global.HtmlHelpers && typeof global.HtmlHelpers.escapeHtml === 'function')
-            ? global.HtmlHelpers.escapeHtml
-            : function (str) {
-                return String(str || '')
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;')
-                    .replace(/"/g, '&quot;')
-                    .replace(/'/g, '&#39;');
-            };
+        const ClientCalendarData = global.ClientCalendarData || null;
 
         function formatHoras(h) {
             const num = Number(h);
@@ -28,11 +76,11 @@
         }
 
         function getClienteDisplayName(cliente) {
+            if (typeof DomainHelpers !== 'undefined' && DomainHelpers && typeof DomainHelpers.getClientDisplayName === 'function') {
+                return DomainHelpers.getClientDisplayName(cliente);
+            }
             if (!cliente) return '';
             if (typeof cliente === 'string') return cliente;
-            if (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.getClientDisplayName === 'function') {
-                return HtmlHelpers.getClientDisplayName(cliente);
-            }
             return cliente.nombre || cliente.cliente || cliente.razonSocial || '';
         }
 
@@ -43,7 +91,40 @@
             return new Date(d.setDate(diff));
         }
 
+        function renderEmptyState(container, message) {
+            if (!container) return;
+            if (typeof EmptyState !== 'undefined' && EmptyState) {
+                EmptyState.render(container, { variant: 'empty', title: 'Sin datos', message: message });
+                return;
+            }
+            Dom.clear(container);
+            container.appendChild(
+                Dom.el('div', { className: 'text-center text-muted py-5' }, [
+                    Dom.el('i', { className: 'bi bi-calendar3 display-4 mb-3 d-block opacity-50' }),
+                    Dom.el('p', { className: 'mb-0', text: message })
+                ])
+            );
+        }
+
+        function renderLoadingState(container, message) {
+            if (!container) return;
+            if (typeof EmptyState !== 'undefined' && EmptyState) {
+                EmptyState.render(container, { variant: 'loading', message: message || 'Cargando...' });
+                return;
+            }
+            Dom.clear(container);
+            container.appendChild(
+                Dom.el('div', { className: 'text-center py-5' }, [
+                    Dom.el('div', { className: 'spinner-border text-primary' }),
+                    Dom.el('div', { className: 'mt-2 text-muted', text: message || 'Cargando...' })
+                ])
+            );
+        }
+
         function formatDateISO(date) {
+            if (typeof DomainHelpers !== 'undefined' && DomainHelpers && typeof DomainHelpers.formatDateISO === 'function') {
+                return DomainHelpers.formatDateISO(date);
+            }
             const d = new Date(date);
             const yyyy = d.getFullYear();
             const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -72,6 +153,7 @@
                 console.error("AttendanceTemplates no disponible");
                 return;
             }
+            // safe static: layout fijo sin datos externos.
             container.innerHTML = AttendanceTemplates.buildClientCalendarPanelHtml();
             attachEvents(container);
             loadClients();
@@ -82,43 +164,54 @@
             const select = document.getElementById('client-calendar-select');
             if (!select) return;
 
-            if (ReferenceService && ReferenceService.isLoaded && !ReferenceService.isLoaded()) {
-                ReferenceService.load().finally(loadClients);
+            if (!ClientCalendarData || typeof ClientCalendarData.loadClients !== 'function') {
+                console.warn('ClientCalendarData.loadClients no disponible');
                 return;
             }
 
-            const ref = ReferenceService && ReferenceService.get ? ReferenceService.get() : null;
-            clientList = ref && ref.clientes ? ref.clientes : [];
+            ClientCalendarData.loadClients().then(clients => {
+                clientList = clients || [];
 
-            select.innerHTML = '<option value="">Todos los clientes</option>';
-            clientList.forEach(c => {
-                const id = c && typeof c === 'object' ? (c.id || c.ID || c.ID_CLIENTE || '') : '';
-                const nombre = getClienteDisplayName(c);
-                if (!id || !nombre) return;
+                Dom.clear(select);
+                select.appendChild(Dom.el('option', { value: '', text: 'Todos los clientes' }));
+                clientList.forEach(c => {
+                    const id = c && typeof c === 'object' ? (c.id || c.ID || c.ID_CLIENTE || '') : '';
+                    const nombre = getClienteDisplayName(c);
+                    if (!id || !nombre) return;
 
-                const opt = document.createElement('option');
-                opt.value = String(id);
-                opt.textContent = nombre;
-                opt.dataset.id = String(id);
-                opt.dataset.nombre = nombre;
-                select.appendChild(opt);
+                    select.appendChild(
+                        Dom.el('option', {
+                            value: String(id),
+                            text: nombre,
+                            dataset: { id: String(id), nombre: nombre }
+                        })
+                    );
+                });
+            }).catch(err => {
+                console.error('Error cargando clientes:', err);
             });
         }
 
         function loadSchedule() {
             const container = document.getElementById('client-calendar-grid');
             if (container) {
-                container.innerHTML = `
-                    <div class="text-center py-5">
-                        <div class="spinner-border text-primary"></div>
-                        <div class="mt-2 text-muted">Cargando calendario...</div>
-                    </div>
-                `;
+                renderLoadingState(container, 'Cargando calendario...');
             }
 
             const weekStartStr = formatDateISO(currentWeekStart);
 
-            ApiService.call('getWeeklyClientOverview', {
+            if (!ClientCalendarData || typeof ClientCalendarData.fetchSchedule !== 'function') {
+                if (container) {
+                    EmptyState.render(container, {
+                        variant: 'error',
+                        title: 'Error al cargar',
+                        message: 'No se pudo cargar el calendario.'
+                    });
+                }
+                return;
+            }
+
+            ClientCalendarData.fetchSchedule({
                 weekStartDate: weekStartStr,
                 clientId: currentClientId
             })
@@ -132,12 +225,21 @@
                 .catch(err => {
                     console.error('Error cargando calendario clientes:', err);
                     if (container) {
-                        container.innerHTML = `
-                            <div class="alert alert-danger">
-                                <i class="bi bi-exclamation-triangle me-2"></i>
-                                Error al cargar calendario: ${escapeHtml(err.message || err)}
-                            </div>
-                        `;
+                        if (typeof EmptyState !== 'undefined' && EmptyState) {
+                            EmptyState.render(container, {
+                                variant: 'error',
+                                title: 'Error al cargar',
+                                message: (err && err.message ? err.message : err)
+                            });
+                        } else {
+                            Dom.clear(container);
+                            container.appendChild(
+                                Dom.el('div', { className: 'alert alert-danger' }, [
+                                    Dom.el('i', { className: 'bi bi-exclamation-triangle me-2' }),
+                                    Dom.text('Error al cargar calendario: ' + (err && err.message ? err.message : err))
+                                ])
+                            );
+                        }
                     }
                 });
         }
@@ -147,19 +249,14 @@
             if (!container) return;
 
             if (!data || !data.dias || data.dias.length === 0) {
-                container.innerHTML = `
-                    <div class="text-center text-muted py-5">
-                        <i class="bi bi-calendar3 display-4 mb-3 d-block opacity-50"></i>
-                        <p class="mb-0">Sin datos para mostrar</p>
-                    </div>
-                `;
+                renderEmptyState(container, 'Sin datos para mostrar');
                 return;
             }
 
-            let html = `
-                <div class="calendar-week-grid">
-                    <div class="calendar-days-row">
-            `;
+            Dom.clear(container);
+            const grid = Dom.el('div', { className: 'calendar-week-grid' });
+            const row = Dom.el('div', { className: 'calendar-days-row' });
+            grid.appendChild(row);
 
             data.dias.forEach((dia, idx) => {
                 const hasClients = dia.clientes && dia.clientes.length > 0;
@@ -170,14 +267,12 @@
                     isWeekend ? 'calendar-day--weekend' : ''
                 ].filter(Boolean).join(' ');
 
-                html += `
-                    <div class="${dayClasses}">
-                        <div class="calendar-day-header">
-                            <span class="calendar-day-name">${escapeHtml(dia.diaDisplay || '')}</span>
-                            <span class="calendar-day-date">${escapeHtml(dia.fechaDisplay || '')}</span>
-                        </div>
-                        <div class="calendar-day-content">
-                `;
+                const day = Dom.el('div', { className: dayClasses });
+                const header = Dom.el('div', { className: 'calendar-day-header' }, [
+                    Dom.el('span', { className: 'calendar-day-name', text: dia.diaDisplay || '' }),
+                    Dom.el('span', { className: 'calendar-day-date', text: dia.fechaDisplay || '' })
+                ]);
+                const content = Dom.el('div', { className: 'calendar-day-content' });
 
                 if (hasClients) {
                     dia.clientes.forEach(cliente => {
@@ -193,66 +288,84 @@
                             ? (cliente.direccion.length > 30 ? cliente.direccion.substring(0, 30) + '...' : cliente.direccion)
                             : '';
 
-                        html += `
-                            <div class="calendar-client-card calendar-client-card--summary"
-                                 data-cliente-id="${escapeHtml(cliente.idCliente || '')}"
-                                 data-cliente-nombre="${escapeHtml(getClienteDisplayName(cliente))}"
-                                 data-dia="${escapeHtml(dia.diaSemana || '')}">
-                                <div class="calendar-client-name" title="${escapeHtml(getClienteDisplayName(cliente))}">
-                                    <i class="bi bi-building me-1"></i>
-                                    ${escapeHtml(getClienteDisplayName(cliente))}
-                                </div>
-                                <div class="calendar-client-time">
-                                    <i class="bi bi-clock me-1"></i>
-                                    ${formatHoras(cliente.totalHoras)} hs
-                                </div>
-                                ${direccionShort ? `
-                                    <div class="calendar-client-address" title="${escapeHtml(cliente.direccion)}">
-                                        <i class="bi bi-geo-alt me-1"></i>
-                                        ${escapeHtml(direccionShort)}
-                                    </div>
-                                ` : ''}
-                                ${empleadosUnique.length ? `
-                                    <div class="calendar-client-employees">
-                                        ${empleadosUnique.map(emp => `<span class="calendar-emp-chip">${escapeHtml(emp)}</span>`).join('')}
-                                    </div>
-                                ` : ''}
-                                <div class="calendar-client-expand">
-                                    <i class="bi bi-eye"></i> Ver detalles
-                                </div>
-                            </div>
-                        `;
+                        const displayName = getClienteDisplayName(cliente);
+                        const card = Dom.el('div', {
+                            className: 'calendar-client-card calendar-client-card--summary',
+                            dataset: {
+                                clienteId: cliente.idCliente || '',
+                                clienteNombre: displayName,
+                                dia: dia.diaSemana || ''
+                            }
+                        });
+                        card.appendChild(
+                            Dom.el('div', { className: 'calendar-client-name', title: displayName }, [
+                                Dom.el('i', { className: 'bi bi-building me-1' }),
+                                Dom.text(displayName)
+                            ])
+                        );
+                        card.appendChild(
+                            Dom.el('div', { className: 'calendar-client-time' }, [
+                                Dom.el('i', { className: 'bi bi-clock me-1' }),
+                                Dom.text(`${formatHoras(cliente.totalHoras)} hs`)
+                            ])
+                        );
+                        if (direccionShort) {
+                            card.appendChild(
+                                Dom.el('div', { className: 'calendar-client-address', title: cliente.direccion || '' }, [
+                                    Dom.el('i', { className: 'bi bi-geo-alt me-1' }),
+                                    Dom.text(direccionShort)
+                                ])
+                            );
+                        }
+                        if (empleadosUnique.length) {
+                            const chips = Dom.el('div', { className: 'calendar-client-employees' });
+                            empleadosUnique.forEach(emp => {
+                                chips.appendChild(Dom.el('span', { className: 'calendar-emp-chip', text: emp }));
+                            });
+                            card.appendChild(chips);
+                        }
+                        card.appendChild(
+                            Dom.el('div', { className: 'calendar-client-expand' }, [
+                                Dom.el('i', { className: 'bi bi-eye' }),
+                                Dom.text(' Ver detalles')
+                            ])
+                        );
+                        card.addEventListener('click', () => {
+                            showClientDetails(card.dataset.clienteId, card.dataset.clienteNombre, card.dataset.dia);
+                        });
+                        content.appendChild(card);
                     });
                 } else {
-                    html += `
-                        <div class="calendar-no-work">
-                            <i class="bi bi-moon-stars opacity-50"></i>
-                            <span>Sin asignaciones</span>
-                        </div>
-                    `;
+                    content.appendChild(
+                        Dom.el('div', { className: 'calendar-no-work' }, [
+                            Dom.el('i', { className: 'bi bi-moon-stars opacity-50' }),
+                            Dom.el('span', { text: 'Sin asignaciones' })
+                        ])
+                    );
                 }
 
-                html += `
-                        </div>
-                    </div>
-                `;
+                day.appendChild(header);
+                day.appendChild(content);
+                row.appendChild(day);
             });
 
-            html += `
-                    </div>
-                </div>
-            `;
+            container.appendChild(grid);
+        }
 
-            container.innerHTML = html;
-
-            container.querySelectorAll('.calendar-client-card').forEach(card => {
-                card.addEventListener('click', () => {
-                    const clienteId = card.dataset.clienteId;
-                    const clienteNombre = card.dataset.clienteNombre;
-                    const dia = card.dataset.dia;
-                    showClientDetails(clienteId, clienteNombre, dia);
-                });
+        function buildInfoRow(iconClass, content, alignStart) {
+            const row = Dom.el('div', {
+                className: alignStart ? 'd-flex align-items-start gap-2' : 'd-flex align-items-center gap-2'
             });
+            row.appendChild(Dom.el('i', { className: iconClass + (alignStart ? ' mt-1' : '') }));
+            Dom.append(row, content);
+            return row;
+        }
+
+        function buildLabelValue(label, value) {
+            return Dom.el('span', null, [
+                Dom.el('strong', { text: label }),
+                Dom.text(' ' + value)
+            ]);
         }
 
         function showClientDetails(clienteId, clienteNombre, diaSemana) {
@@ -273,135 +386,161 @@
             if (!clienteData) return;
 
             const asignaciones = Array.isArray(clienteData.asignaciones) ? clienteData.asignaciones : [];
-            const asignacionesHtml = asignaciones.length
-                ? asignaciones.map(a => {
+            const modalId = 'client-calendar-detail-modal';
+            const oldModal = document.getElementById(modalId);
+            if (oldModal) oldModal.remove();
+
+            const titleText = getClienteDisplayName(clienteData) || clienteNombre || 'Cliente';
+            const header = Dom.el('div', { className: 'modal-header bg-primary text-white' }, [
+                Dom.el('h5', { className: 'modal-title' }, [
+                    Dom.el('i', { className: 'bi bi-building me-2' }),
+                    Dom.text(titleText)
+                ]),
+                Dom.el('button', {
+                    type: 'button',
+                    className: 'btn-close btn-close-white',
+                    'data-bs-dismiss': 'modal',
+                    'aria-label': 'Cerrar'
+                })
+            ]);
+
+            const dayInfoList = Dom.el('div', { className: 'd-flex flex-column gap-2' }, [
+                buildInfoRow('bi bi-hourglass-split text-primary', buildLabelValue('Horas:', `${formatHoras(clienteData.totalHoras)} hs`)),
+                buildInfoRow('bi bi-people text-primary', buildLabelValue('Empleados:', String(asignaciones.length)))
+            ]);
+
+            const dayInfo = Dom.el('div', { className: 'col-md-6' }, [
+                Dom.el('h6', { className: 'text-muted text-uppercase small mb-3' }, [
+                    Dom.el('i', { className: 'bi bi-info-circle me-1' }),
+                    Dom.text('Información del día')
+                ]),
+                dayInfoList
+            ]);
+
+            if (clienteData.observaciones) {
+                dayInfoList.appendChild(
+                    buildInfoRow(
+                        'bi bi-sticky text-warning',
+                        buildLabelValue('Obs:', String(clienteData.observaciones || '')),
+                        true
+                    )
+                );
+            }
+
+            const clientInfoList = Dom.el('div', { className: 'd-flex flex-column gap-2' });
+            if (clienteData.idCliente) {
+                clientInfoList.appendChild(
+                    buildInfoRow('bi bi-hash text-secondary', buildLabelValue('ID:', String(clienteData.idCliente)))
+                );
+            }
+            if (clienteData.direccion) {
+                clientInfoList.appendChild(
+                    buildInfoRow('bi bi-geo-alt text-danger', Dom.el('span', { text: String(clienteData.direccion) }), true)
+                );
+            }
+            if (clienteData.telefono) {
+                const tel = String(clienteData.telefono);
+                clientInfoList.appendChild(
+                    buildInfoRow('bi bi-telephone text-success', Dom.el('a', { href: 'tel:' + tel, text: tel }))
+                );
+            }
+            if (clienteData.encargado) {
+                clientInfoList.appendChild(
+                    buildInfoRow('bi bi-person text-info', buildLabelValue('Contacto:', String(clienteData.encargado)))
+                );
+            }
+            if (clienteData.correo) {
+                const mail = String(clienteData.correo);
+                clientInfoList.appendChild(
+                    buildInfoRow('bi bi-envelope text-primary', Dom.el('a', { href: 'mailto:' + mail, text: mail }))
+                );
+            }
+
+            const clientInfo = Dom.el('div', { className: 'col-md-6' }, [
+                Dom.el('h6', { className: 'text-muted text-uppercase small mb-3' }, [
+                    Dom.el('i', { className: 'bi bi-building me-1' }),
+                    Dom.text('Datos del cliente')
+                ]),
+                clientInfoList
+            ]);
+
+            const asignacionesList = Dom.el('div', { className: 'd-flex flex-column gap-2' });
+            if (asignaciones.length) {
+                asignaciones.forEach(a => {
                     const empleado = a.empleado || 'Sin asignar';
                     const hora = a.horaEntrada ? ` · ${a.horaEntrada}` : '';
                     const horas = a.horasPlan ? ` · ${formatHoras(a.horasPlan)} hs` : '';
-                    return `
-                        <div class="d-flex align-items-center gap-2">
-                            <i class="bi bi-person text-primary"></i>
-                            <span>${escapeHtml(empleado)}${escapeHtml(hora)}${escapeHtml(horas)}</span>
-                        </div>
-                    `;
-                }).join('')
-                : '<div class="text-muted small">Sin asignaciones</div>';
+                    asignacionesList.appendChild(
+                        buildInfoRow(
+                            'bi bi-person text-primary',
+                            Dom.el('span', { text: `${empleado}${hora}${horas}` })
+                        )
+                    );
+                });
+            } else {
+                asignacionesList.appendChild(Dom.el('div', { className: 'text-muted small', text: 'Sin asignaciones' }));
+            }
 
-            const modalHtml = `
-                <div class="modal fade" id="client-calendar-detail-modal" tabindex="-1">
-                    <div class="modal-dialog modal-lg modal-dialog-centered">
-                        <div class="modal-content">
-                            <div class="modal-header bg-primary text-white">
-                                <h5 class="modal-title">
-                                    <i class="bi bi-building me-2"></i>
-                                    ${escapeHtml(getClienteDisplayName(clienteData))}
-                                </h5>
-                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                            </div>
-                            <div class="modal-body">
-                                <div class="row g-4">
-                                    <div class="col-md-6">
-                                        <h6 class="text-muted text-uppercase small mb-3">
-                                            <i class="bi bi-info-circle me-1"></i> Información del día
-                                        </h6>
-                                        <div class="d-flex flex-column gap-2">
-                                            <div class="d-flex align-items-center gap-2">
-                                                <i class="bi bi-hourglass-split text-primary"></i>
-                                                <span><strong>Horas:</strong> ${formatHoras(clienteData.totalHoras)} hs</span>
-                                            </div>
-                                            <div class="d-flex align-items-center gap-2">
-                                                <i class="bi bi-people text-primary"></i>
-                                                <span><strong>Empleados:</strong> ${asignaciones.length}</span>
-                                            </div>
-                                            ${clienteData.observaciones ? `
-                                                <div class="d-flex align-items-start gap-2">
-                                                    <i class="bi bi-sticky text-warning mt-1"></i>
-                                                    <span><strong>Obs:</strong> ${escapeHtml(clienteData.observaciones)}</span>
-                                                </div>
-                                            ` : ''}
-                                        </div>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <h6 class="text-muted text-uppercase small mb-3">
-                                            <i class="bi bi-building me-1"></i> Datos del cliente
-                                        </h6>
-                                        <div class="d-flex flex-column gap-2">
-                                            ${clienteData.idCliente ? `
-                                                <div class="d-flex align-items-center gap-2">
-                                                    <i class="bi bi-hash text-secondary"></i>
-                                                    <span><strong>ID:</strong> ${escapeHtml(clienteData.idCliente)}</span>
-                                                </div>
-                                            ` : ''}
-                                            ${clienteData.direccion ? `
-                                                <div class="d-flex align-items-start gap-2">
-                                                    <i class="bi bi-geo-alt text-danger mt-1"></i>
-                                                    <span>${escapeHtml(clienteData.direccion)}</span>
-                                                </div>
-                                            ` : ''}
-                                            ${clienteData.telefono ? `
-                                                <div class="d-flex align-items-center gap-2">
-                                                    <i class="bi bi-telephone text-success"></i>
-                                                    <a href="tel:${escapeHtml(clienteData.telefono)}">${escapeHtml(clienteData.telefono)}</a>
-                                                </div>
-                                            ` : ''}
-                                            ${clienteData.encargado ? `
-                                                <div class="d-flex align-items-center gap-2">
-                                                    <i class="bi bi-person text-info"></i>
-                                                    <span><strong>Contacto:</strong> ${escapeHtml(clienteData.encargado)}</span>
-                                                </div>
-                                            ` : ''}
-                                            ${clienteData.correo ? `
-                                                <div class="d-flex align-items-center gap-2">
-                                                    <i class="bi bi-envelope text-primary"></i>
-                                                    <a href="mailto:${escapeHtml(clienteData.correo)}">${escapeHtml(clienteData.correo)}</a>
-                                                </div>
-                                            ` : ''}
-                                        </div>
-                                    </div>
-                                </div>
+            const asignacionesSection = Dom.el('div', { className: 'mt-4' }, [
+                Dom.el('h6', { className: 'text-muted text-uppercase small mb-3' }, [
+                    Dom.el('i', { className: 'bi bi-people me-1' }),
+                    Dom.text('Empleados asignados')
+                ]),
+                Dom.el('div', { className: 'lt-surface p-3' }, asignacionesList)
+            ]);
 
-                                <div class="mt-4">
-                                    <h6 class="text-muted text-uppercase small mb-3">
-                                        <i class="bi bi-people me-1"></i> Empleados asignados
-                                    </h6>
-                                    <div class="lt-surface p-3">
-                                        <div class="d-flex flex-column gap-2">
-                                            ${asignacionesHtml}
-                                        </div>
-                                    </div>
-                                </div>
+            const photosContainer = Dom.el('div', {
+                className: 'row g-3',
+                id: 'client-calendar-photos-container'
+            });
 
-                                <div id="client-calendar-photos" class="mt-4 d-none">
-                                    <h6 class="text-muted text-uppercase small mb-3">
-                                        <i class="bi bi-images me-1"></i> Fotos del local
-                                    </h6>
-                                    <div class="row g-3" id="client-calendar-photos-container">
-                                        <div class="text-center text-muted py-3">
-                                            <div class="spinner-border spinner-border-sm"></div>
-                                            Cargando fotos...
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="modal-footer">
-                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
-                                ${clienteData.direccion ? `
-                                    <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(clienteData.direccion)}" 
-                                       target="_blank" class="btn btn-outline-primary">
-                                        <i class="bi bi-map me-1"></i> Ver en mapa
-                                    </a>
-                                ` : ''}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
+            const photosSection = Dom.el('div', { id: 'client-calendar-photos', className: 'mt-4 d-none' }, [
+                Dom.el('h6', { className: 'text-muted text-uppercase small mb-3' }, [
+                    Dom.el('i', { className: 'bi bi-images me-1' }),
+                    Dom.text('Fotos del local')
+                ]),
+                photosContainer
+            ]);
 
-            const oldModal = document.getElementById('client-calendar-detail-modal');
-            if (oldModal) oldModal.remove();
+            const body = Dom.el('div', { className: 'modal-body' }, [
+                Dom.el('div', { className: 'row g-4' }, [dayInfo, clientInfo]),
+                asignacionesSection,
+                photosSection
+            ]);
 
-            document.body.insertAdjacentHTML('beforeend', modalHtml);
-            const modalEl = document.getElementById('client-calendar-detail-modal');
+            const footer = Dom.el('div', { className: 'modal-footer' }, [
+                Dom.el('button', {
+                    type: 'button',
+                    className: 'btn btn-secondary',
+                    'data-bs-dismiss': 'modal'
+                }, 'Cerrar')
+            ]);
+
+            if (clienteData.direccion) {
+                const mapUrl = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(String(clienteData.direccion));
+                footer.appendChild(
+                    Dom.el('a', {
+                        href: mapUrl,
+                        target: '_blank',
+                        className: 'btn btn-outline-primary'
+                    }, [
+                        Dom.el('i', { className: 'bi bi-map me-1' }),
+                        Dom.text('Ver en mapa')
+                    ])
+                );
+            }
+
+            const modalEl = Dom.el('div', { className: 'modal fade', id: modalId, tabindex: '-1' }, [
+                Dom.el('div', { className: 'modal-dialog modal-lg modal-dialog-centered' }, [
+                    Dom.el('div', { className: 'modal-content' }, [
+                        header,
+                        body,
+                        footer
+                    ])
+                ])
+            ]);
+
+            document.body.appendChild(modalEl);
             const modal = new bootstrap.Modal(modalEl);
             modal.show();
 
@@ -409,7 +548,7 @@
                 modalEl.remove();
             });
 
-            if (clienteId && typeof ApiService !== 'undefined') {
+            if (clienteId && ClientCalendarData && typeof ClientCalendarData.listClientMedia === 'function') {
                 loadClientPhotos(clienteId);
             }
         }
@@ -420,14 +559,14 @@
 
             if (!photosSection || !photosContainer) return;
 
-            photosContainer.innerHTML = `
-                <div class="text-center text-muted py-3">
-                    <div class="spinner-border spinner-border-sm"></div>
-                    Cargando fotos...
-                </div>
-            `;
+            renderLoadingState(photosContainer, 'Cargando fotos...');
 
-            ApiService.call('listClientMedia', clienteId)
+            if (!ClientCalendarData || typeof ClientCalendarData.listClientMedia !== 'function') {
+                photosSection.classList.add('d-none');
+                return;
+            }
+
+            ClientCalendarData.listClientMedia(clienteId)
                 .then(media => {
                     const fachada = media && Array.isArray(media.fachada) ? media.fachada : [];
                     const llave = media && Array.isArray(media.llave) ? media.llave : [];
@@ -438,44 +577,51 @@
                     }
 
                     photosSection.classList.remove('d-none');
+                    Dom.clear(photosContainer);
 
                     const buildGroup = (items, title, icon, iconClass) => {
                         const count = items.length;
-                        const thumbs = count
-                            ? items.map(photo => {
+                        const header = Dom.el('div', { className: 'd-flex align-items-center justify-content-between mb-2' }, [
+                            Dom.el('div', { className: 'd-flex align-items-center gap-2' }, [
+                                Dom.el('i', { className: `bi ${icon} ${iconClass}` }),
+                                Dom.el('span', { className: 'fw-semibold small', text: title })
+                            ]),
+                            Dom.el('span', { className: 'small text-muted', text: `${count} foto${count === 1 ? '' : 's'}` })
+                        ]);
+
+                        const thumbs = Dom.el('div', { className: 'd-flex flex-wrap gap-2' });
+                        if (count) {
+                            items.forEach(photo => {
                                 const mime = photo.mimeType || 'image/jpeg';
                                 const base64 = photo.thumbnailBase64 || '';
                                 const dataUrl = base64 ? `data:${mime};base64,${base64}` : '';
-                                return `
-                                    <button type="button" class="client-photo-thumb" data-photo-id="${escapeHtml(photo.fileId || '')}" title="${escapeHtml(photo.name || title)}">
-                                        ${dataUrl ? `<img src="${dataUrl}" alt="${escapeHtml(title)}">` : '<i class=\"bi bi-image\"></i>'}
-                                    </button>
-                                `;
-                            }).join('')
-                            : '<div class="text-muted small">Sin fotos</div>';
+                                const btn = Dom.el('button', {
+                                    type: 'button',
+                                    className: 'client-photo-thumb',
+                                    dataset: { photoId: photo.fileId || '' },
+                                    title: photo.name || title
+                                });
+                                if (dataUrl) {
+                                    btn.appendChild(Dom.el('img', { src: dataUrl, alt: title }));
+                                } else {
+                                    btn.appendChild(Dom.el('i', { className: 'bi bi-image' }));
+                                }
+                                thumbs.appendChild(btn);
+                            });
+                        } else {
+                            thumbs.appendChild(Dom.el('div', { className: 'text-muted small', text: 'Sin fotos' }));
+                        }
 
-                        return `
-                            <div class="col-12 col-md-6">
-                                <div class="lt-surface p-2 h-100">
-                                    <div class="d-flex align-items-center justify-content-between mb-2">
-                                        <div class="d-flex align-items-center gap-2">
-                                            <i class="bi ${icon} ${iconClass}"></i>
-                                            <span class="fw-semibold small">${escapeHtml(title)}</span>
-                                        </div>
-                                        <span class="small text-muted">${count} foto${count === 1 ? '' : 's'}</span>
-                                    </div>
-                                    <div class="d-flex flex-wrap gap-2">
-                                        ${thumbs}
-                                    </div>
-                                </div>
-                            </div>
-                        `;
+                        return Dom.el('div', { className: 'col-12 col-md-6' }, [
+                            Dom.el('div', { className: 'lt-surface p-2 h-100' }, [
+                                header,
+                                thumbs
+                            ])
+                        ]);
                     };
 
-                    photosContainer.innerHTML = `
-                        ${buildGroup(fachada, 'Fachadas', 'bi-building', 'text-primary')}
-                        ${buildGroup(llave, 'Llaves', 'bi-key-fill', 'text-warning')}
-                    `;
+                    photosContainer.appendChild(buildGroup(fachada, 'Fachadas', 'bi-building', 'text-primary'));
+                    photosContainer.appendChild(buildGroup(llave, 'Llaves', 'bi-key-fill', 'text-warning'));
 
                     photosContainer.querySelectorAll('[data-photo-id]').forEach(btn => {
                         btn.addEventListener('click', () => {
@@ -490,32 +636,38 @@
         }
 
         function viewPhoto(fileId) {
-            if (!fileId || typeof ApiService === 'undefined') return;
+            if (!fileId || !ClientCalendarData || typeof ClientCalendarData.getClientMediaImage !== 'function') return;
 
-            ApiService.call('getClientMediaImage', fileId, 1600)
+            ClientCalendarData.getClientMediaImage(fileId, 1600)
                 .then(imgData => {
                     if (imgData && imgData.base64) {
                         const dataUrl = `data:${imgData.mimeType || 'image/jpeg'};base64,${imgData.base64}`;
-                        const modalHtml = `
-                            <div class="modal fade" id="client-calendar-photo-modal" tabindex="-1">
-                                <div class="modal-dialog modal-xl modal-dialog-centered">
-                                    <div class="modal-content bg-dark">
-                                        <div class="modal-body p-0 text-center">
-                                            <button type="button" class="btn-close btn-close-white position-absolute top-0 end-0 m-3" 
-                                                    data-bs-dismiss="modal" style="z-index: 10;"></button>
-                                            <img src="${dataUrl}" alt="Foto" 
-                                                 style="max-width: 100%; max-height: 90vh; object-fit: contain;">
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        `;
-
-                        const oldModal = document.getElementById('client-calendar-photo-modal');
+                        const modalId = 'client-calendar-photo-modal';
+                        const oldModal = document.getElementById(modalId);
                         if (oldModal) oldModal.remove();
 
-                        document.body.insertAdjacentHTML('beforeend', modalHtml);
-                        const modalEl = document.getElementById('client-calendar-photo-modal');
+                        const modalEl = Dom.el('div', { className: 'modal fade', id: modalId, tabindex: '-1' }, [
+                            Dom.el('div', { className: 'modal-dialog modal-xl modal-dialog-centered' }, [
+                                Dom.el('div', { className: 'modal-content bg-dark' }, [
+                                    Dom.el('div', { className: 'modal-body p-0 text-center position-relative' }, [
+                                        Dom.el('button', {
+                                            type: 'button',
+                                            className: 'btn-close btn-close-white position-absolute top-0 end-0 m-3',
+                                            'data-bs-dismiss': 'modal',
+                                            'aria-label': 'Cerrar',
+                                            style: 'z-index: 10;'
+                                        }),
+                                        Dom.el('img', {
+                                            src: dataUrl,
+                                            alt: 'Foto',
+                                            style: 'max-width: 100%; max-height: 90vh; object-fit: contain;'
+                                        })
+                                    ])
+                                ])
+                            ])
+                        ]);
+
+                        document.body.appendChild(modalEl);
                         const modal = new bootstrap.Modal(modalEl);
                         modal.show();
 
@@ -555,9 +707,19 @@
         }
 
         function attachEvents(container) {
+            if (eventsController) {
+                eventsController.abort();
+            }
+            eventsController = new AbortController();
+            const signal = eventsController.signal;
+            const on = (el, evt, handler) => {
+                if (!el) return;
+                el.addEventListener(evt, handler, { signal });
+            };
+
             const select = container.querySelector('#client-calendar-select');
             if (select) {
-                select.addEventListener('change', function () {
+                on(select, 'change', function () {
                     const selected = this.options[this.selectedIndex];
                     currentClientId = selected && selected.dataset ? (selected.dataset.id || '') : '';
                     currentClientName = selected && selected.dataset ? (selected.dataset.nombre || '') : '';
@@ -567,7 +729,7 @@
 
             const prevBtn = container.querySelector('#client-calendar-prev');
             if (prevBtn) {
-                prevBtn.addEventListener('click', () => {
+                on(prevBtn, 'click', () => {
                     currentWeekStart = addDays(currentWeekStart, -7);
                     loadSchedule();
                 });
@@ -575,7 +737,7 @@
 
             const nextBtn = container.querySelector('#client-calendar-next');
             if (nextBtn) {
-                nextBtn.addEventListener('click', () => {
+                on(nextBtn, 'click', () => {
                     currentWeekStart = addDays(currentWeekStart, 7);
                     loadSchedule();
                 });
@@ -583,7 +745,7 @@
 
             const todayBtn = container.querySelector('#client-calendar-today');
             if (todayBtn) {
-                todayBtn.addEventListener('click', () => {
+                on(todayBtn, 'click', () => {
                     currentWeekStart = getMondayOfWeek(new Date());
                     loadSchedule();
                 });
@@ -591,7 +753,7 @@
 
             const refreshBtn = container.querySelector('#client-calendar-refresh');
             if (refreshBtn) {
-                refreshBtn.addEventListener('click', () => loadSchedule());
+                on(refreshBtn, 'click', () => loadSchedule());
             }
         }
 

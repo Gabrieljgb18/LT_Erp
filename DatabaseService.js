@@ -213,6 +213,7 @@ var DatabaseService = (function () {
     const idxDireccion = headers.indexOf('DIRECCION');
     const idxTags = headers.indexOf('ETIQUETAS');
     const idxTipoServicio = headers.indexOf('TIPO SERVICIO');
+    const idxHoraEntrada = headers.indexOf('HORA ENTRADA');
     const idxPlaceId = headers.indexOf('MAPS PLACE ID');
     const idxLat = headers.indexOf('MAPS LAT');
     const idxLng = headers.indexOf('MAPS LNG');
@@ -245,6 +246,7 @@ var DatabaseService = (function () {
           direccion: idxDireccion > -1 ? row[idxDireccion] : '',
           tags: idxTags > -1 ? row[idxTags] : '',
           tipoServicio: idxTipoServicio > -1 ? row[idxTipoServicio] : '',
+          horaEntrada: idxHoraEntrada > -1 ? row[idxHoraEntrada] : '',
           placeId: idxPlaceId > -1 ? row[idxPlaceId] : '',
           lat: isNaN(lat) ? null : lat,
           lng: isNaN(lng) ? null : lng

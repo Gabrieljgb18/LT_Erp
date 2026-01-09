@@ -118,6 +118,15 @@ const AttendanceEmployeeSchedule = (function () {
         if (value instanceof Date && !isNaN(value)) {
             return value.toTimeString().slice(0, 5);
         }
+        if (typeof value === 'number' && !isNaN(value)) {
+            var fraction = value >= 1 ? (value % 1) : value;
+            if (fraction > 0) {
+                var totalMinutes = Math.round(fraction * 24 * 60);
+                var hh = String(Math.floor(totalMinutes / 60));
+                var mm = String(totalMinutes % 60);
+                return hh.padStart(2, '0') + ':' + mm.padStart(2, '0');
+            }
+        }
         const match = String(value).match(/(\d{1,2}):(\d{2})/);
         if (match) {
             return match[1].padStart(2, '0') + ':' + match[2];

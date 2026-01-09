@@ -1,14 +1,5 @@
 (function (global) {
-  const escapeHtml = (global.HtmlHelpers && typeof global.HtmlHelpers.escapeHtml === "function")
-    ? global.HtmlHelpers.escapeHtml
-    : function (val) {
-      return String(val == null ? "" : val)
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#39;");
-    };
+  const Dom = global.DomHelpers;
 
   function toggleControls(disabled) {
     // Don't disable search-query so users can keep typing during search
@@ -22,20 +13,21 @@
     renderLoading: function (componentId, title, message) {
       const c = document.getElementById(componentId);
       if (!c) return;
-      c.innerHTML =
-        '<div class="lt-surface lt-surface--subtle p-3">' +
-        '<div class="d-flex align-items-center gap-2">' +
-        '<div class="spinner-border spinner-border-sm text-primary" role="status"></div>' +
-        '<div class="flex-grow-1">' +
-        '<div class="small fw-bold mb-0">' +
-        escapeHtml(title) +
-        "</div>" +
-        '<div class="small text-muted">' +
-        escapeHtml(message) +
-        "</div>" +
-        "</div>" +
-        "</div>" +
-        "</div>";
+      Dom.clear(c);
+      c.appendChild(
+        Dom.el("div", { className: "lt-surface lt-surface--subtle p-3" }, [
+          Dom.el("div", { className: "d-flex align-items-center gap-2" }, [
+            Dom.el("div", {
+              className: "spinner-border spinner-border-sm text-primary",
+              role: "status"
+            }),
+            Dom.el("div", { className: "flex-grow-1" }, [
+              Dom.el("div", { className: "small fw-bold mb-0", text: title || "" }),
+              Dom.el("div", { className: "small text-muted", text: message || "" })
+            ])
+          ])
+        ])
+      );
     },
     setGlobalLoading: function (isLoading, message) {
       const badge = document.getElementById("global-loading");
@@ -45,16 +37,20 @@
       if (!badge) return;
       if (isLoading) {
         badge.classList.remove("d-none");
-        badge.innerHTML =
-          '<span class="lt-chip lt-chip--muted">' +
-          '<span class="spinner-border spinner-border-sm" role="status" style="width:12px;height:12px;"></span>' +
-          '<span>' +
-          escapeHtml(message || "Procesando...") +
-          "</span>" +
-          "</span>";
+        Dom.clear(badge);
+        badge.appendChild(
+          Dom.el("span", { className: "lt-chip lt-chip--muted" }, [
+            Dom.el("span", {
+              className: "spinner-border spinner-border-sm",
+              role: "status",
+              style: "width:12px;height:12px;"
+            }),
+            Dom.el("span", { text: message || "Procesando..." })
+          ])
+        );
       } else {
         badge.classList.add("d-none");
-        badge.innerHTML = "";
+        Dom.clear(badge);
       }
     }
   };

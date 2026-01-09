@@ -556,8 +556,7 @@ var InvoiceController = (function () {
             return RecordController.deleteRecord(FORMAT_ID, id);
         }
 
-        sheet.getRange(rowNumber, idxEstado + 1).setValue('Anulada');
-        return true;
+        return RecordController.updateRecord(FORMAT_ID, id, { 'ESTADO': 'Anulada' });
     }
 
     function generateInvoicePdf(id) {

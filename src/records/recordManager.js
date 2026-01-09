@@ -7,25 +7,15 @@
     const RecordManager = (() => {
         let currentMode = "create"; // "create" | "edit"
         let selectedRowNumber = null;
+        const RecordsData = global.RecordsData || null;
 
         function refreshReferencesIfNeeded(tipoFormato) {
-            if (!global.DomainMeta || typeof global.DomainMeta.getMeta !== "function") return;
-            const meta = global.DomainMeta.getMeta(tipoFormato);
-            if (!meta || !meta.refreshReference) return;
-            if (!global.ReferenceService) return;
-
-            const refreshFn = typeof global.ReferenceService.refresh === "function"
-                ? global.ReferenceService.refresh
-                : global.ReferenceService.load;
-
-            refreshFn()
+            if (!RecordsData || typeof RecordsData.refreshReferenceDataIfNeeded !== "function") return;
+            RecordsData.refreshReferenceDataIfNeeded(tipoFormato)
                 .then(function (refData) {
-                    if (global.FormManager && typeof global.FormManager.updateReferenceData === "function") {
-                        global.FormManager.updateReferenceData(refData || global.ReferenceService.get());
+                    if (refData && global.FormManager && typeof global.FormManager.updateReferenceData === "function") {
+                        global.FormManager.updateReferenceData(refData);
                     }
-                })
-                .catch(function (err) {
-                    console.warn("No se pudieron actualizar referencias:", err);
                 });
         }
 
@@ -227,7 +217,12 @@
 
             if (currentMode === "edit" && selectedRowNumber) {
                 // Update existing (selectedRowNumber now contains ID)
-                return ApiService.call('updateRecord', tipoFormato, selectedRowNumber, record)
+                if (!RecordsData || typeof RecordsData.updateRecord !== "function") {
+                    if (Alerts) Alerts.showAlert("No se pudo actualizar el registro.", "danger");
+                    UiState.setGlobalLoading(false);
+                    return Promise.resolve(false);
+                }
+                return RecordsData.updateRecord(tipoFormato, selectedRowNumber, record)
                     .then(function () {
                         if (Alerts) Alerts.showAlert("✅ Registro actualizado correctamente.", "success");
                         enterCreateMode(true);
@@ -243,7 +238,12 @@
                     });
             } else {
                 // Create new
-                return ApiService.call('saveFormRecord', tipoFormato, record)
+                if (!RecordsData || typeof RecordsData.saveRecord !== "function") {
+                    if (Alerts) Alerts.showAlert("No se pudo guardar el registro.", "danger");
+                    UiState.setGlobalLoading(false);
+                    return Promise.resolve(false);
+                }
+                return RecordsData.saveRecord(tipoFormato, record)
                     .then(function () {
                         if (Alerts) Alerts.showAlert("✅ Registro guardado correctamente.", "success");
                         enterCreateMode(true);
@@ -287,7 +287,13 @@
 
             UiState.setGlobalLoading(true, "Eliminando...");
 
-            ApiService.call('deleteRecord', tipoFormato, selectedRowNumber)
+            if (!RecordsData || typeof RecordsData.deleteRecord !== "function") {
+                if (Alerts) Alerts.showAlert("No se pudo eliminar el registro.", "danger");
+                UiState.setGlobalLoading(false);
+                return;
+            }
+
+            RecordsData.deleteRecord(tipoFormato, selectedRowNumber)
                 .then(function () {
                     if (Alerts) Alerts.showAlert("✅ Registro eliminado correctamente.", "success");
                     enterCreateMode(true);

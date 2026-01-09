@@ -3,60 +3,82 @@
  */
 var BulkValuesPanel = (function () {
     const containerId = 'bulk-values-panel';
+    let eventsController = null;
+    const Dom = window.DomHelpers;
 
     function render() {
         const container = document.getElementById(containerId);
+        if (!container || !Dom) return;
+
+        Dom.clear(container);
+        container.appendChild(buildCard());
+        bindEvents(container);
+    }
+
+    function bindEvents(container) {
         if (!container) return;
-
-        container.innerHTML = `
-            <div class="card shadow-sm border-0">
-                <div class="card-header bg-white py-3">
-                    <h5 class="mb-0 text-primary">
-                        <i class="bi bi-sliders me-2"></i>Valores masivos
-                    </h5>
-                    <small class="text-muted">Actualiza en bloque valores de empleados y clientes.</small>
-                </div>
-                <div class="card-body">
-                    <div class="row g-3">
-                        <div class="col-md-3">
-                            <label class="form-label small text-muted fw-semibold">Valor hora (empleados)</label>
-                            <input type="number" step="0.01" class="form-control" id="bulk-valor-hora-emp" placeholder="Ej: 2500">
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label small text-muted fw-semibold">Valor hora (clientes)</label>
-                            <input type="number" step="0.01" class="form-control" id="bulk-valor-hora-cli" placeholder="Ej: 3000">
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label small text-muted fw-semibold">Viáticos (empleados)</label>
-                            <input type="number" step="0.01" class="form-control" id="bulk-viaticos" placeholder="Ej: 500">
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label small text-muted fw-semibold">Presentismo media jornada</label>
-                            <input type="number" step="0.01" class="form-control" id="bulk-pres-media" placeholder="Ej: 1000">
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label small text-muted fw-semibold">Presentismo jornada completa</label>
-                            <input type="number" step="0.01" class="form-control" id="bulk-pres-full" placeholder="Ej: 1500">
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label small text-muted fw-semibold">IVA (%)</label>
-                            <input type="number" step="0.01" class="form-control" id="bulk-iva" placeholder="Ej: 21">
-                        </div>
-                    </div>
-
-                    <div class="d-flex justify-content-end mt-4">
-                        <button class="btn btn-primary" id="bulk-apply-btn">
-                            <i class="bi bi-arrow-repeat me-2"></i>Aplicar masivo
-                        </button>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        const btn = document.getElementById('bulk-apply-btn');
-        if (btn) {
-            btn.addEventListener('click', applyValues);
+        if (eventsController) {
+            eventsController.abort();
         }
+        eventsController = new AbortController();
+        const signal = eventsController.signal;
+        container.addEventListener('click', (e) => {
+            const btn = e.target.closest('#bulk-apply-btn');
+            if (!btn || !container.contains(btn)) return;
+            applyValues();
+        }, { signal });
+    }
+
+    function buildCard() {
+        return Dom.el('div', { className: 'card shadow-sm border-0' }, [
+            Dom.el('div', { className: 'card-header bg-white py-3' }, [
+                Dom.el('h5', { className: 'mb-0 text-primary' }, [
+                    Dom.el('i', { className: 'bi bi-sliders me-2' }),
+                    'Valores masivos'
+                ]),
+                Dom.el('small', {
+                    className: 'text-muted',
+                    text: 'Actualiza en bloque valores de empleados y clientes.'
+                })
+            ]),
+            Dom.el('div', { className: 'card-body' }, [
+                Dom.el('div', { className: 'row g-3' }, [
+                    buildInputCol('bulk-valor-hora-emp', 'Valor hora (empleados)', 'Ej: 2500'),
+                    buildInputCol('bulk-valor-hora-cli', 'Valor hora (clientes)', 'Ej: 3000'),
+                    buildInputCol('bulk-viaticos', 'Viáticos (empleados)', 'Ej: 500'),
+                    buildInputCol('bulk-pres-media', 'Presentismo media jornada', 'Ej: 1000'),
+                    buildInputCol('bulk-pres-full', 'Presentismo jornada completa', 'Ej: 1500'),
+                    buildInputCol('bulk-iva', 'IVA (%)', 'Ej: 21')
+                ]),
+                Dom.el('div', { className: 'd-flex justify-content-end mt-4' },
+                    Dom.el('button', {
+                        className: 'btn btn-primary',
+                        id: 'bulk-apply-btn',
+                        type: 'button'
+                    }, [
+                        Dom.el('i', { className: 'bi bi-arrow-repeat me-2' }),
+                        'Aplicar masivo'
+                    ])
+                )
+            ])
+        ]);
+    }
+
+    function buildInputCol(id, labelText, placeholder) {
+        return Dom.el('div', { className: 'col-md-3' }, [
+            Dom.el('label', {
+                className: 'form-label small text-muted fw-semibold',
+                for: id,
+                text: labelText
+            }),
+            Dom.el('input', {
+                type: 'number',
+                step: '0.01',
+                className: 'form-control',
+                id: id,
+                placeholder: placeholder || ''
+            })
+        ]);
     }
 
     function applyValues() {
@@ -71,15 +93,17 @@ var BulkValuesPanel = (function () {
 
         UiState && UiState.setGlobalLoading(true, 'Aplicando valores...');
 
-        ApiService.call('applyMassValues', payload)
-            .then(() => {
+        const data = global.BulkValuesData;
+        if (!data || typeof data.applyMassValues !== 'function') {
+            Alerts && Alerts.showAlert('No se pudo aplicar valores: servicio no disponible.', 'danger');
+            UiState && UiState.setGlobalLoading(false);
+            return;
+        }
+        data.applyMassValues(payload)
+            .then((refData) => {
                 Alerts && Alerts.showAlert('Valores actualizados masivamente.', 'success');
-                if (ReferenceService) {
-                    ReferenceService.load().then(() => {
-                        if (FormManager) {
-                            FormManager.updateReferenceData(ReferenceService.get());
-                        }
-                    });
+                if (FormManager && refData) {
+                    FormManager.updateReferenceData(refData);
                 }
             })
             .catch(err => {

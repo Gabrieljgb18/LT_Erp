@@ -8,9 +8,19 @@
         let currentFormat = null;
         let allRecords = [];
         let currentEditingRecord = null;
+        let eventsController = null;
+        const Dom = global.DomHelpers;
+        const RecordsData = global.RecordsData || null;
 
         function formatDateForGrid(value) {
             if (!value) return '';
+
+            if (typeof DomainHelpers !== "undefined" && DomainHelpers && typeof DomainHelpers.parseDate === "function") {
+                const parsed = DomainHelpers.parseDate(value);
+                if (parsed && !isNaN(parsed.getTime())) {
+                    return parsed.toLocaleDateString('es-ES');
+                }
+            }
 
             if (Object.prototype.toString.call(value) === '[object Date]') {
                 const d0 = value;
@@ -82,40 +92,35 @@
             // Renderizar headers
             const headersRow = document.getElementById('grid-headers');
             if (headersRow) {
-                headersRow.innerHTML = '';
+                Dom.clear(headersRow);
 
                 relevantFields.forEach(field => {
-                    const th = document.createElement('th');
-                    th.textContent = field.label;
-                    headersRow.appendChild(th);
+                    headersRow.appendChild(Dom.el('th', { text: field.label }));
                 });
 
                 // Columna de acciones
-                const thActions = document.createElement('th');
-                thActions.textContent = 'Acciones';
-                thActions.style.width = '150px';
-                thActions.style.textAlign = 'center';
-                headersRow.appendChild(thActions);
+                headersRow.appendChild(Dom.el('th', {
+                    text: 'Acciones',
+                    style: 'width: 150px; text-align: center;'
+                }));
             }
 
             // Renderizar body
             const tbody = document.getElementById('grid-body');
             if (!tbody) return;
 
-            tbody.innerHTML = '';
+            Dom.clear(tbody);
 
             if (!allRecords.length) {
-                const tr = document.createElement('tr');
-                const td = document.createElement('td');
-                td.colSpan = relevantFields.length + 1;
-                td.className = 'text-center text-muted py-5';
-                td.textContent = 'No hay registros para mostrar';
-                tr.appendChild(td);
-                tbody.appendChild(tr);
+                tbody.appendChild(Dom.el('tr', null, Dom.el('td', {
+                    colSpan: relevantFields.length + 1,
+                    className: 'text-center text-muted py-5',
+                    text: 'No hay registros para mostrar'
+                })));
                 return;
             }
 
-            allRecords.forEach(record => {
+            allRecords.forEach((record, idx) => {
                 const tr = document.createElement('tr');
 
                 relevantFields.forEach(field => {
@@ -166,21 +171,21 @@
                 });
 
                 // Botones de acción - inline y más pequeños
-                const tdActions = document.createElement('td');
-                tdActions.style.textAlign = 'center';
-                tdActions.style.whiteSpace = 'nowrap';
+                const tdActions = Dom.el('td', {
+                    style: 'text-align: center; white-space: nowrap;'
+                });
 
-                const btnEdit = document.createElement('button');
-                btnEdit.className = 'btn btn-sm btn-outline-primary lt-btn-icon me-1';
-                btnEdit.innerHTML = '<i class=\"bi bi-pencil-fill\"></i>';
-                btnEdit.title = 'Editar';
-                btnEdit.onclick = () => editRecord(record);
+                const btnEdit = Dom.el('button', {
+                    className: 'btn btn-sm btn-outline-primary lt-btn-icon me-1',
+                    title: 'Editar',
+                    dataset: { gridAction: "edit", index: String(idx) }
+                }, Dom.el('i', { className: 'bi bi-pencil-fill' }));
 
-                const btnDelete = document.createElement('button');
-                btnDelete.className = 'btn btn-sm btn-outline-danger lt-btn-icon';
-                btnDelete.innerHTML = '<i class=\"bi bi-trash-fill\"></i>';
-                btnDelete.title = 'Eliminar';
-                btnDelete.onclick = () => deleteRecord(record);
+                const btnDelete = Dom.el('button', {
+                    className: 'btn btn-sm btn-outline-danger lt-btn-icon',
+                    title: 'Eliminar',
+                    dataset: { gridAction: "delete", index: String(idx) }
+                }, Dom.el('i', { className: 'bi bi-trash-fill' }));
 
                 tdActions.appendChild(btnEdit);
                 tdActions.appendChild(btnDelete);
@@ -188,6 +193,8 @@
 
                 tbody.appendChild(tr);
             });
+
+            bindTableEvents();
         }
 
         function renderLoading(tipoFormato, message) {
@@ -200,16 +207,45 @@
             const colSpan = (visibleFields.slice(0, 5).length || 1) + 1;
             const tbody = document.getElementById('grid-body');
             if (!tbody) return;
-            tbody.innerHTML = `
-                <tr>
-                    <td class="text-center text-muted py-5" colspan="${colSpan}">
-                        <div class="d-flex flex-column align-items-center gap-2">
-                            <div class="spinner-border text-primary" role="status"></div>
-                            <div class="small">${message || "Actualizando registros..."}</div>
-                        </div>
-                    </td>
-                </tr>
-            `;
+            Dom.clear(tbody);
+            tbody.appendChild(
+                Dom.el('tr', null,
+                    Dom.el('td', {
+                        className: 'text-center text-muted py-5',
+                        colSpan: colSpan
+                    }, [
+                        Dom.el('div', { className: 'd-flex flex-column align-items-center gap-2' }, [
+                            Dom.el('div', { className: 'spinner-border text-primary', role: 'status' }),
+                            Dom.el('div', { className: 'small', text: message || 'Actualizando registros...' })
+                        ])
+                    ])
+                )
+            );
+        }
+
+        function bindTableEvents() {
+            const tbody = document.getElementById('grid-body');
+            if (!tbody) return;
+            if (eventsController) {
+                eventsController.abort();
+            }
+            eventsController = new AbortController();
+            const signal = eventsController.signal;
+            tbody.addEventListener('click', (e) => {
+                const actionBtn = e.target.closest('[data-grid-action]');
+                if (!actionBtn || !tbody.contains(actionBtn)) return;
+                const action = actionBtn.dataset.gridAction;
+                const index = Number(actionBtn.dataset.index || -1);
+                if (!Number.isInteger(index) || index < 0 || index >= allRecords.length) return;
+                const record = allRecords[index];
+                if (action === "edit") {
+                    editRecord(record);
+                    return;
+                }
+                if (action === "delete") {
+                    deleteRecord(record);
+                }
+            }, { signal });
         }
 
         /**
@@ -314,15 +350,23 @@
 
             UiState && UiState.setGlobalLoading(true, 'Eliminando...');
 
-            ApiService.call('deleteRecord', currentFormat, id)
+            if (!RecordsData || typeof RecordsData.deleteRecord !== 'function') {
+                Alerts && Alerts.showAlert('No se pudo eliminar el registro.', 'danger');
+                UiState && UiState.setGlobalLoading(false);
+                return;
+            }
+
+            RecordsData.deleteRecord(currentFormat, id)
                 .then(function () {
                     Alerts && Alerts.showAlert('✅ Registro eliminado correctamente.', 'success');
-                    if (ReferenceService) {
-                        ReferenceService.load().then(function () {
-                            if (FormManager) {
-                                FormManager.updateReferenceData(ReferenceService.get());
-                            }
-                        });
+                    if (RecordsData && typeof RecordsData.refreshReferenceData === "function") {
+                        return RecordsData.refreshReferenceData();
+                    }
+                    return null;
+                })
+                .then(function (refData) {
+                    if (refData && FormManager) {
+                        FormManager.updateReferenceData(refData);
                     }
                     refreshGrid();
                 })
@@ -395,10 +439,11 @@
             if (!currentFormat) return;
 
             // Aquí iría la lógica para recargar los datos desde el servidor
-            if (ApiService) {
+            if (RecordsData && typeof RecordsData.searchRecords === 'function') {
                 renderLoading(currentFormat, "Actualizando registros...");
-                ApiService.call('searchRecords', currentFormat, '')
+                RecordsData.searchRecords(currentFormat, '')
                     .then(records => {
+                        if (records && records.ignored) return;
                         renderGrid(currentFormat, records);
                     })
                     .catch(err => {

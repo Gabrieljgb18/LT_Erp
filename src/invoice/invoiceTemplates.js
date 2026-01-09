@@ -3,11 +3,6 @@
  */
 var InvoiceTemplates = (function () {
     function buildMainPanel(options) {
-        const opts = options || {};
-        const statusOptionsAll = opts.statusOptionsAll || "";
-        const statusOptionsDefault = opts.statusOptionsDefault || "";
-        const comprobanteOptions = opts.comprobanteOptions || "";
-
         return `
             <div class="d-flex flex-column gap-3">
             <div class="card shadow-sm">
@@ -18,8 +13,7 @@ var InvoiceTemplates = (function () {
                             <i class="bi bi-clock-history me-1"></i>Historial
                         </button>
                         <button class="btn btn-danger btn-sm" id="invoice-download-selected" disabled>
-                            <span id="invoice-download-selected-spinner" class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
-                            <span>Descargar PDF</span>
+                            <i class="bi bi-file-earmark-pdf-fill me-1"></i>Descargar PDF
                         </button>
                         <button class="btn btn-primary btn-sm" id="invoice-new-btn">
                             <i class="bi bi-plus-circle me-1"></i>Nueva factura
@@ -41,9 +35,7 @@ var InvoiceTemplates = (function () {
                         </div>
                         <div class="col-md-2">
                             <label class="form-label small text-muted fw-bold mb-1">Estado</label>
-                            <select id="invoice-filter-status" class="form-select form-select-sm">
-                                ${statusOptionsAll}
-                            </select>
+                            <select id="invoice-filter-status" class="form-select form-select-sm"></select>
                         </div>
                         <div class="col-md-2">
                             <label class="form-label small text-muted fw-bold mb-1">Desde</label>
@@ -60,10 +52,7 @@ var InvoiceTemplates = (function () {
                         </div>
                     </div>
 
-                    <div id="invoice-loading" class="text-center py-3 d-none">
-                        <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
-                        <p class="text-muted small mt-1 mb-0">Cargando...</p>
-                    </div>
+                    <div id="invoice-loading" class="text-center py-3 d-none"></div>
 
                     <div id="invoice-summary" class="row g-2 mb-3 d-none"></div>
 
@@ -90,10 +79,7 @@ var InvoiceTemplates = (function () {
                         <div id="invoice-pagination" class="d-flex justify-content-between align-items-center py-2"></div>
                     </div>
 
-                    <div id="invoice-empty" class="text-center text-muted py-4">
-                        <i class="bi bi-receipt" style="font-size: 1.5rem; opacity: 0.5;"></i>
-                        <p class="small mt-2 mb-0">No hay facturas para mostrar. Usá los filtros o creá una nueva factura.</p>
-                    </div>
+                    <div id="invoice-empty" class="text-center text-muted py-4 d-none"></div>
                 </div>
                 </div>
             </div>
@@ -137,10 +123,7 @@ var InvoiceTemplates = (function () {
                         </div>
                     </div>
 
-                    <div id="invoice-gen-loading" class="text-center py-3 d-none">
-                        <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
-                        <p class="text-muted small mt-1 mb-0">Buscando asistencia del cliente...</p>
-                    </div>
+                    <div id="invoice-gen-loading" class="text-center py-3 d-none"></div>
 
                     <div id="invoice-gen-results" class="d-none mt-3">
                         <div class="table-responsive lt-table-wrap">
@@ -160,10 +143,7 @@ var InvoiceTemplates = (function () {
                         <div id="invoice-gen-pagination" class="d-flex justify-content-between align-items-center py-2"></div>
                     </div>
 
-                    <div id="invoice-gen-empty" class="text-center text-muted py-3">
-                        <i class="bi bi-calendar4-week" style="font-size: 1.2rem; opacity: 0.5;"></i>
-                        <p class="small mt-2 mb-0">No hay registros de asistencia de este cliente en el rango indicado.</p>
-                    </div>
+                    <div id="invoice-gen-empty" class="text-center text-muted py-3 d-none"></div>
                 </div>
             </div>
 
@@ -178,10 +158,7 @@ var InvoiceTemplates = (function () {
                     </div>
                 </div>
                 <div class="card-body p-3">
-                    <div id="invoice-cov-loading" class="text-center py-3 d-none">
-                        <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
-                        <p class="text-muted small mt-1 mb-0">Calculando cobertura...</p>
-                    </div>
+                    <div id="invoice-cov-loading" class="text-center py-3 d-none"></div>
 
                     <div id="invoice-cov-summary" class="row g-2 mb-2 d-none"></div>
 
@@ -204,10 +181,7 @@ var InvoiceTemplates = (function () {
                         </div>
                     </div>
 
-                    <div id="invoice-cov-empty" class="text-center text-muted py-3">
-                        <i class="bi bi-ui-checks-grid" style="font-size: 1.2rem; opacity: 0.5;"></i>
-                        <p class="small mt-2 mb-0">Elegí un período y buscá para ver quién quedó sin facturar.</p>
-                    </div>
+                    <div id="invoice-cov-empty" class="text-center text-muted py-3 d-none"></div>
                 </div>
             </div>
             </div>
@@ -236,16 +210,12 @@ var InvoiceTemplates = (function () {
                                     </div>
                                     <div class="col-md-4">
                                         <label class="form-label">Estado</label>
-                                        <select class="form-select" id="invoice-estado">
-                                            ${statusOptionsDefault}
-                                        </select>
+                                        <select class="form-select" id="invoice-estado"></select>
                                     </div>
                                     
                                     <div class="col-md-6">
                                         <label class="form-label">Comprobante</label>
-                                        <select class="form-select" id="invoice-comprobante">
-                                            ${comprobanteOptions}
-                                        </select>
+                                        <select class="form-select" id="invoice-comprobante"></select>
                                     </div>
                                     <div class="col-md-6">
                                         <label class="form-label">Número</label>
@@ -332,9 +302,7 @@ var InvoiceTemplates = (function () {
                             <div class="row g-2 mb-3">
                                 <div class="col-md-6">
                                     <label class="form-label">Comprobante</label>
-                                    <select class="form-select" id="invoice-att-comp">
-                                        ${comprobanteOptions}
-                                    </select>
+                                    <select class="form-select" id="invoice-att-comp"></select>
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label">Número</label>

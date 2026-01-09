@@ -47,7 +47,9 @@ var RecordController = (function () {
         const results = [];
 
         data.forEach(function (row, index) {
-            const rowStrings = row.map(DataUtils.normalizeCellForSearch);
+            const rowStrings = row.map(function (cell, colIdx) {
+                return DataUtils.normalizeCellForSearch(cell, headers[colIdx]);
+            });
             const rowText = rowStrings.join(' ').toLowerCase();
 
             if (!q || rowText.indexOf(q) !== -1) {
@@ -89,7 +91,7 @@ var RecordController = (function () {
 
         headers.forEach(function (h, colIdx) {
             if (DataUtils && typeof DataUtils.normalizeCellForSearch === 'function') {
-                record[h] = DataUtils.normalizeCellForSearch(row[colIdx]);
+                record[h] = DataUtils.normalizeCellForSearch(row[colIdx], h);
             } else {
                 record[h] = row[colIdx] == null ? '' : String(row[colIdx]);
             }
@@ -194,6 +196,14 @@ var RecordController = (function () {
             headers = templateHeaders;
         }
 
+        if (typeof ValidationService !== 'undefined' && ValidationService && typeof ValidationService.validateAndNormalizeRecord === 'function') {
+            const validation = ValidationService.validateAndNormalizeRecord(tipoFormato, record, 'create', { headers: headers });
+            if (!validation.ok) {
+                throw new Error('Validacion: ' + validation.errors.join(' '));
+            }
+            record = validation.record;
+        }
+
         ensureRequiredIds(tipoFormato, record);
 
         // Si la hoja está vacía, agregar headers
@@ -291,20 +301,29 @@ var RecordController = (function () {
             currentRecord[h] = currentRowValues[idx];
         });
 
+        let incoming = newRecord;
+        if (typeof ValidationService !== 'undefined' && ValidationService && typeof ValidationService.validateAndNormalizeRecord === 'function') {
+            const validation = ValidationService.validateAndNormalizeRecord(tipoFormato, newRecord, 'update', { headers: headers, partial: true });
+            if (!validation.ok) {
+                throw new Error('Validacion: ' + validation.errors.join(' '));
+            }
+            incoming = validation.record;
+        }
+
         // Preserve valores de columnas que el frontend no envía (ej: nuevos IDs)
         headers.forEach(function (h) {
-            if (newRecord[h] === undefined && currentRecord[h] !== undefined) {
-                newRecord[h] = currentRecord[h];
+            if (incoming[h] === undefined && currentRecord[h] !== undefined) {
+                incoming[h] = currentRecord[h];
             }
         });
 
         // Ensure ID is set (frontend doesn't send ID field)
-        newRecord['ID'] = id;
+        incoming['ID'] = id;
 
-        ensureRequiredIds(tipoFormato, newRecord);
+        ensureRequiredIds(tipoFormato, incoming);
 
         // Build new row values with ID in correct position
-        const newRowValues = buildRowValues(headers, newRecord);
+        const newRowValues = buildRowValues(headers, incoming);
 
         // Verify ID is in correct position (safety check)
         const idxId = headers.indexOf('ID');
@@ -319,13 +338,13 @@ var RecordController = (function () {
         // Log value changes for CLIENTES
         if (tipoFormato === 'CLIENTES') {
             const oldValor = currentRecord['VALOR HORA'];
-            const newValor = newRecord['VALOR HORA'];
-            const clienteNombre = newRecord['NOMBRE'] || newRecord['RAZON SOCIAL'] || '';
+            const newValor = incoming['VALOR HORA'];
+            const clienteNombre = incoming['NOMBRE'] || incoming['RAZON SOCIAL'] || '';
             if (clienteNombre && newValor !== undefined && newValor !== '' && newValor !== oldValor) {
                 DatabaseService.appendHoraLogCliente(clienteNombre, newValor);
             }
             if (DatabaseService && typeof DatabaseService.upsertClientTags === 'function') {
-                const tags = newRecord['ETIQUETAS'];
+                const tags = incoming['ETIQUETAS'];
                 if (tags) DatabaseService.upsertClientTags(tags);
             }
         }
@@ -333,8 +352,8 @@ var RecordController = (function () {
         // Log value changes for EMPLEADOS
         if (tipoFormato === 'EMPLEADOS') {
             const oldValor = currentRecord['VALOR DE HORA'];
-            const newValor = newRecord['VALOR DE HORA'];
-            const empleadoNombre = newRecord['EMPLEADO'] || '';
+            const newValor = incoming['VALOR DE HORA'];
+            const empleadoNombre = incoming['EMPLEADO'] || '';
             if (empleadoNombre && newValor !== undefined && newValor !== '' && newValor !== oldValor) {
                 DatabaseService.appendHoraLogEmpleado(empleadoNombre, newValor);
             }
@@ -399,8 +418,16 @@ var RecordController = (function () {
                 'MEDIO DE PAGO': medioPago || '',
                 'OBSERVACIONES': obs || ''
             };
+            let normalized = valuesByHeader;
+            if (typeof ValidationService !== 'undefined' && ValidationService && typeof ValidationService.validateAndNormalizeRecord === 'function') {
+                const validation = ValidationService.validateAndNormalizeRecord('PAGOS_EMP', valuesByHeader, 'create', { headers: headers });
+                if (!validation.ok) {
+                    throw new Error('Validacion: ' + validation.errors.join(' '));
+                }
+                normalized = validation.record;
+            }
             const row = headers.map((header) => {
-                return valuesByHeader.hasOwnProperty(header) ? valuesByHeader[header] : '';
+                return normalized.hasOwnProperty(header) ? normalized[header] : '';
             });
             sheet.appendRow(row);
         } finally {

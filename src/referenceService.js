@@ -58,6 +58,13 @@
       return state.loaded;
     }
 
+    function ensureLoaded() {
+      if (state.loaded) {
+        return Promise.resolve(state.data);
+      }
+      return load();
+    }
+
     function refresh() {
       return load(true);
     }
@@ -85,6 +92,7 @@
 
     return {
       load,
+      ensureLoaded,
       refresh,
       subscribe,
       get,

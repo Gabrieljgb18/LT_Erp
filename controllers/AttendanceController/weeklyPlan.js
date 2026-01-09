@@ -206,7 +206,37 @@ const AttendanceWeeklyPlan = (function () {
         }
         console.log("Iniciando saveWeeklyPlanForClient para:", cliente || idClienteStr);
 
-        items = items || [];
+        if (originalVigencia && typeof originalVigencia === "object" && !Array.isArray(originalVigencia)) {
+            if (!originalVigencia.desde && !originalVigencia.hasta) {
+                const mappedDesde = originalVigencia.vigDesde || originalVigencia["VIGENTE DESDE"] || "";
+                const mappedHasta = originalVigencia.vigHasta || originalVigencia["VIGENTE HASTA"] || "";
+                if (mappedDesde || mappedHasta) {
+                    originalVigencia = { desde: mappedDesde, hasta: mappedHasta };
+                }
+            }
+        }
+
+        const normalizeItem = (item) => {
+            const src = item || {};
+            const horasPlan = src.horasPlan != null
+                ? src.horasPlan
+                : (src.HORAS_PLAN != null ? src.HORAS_PLAN : src["HORAS PLAN"]);
+            return {
+                id: src.id || src.ID || "",
+                idCliente: src.idCliente || src.ID_CLIENTE || src["ID CLIENTE"] || "",
+                cliente: src.cliente || src.CLIENTE || "",
+                idEmpleado: src.idEmpleado || src.id_empleado || src.ID_EMPLEADO || src["ID EMPLEADO"] || "",
+                empleado: src.empleado || src.EMPLEADO || "",
+                diaSemana: src.diaSemana || src.DIA_SEMANA || src["DIA SEMANA"] || "",
+                horaEntrada: src.horaEntrada || src.HORA_ENTRADA || src["HORA ENTRADA"] || "",
+                horasPlan: horasPlan,
+                observaciones: src.observaciones || src.OBSERVACIONES || "",
+                vigDesde: src.vigDesde || src.VIGENTE_DESDE || src["VIGENTE DESDE"] || "",
+                vigHasta: src.vigHasta || src.VIGENTE_HASTA || src["VIGENTE HASTA"] || ""
+            };
+        };
+
+        items = (items || []).map(normalizeItem);
 
         const sheet = DatabaseService.getDbSheetForFormat('ASISTENCIA_PLAN');
         if (!sheet) {
@@ -356,44 +386,44 @@ const AttendanceWeeklyPlan = (function () {
             });
         }
 
-        const missingEmp = items.find(it => (it && (it.empleado || it.idEmpleado || it.id_empleado)) && !(it.idEmpleado || it.id_empleado));
+        const missingEmp = items.find(it => (it && (it.empleado || it.idEmpleado)) && !it.idEmpleado);
         if (missingEmp) {
             throw new Error('Falta ID_EMPLEADO en uno o más registros del plan.');
         }
 
         const newRows = items.map(it => {
-            const row = new Array(finalHeaders.length).fill('');
-
-            // Helper para setear valor
-            const setVal = (header, val) => {
-                const idx = finalHeaders.indexOf(header);
-                if (idx > -1) {
-                    // Asegurar que no sea undefined
-                    if (val === undefined || val === null) val = '';
-                    row[idx] = val;
-                }
-            };
-
-            setVal('ID', it.id || nextId++);
-            setVal('ID_CLIENTE', it.idCliente || it.id_cliente || defaultIdCliente || '');
-            setVal('CLIENTE', cliente);
-            setVal('ID_EMPLEADO', it.idEmpleado || it.id_empleado || '');
-            setVal('EMPLEADO', it.empleado || '');
-            setVal('DIA SEMANA', it.diaSemana || '');
-            setVal('HORA ENTRADA', it.horaEntrada || '');
-
             let horas = '';
             if (it.horasPlan !== '' && it.horasPlan != null) {
                 horas = Number(it.horasPlan);
                 if (isNaN(horas)) horas = 0;
             }
-            setVal('HORAS PLAN', horas);
 
-            setVal('OBSERVACIONES', it.observaciones || '');
-            setVal('VIGENTE DESDE', parseDateInput(it.vigDesde));
-            setVal('VIGENTE HASTA', parseDateInput(it.vigHasta));
+            const record = {
+                'ID': it.id || nextId++,
+                'ID_CLIENTE': it.idCliente || defaultIdCliente || '',
+                'CLIENTE': cliente || it.cliente || '',
+                'ID_EMPLEADO': it.idEmpleado || '',
+                'EMPLEADO': it.empleado || '',
+                'DIA SEMANA': it.diaSemana || '',
+                'HORA ENTRADA': it.horaEntrada || '',
+                'HORAS PLAN': horas,
+                'OBSERVACIONES': it.observaciones || '',
+                'VIGENTE DESDE': parseDateInput(it.vigDesde),
+                'VIGENTE HASTA': parseDateInput(it.vigHasta)
+            };
 
-            return row;
+            let normalized = record;
+            if (typeof ValidationService !== 'undefined' && ValidationService && typeof ValidationService.validateAndNormalizeRecord === 'function') {
+                const validation = ValidationService.validateAndNormalizeRecord('ASISTENCIA_PLAN', record, 'create', { headers: finalHeaders });
+                if (!validation.ok) {
+                    throw new Error('Plan semanal invalido: ' + validation.errors.join(' '));
+                }
+                normalized = validation.record;
+            }
+
+            return finalHeaders.map((header) => {
+                return Object.prototype.hasOwnProperty.call(normalized, header) ? normalized[header] : '';
+            });
         });
 
         // 6. Combinar y Guardar

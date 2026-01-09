@@ -1,18 +1,15 @@
 (function (global) {
-  function safeEscape(str) {
-    if (global.HtmlHelpers && typeof global.HtmlHelpers.escapeHtml === "function") {
-      return global.HtmlHelpers.escapeHtml(str);
-    }
-    return String(str || "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
-  }
+  const Dom = global.DomHelpers;
 
-  function normalizeTextToHtml(text) {
-    return safeEscape(text).replace(/\n/g, "<br>");
+  function renderMultilineText(container, text) {
+    const value = String(text || "");
+    const lines = value.split(/\n/);
+    lines.forEach((line, idx) => {
+      container.appendChild(Dom.el("span", { text: line }));
+      if (idx < lines.length - 1) {
+        container.appendChild(document.createElement("br"));
+      }
+    });
   }
 
   function confirmDialog(options = {}) {
@@ -37,31 +34,51 @@
     const titleId = modalId + "-title";
     const bodyId = modalId + "-body";
 
-    const wrapper = document.createElement("div");
-    wrapper.innerHTML = `
-      <div class="modal fade" id="${modalId}" tabindex="-1" aria-labelledby="${titleId}" aria-describedby="${bodyId}">
-        <div class="modal-dialog modal-dialog-centered ${modalSizeClass}">
-          <div class="modal-content border-0 shadow">
-            <div class="modal-header">
-              <h5 class="modal-title d-flex align-items-center gap-2" id="${titleId}">
-                <i class="bi ${safeEscape(icon)} ${safeEscape(iconClass)}"></i>
-                <span>${safeEscape(title)}</span>
-              </h5>
-              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-            </div>
-            <div class="modal-body" id="${bodyId}">
-              <div class="text-body-secondary">${normalizeTextToHtml(message)}</div>
-            </div>
-            <div class="modal-footer">
-              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">${safeEscape(cancelText)}</button>
-              <button type="button" class="btn btn-${safeEscape(confirmVariant)}" data-lt-confirm="1">${safeEscape(confirmText)}</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
+    const headerTitle = Dom.el("h5", {
+      className: "modal-title d-flex align-items-center gap-2",
+      id: titleId
+    }, [
+      Dom.el("i", { className: "bi " + String(icon) + " " + String(iconClass) }),
+      Dom.el("span", { text: title })
+    ]);
 
-    const modalEl = wrapper.firstElementChild;
+    const bodyText = Dom.el("div", { className: "text-body-secondary", id: bodyId });
+    renderMultilineText(bodyText, message);
+
+    const modalEl = Dom.el("div", {
+      className: "modal fade",
+      id: modalId,
+      tabindex: "-1",
+      "aria-labelledby": titleId,
+      "aria-describedby": bodyId
+    }, [
+      Dom.el("div", { className: "modal-dialog modal-dialog-centered " + modalSizeClass }, [
+        Dom.el("div", { className: "modal-content border-0 shadow" }, [
+          Dom.el("div", { className: "modal-header" }, [
+            headerTitle,
+            Dom.el("button", {
+              type: "button",
+              className: "btn-close",
+              "data-bs-dismiss": "modal",
+              "aria-label": "Cerrar"
+            })
+          ]),
+          Dom.el("div", { className: "modal-body" }, bodyText),
+          Dom.el("div", { className: "modal-footer" }, [
+            Dom.el("button", {
+              type: "button",
+              className: "btn btn-outline-secondary",
+              "data-bs-dismiss": "modal"
+            }, cancelText),
+            Dom.el("button", {
+              type: "button",
+              className: "btn btn-" + String(confirmVariant),
+              "data-lt-confirm": "1"
+            }, confirmText)
+          ])
+        ])
+      ])
+    ]);
     document.body.appendChild(modalEl);
     modalEl.style.zIndex = "2600";
 
@@ -94,9 +111,10 @@
         if (lastBackdrop) lastBackdrop.style.zIndex = "2590";
       }
 
-      if (confirmBtn) confirmBtn.addEventListener("click", onConfirm);
-      modalEl.addEventListener("hidden.bs.modal", onHidden);
-      modalEl.addEventListener("shown.bs.modal", onShown);
+      // Single-use modal: listeners adjuntos una sola vez y limpiados en hidden.
+      if (confirmBtn) confirmBtn.addEventListener("click", onConfirm, { once: true });
+      modalEl.addEventListener("hidden.bs.modal", onHidden, { once: true });
+      modalEl.addEventListener("shown.bs.modal", onShown, { once: true });
 
       modal.show();
     });

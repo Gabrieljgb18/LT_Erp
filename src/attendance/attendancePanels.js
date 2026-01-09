@@ -5,6 +5,8 @@
 
 (function (global) {
     const AttendancePanels = (() => {
+        const render = global.AttendancePanelsRender;
+        const handlers = global.AttendancePanelsHandlers;
 
         function setupWeeklyPlanPanel() {
             // Delegar la creación del panel semanal al módulo centralizado WeeklyPlanPanel
@@ -13,7 +15,13 @@
             } else {
                 console.error('WeeklyPlanPanel no está disponible');
                 if (typeof Alerts !== 'undefined' && Alerts) {
-                    Alerts.showAlert('Error al cargar el plan semanal.', 'danger');
+                    if (Alerts.notifyError) {
+                        Alerts.notifyError('Error al cargar el plan semanal', new Error('WeeklyPlanPanel no está disponible'));
+                    } else if (Alerts.showError) {
+                        Alerts.showError('Error al cargar el plan semanal', new Error('WeeklyPlanPanel no está disponible'));
+                    } else {
+                        Alerts.showAlert('Error al cargar el plan semanal.', 'danger');
+                    }
                 }
             }
         }
@@ -23,48 +31,19 @@
             const container = document.getElementById('daily-attendance-panel');
             if (!container) return;
 
-            // Limpiar contenido previo
-            container.innerHTML = '';
-
-            // Crear estructura de la grilla (tabla) dentro del contenedor
-            const gridWrapper = document.createElement('div');
-            gridWrapper.className = 'card shadow-sm p-3 mb-4'; // Card con sombra y padding
-            gridWrapper.innerHTML = `
-                <h5 class="card-title mb-3">Asistencia Diaria</h5>
-                <div class="table-responsive">
-                    <table class="table table-hover">
-                        <thead><tr id="grid-headers"></tr></thead>
-                        <tbody id="grid-body"></tbody>
-                    </table>
-                </div>`;
-            container.appendChild(gridWrapper);
-
-            // Función para cargar los registros según la fecha seleccionada
-            function loadAttendance() {
-                const dateInput = document.getElementById('field-fecha'); // Asumiendo que el campo de fecha tiene este ID
-                const fecha = dateInput ? dateInput.value : '';
-                const tipoFormato = 'ASISTENCIA';
-                ApiService.call('searchRecords', tipoFormato, fecha)
-                    .then(function (records) {
-                        if (GridManager) {
-                            GridManager.renderGrid(tipoFormato, records || []);
-                        }
-                    })
-                    .catch(function (err) {
-                        console.error('Error cargando asistencia:', err);
-                        if (GridManager) {
-                            GridManager.renderGrid('ASISTENCIA', []);
-                        }
-                    });
+            if (render && typeof render.renderDailyPanel === "function") {
+                render.renderDailyPanel(container);
             }
 
-            // Cargar datos al iniciar
+            const loadAttendance = handlers && typeof handlers.createDailyLoader === "function"
+                ? handlers.createDailyLoader("ASISTENCIA")
+                : function () { };
+
             loadAttendance();
 
-            // Si el usuario cambia la fecha, recargar la grilla
-            const dateInput = document.getElementById('field-fecha');
-            if (dateInput) {
-                dateInput.addEventListener('change', loadAttendance);
+            const dateInput = document.getElementById("field-fecha");
+            if (handlers && typeof handlers.bindDateChange === "function") {
+                handlers.bindDateChange(dateInput, loadAttendance);
             }
         }
 

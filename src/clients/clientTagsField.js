@@ -1,6 +1,9 @@
 (function (global) {
   const ClientTagsField = (() => {
     const FIELD_ID = "ETIQUETAS";
+    const Dom = global.DomHelpers;
+    const UI = global.UIHelpers;
+    const ClientTagsData = global.ClientTagsData || null;
 
     const state = {
       available: [],
@@ -50,29 +53,31 @@
 
     function renderChips() {
       if (!state.chips) return;
-      state.chips.innerHTML = "";
+      Dom.clear(state.chips);
 
       if (!state.value.length) {
-        const empty = document.createElement("div");
-        empty.className = "tag-chips__empty text-muted small";
-        empty.textContent = "Sin etiquetas";
-        state.chips.appendChild(empty);
+        state.chips.appendChild(
+          Dom.el("div", {
+            className: "tag-chips__empty text-muted small",
+            text: "Sin etiquetas"
+          })
+        );
         return;
       }
 
       state.value.forEach(tag => {
-        const chip = document.createElement("span");
-        chip.className = "tag-chip";
-        chip.textContent = tag;
+        const remove = Dom.el("button", {
+          type: "button",
+          className: "tag-chip__remove",
+          "aria-label": "Quitar etiqueta",
+          onclick: () => removeTag(tag)
+        }, Dom.el("i", { className: "bi bi-x" }));
 
-        const remove = document.createElement("button");
-        remove.type = "button";
-        remove.className = "tag-chip__remove";
-        remove.setAttribute("aria-label", "Quitar etiqueta");
-        remove.innerHTML = "<i class=\"bi bi-x\"></i>";
-        remove.addEventListener("click", () => removeTag(tag));
+        const chipContent = Dom.el("span", { className: "tag-chip__label", text: tag });
+        const chip = UI && typeof UI.chip === "function"
+          ? UI.chip([chipContent, remove], { className: "tag-chip" })
+          : Dom.el("span", { className: "tag-chip" }, [chipContent, remove]);
 
-        chip.appendChild(remove);
         state.chips.appendChild(chip);
       });
     }
@@ -132,11 +137,9 @@
 
     function updateDatalist() {
       if (!state.datalist) return;
-      state.datalist.innerHTML = "";
+      Dom.clear(state.datalist);
       state.available.forEach(tag => {
-        const opt = document.createElement("option");
-        opt.value = tag;
-        state.datalist.appendChild(opt);
+        state.datalist.appendChild(Dom.el("option", { value: tag }));
       });
     }
 
@@ -146,11 +149,11 @@
     }
 
     function loadAvailableTags() {
-      if (!global.ApiService || typeof global.ApiService.call !== "function") {
+      if (!ClientTagsData || typeof ClientTagsData.getClientTags !== "function") {
         return;
       }
 
-      ApiService.call("getClientTags")
+      ClientTagsData.getClientTags()
         .then(tags => {
           state.available = uniqueTags(parseTags(tags));
           updateDatalist();
@@ -161,11 +164,11 @@
     }
 
     function persistTags(tags) {
-      if (!global.ApiService || typeof global.ApiService.call !== "function") {
+      if (!ClientTagsData || typeof ClientTagsData.upsertClientTags !== "function") {
         return;
       }
 
-      ApiService.call("upsertClientTags", tags)
+      ClientTagsData.upsertClientTags(tags)
         .then(res => {
           if (Array.isArray(res)) {
             state.available = uniqueTags(parseTags(res));

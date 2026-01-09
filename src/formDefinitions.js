@@ -48,6 +48,7 @@
         },
         { id: "ENCARGADO", label: "Nombre encargado", type: "text" },
         { id: "TELEFONO", label: "Teléfono encargado", type: "phone" },
+        { id: "HORA ENTRADA", label: "Hora de entrada", type: "time" },
         { id: "SECTION_DIAS", label: "Días de servicio", type: "section", icon: "bi-calendar-week" },
         { id: "LUNES HS", label: "Horas lunes", type: "number", step: "0.5" },
         { id: "MARTES HS", label: "Horas martes", type: "number", step: "0.5" },

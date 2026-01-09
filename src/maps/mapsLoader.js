@@ -3,6 +3,7 @@
 
   const listeners = [];
   let ready = false;
+  let bound = !!global.__mapsLoaderReadyBound;
 
   function isReady() {
     return !!(global.google && global.google.maps && global.google.maps.places);
@@ -21,7 +22,11 @@
     }
   }
 
-  document.addEventListener("maps:ready", notifyReady);
+  if (!bound) {
+    bound = true;
+    global.__mapsLoaderReadyBound = true;
+    document.addEventListener("maps:ready", notifyReady);
+  }
 
   const MapsLoader = {
     onReady: function (cb) {

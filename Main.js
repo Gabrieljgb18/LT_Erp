@@ -7,6 +7,7 @@
  * - utils/dateUtils.js
  * - DatabaseService.js
  * - Format.js
+ * - ValidationService.js
  * - controllers/RecordController.js
  * - controllers/AttendanceController/planVsReal.js
  * - controllers/AttendanceController/dailyAttendance.js

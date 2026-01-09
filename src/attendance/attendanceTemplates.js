@@ -10,25 +10,27 @@
             : function (val) {
                 return String(val == null ? '' : val)
                     .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
+                    .replace(/[<]/g, '&lt;')
                     .replace(/>/g, '&gt;')
                     .replace(/"/g, '&quot;')
                     .replace(/'/g, '&#39;');
             };
 
-        function buildDailyAttendanceLayout(fecha) {
-            const safeFecha = escapeHtml(fecha || '');
+        function buildDailyAttendanceLayout() {
             return `
                 <div id="attendance-daily-root" class="d-flex flex-column gap-3">
                     <div class="lt-surface lt-surface--subtle p-2">
                         <div class="lt-toolbar">
                             <div class="d-flex align-items-center gap-2 flex-shrink-0">
                                 <label class="form-label small fw-semibold text-muted mb-0">Fecha</label>
-                                <input type="date" id="attendance-date" class="form-control form-control-sm" value="${safeFecha}" style="width: 140px;">
+                                <input type="date" id="attendance-date" class="form-control form-control-sm" value="" style="width: 140px;">
                             </div>
                             <div class="d-flex align-items-center gap-2 flex-shrink-0">
                                 <button type="button" id="attendance-add-extra" class="btn btn-sm btn-primary lt-btn-compact text-nowrap">
                                     <i class="bi bi-plus-circle me-1"></i>Fuera de plan
+                                </button>
+                                <button type="button" id="attendance-save" class="btn btn-sm btn-success lt-btn-compact text-nowrap">
+                                    <i class="bi bi-check2-circle me-1"></i>Guardar
                                 </button>
                             </div>
                             <div id="attendance-summary" class="d-flex flex-nowrap gap-2 flex-shrink-0"></div>
@@ -36,16 +38,9 @@
                     </div>
 
                     <div class="lt-surface p-0 position-relative">
-                        <div id="attendance-loading" class="position-absolute top-0 start-0 end-0 bottom-0 d-flex align-items-center justify-content-center bg-white bg-opacity-75 d-none">
-                            <div class="text-center">
-                                <div class="spinner-border text-primary mb-2" role="status"></div>
-                                <div class="small text-muted">Cargando asistencia del día...</div>
-                            </div>
-                        </div>
+                        <div id="attendance-loading" class="position-absolute top-0 start-0 end-0 bottom-0 d-flex align-items-center justify-content-center bg-white bg-opacity-75 d-none"></div>
 
-                        <div id="attendance-cards" class="d-flex flex-column gap-3 p-2">
-                            <div class="text-center text-muted py-4">Cargando...</div>
-                        </div>
+                        <div id="attendance-cards" class="d-flex flex-column gap-3 p-2"></div>
                     </div>
                 </div>
             `;
@@ -96,12 +91,7 @@
                     </div>
 
                     <!-- Calendario semanal -->
-                    <div id="calendar-grid-container" class="calendar-grid-wrapper">
-                        <div class="text-center text-muted py-5">
-                            <i class="bi bi-calendar3 display-4 mb-3 d-block opacity-50"></i>
-                            <p class="mb-0">Selecciona un empleado para ver su calendario</p>
-                        </div>
-                    </div>
+                    <div id="calendar-grid-container" class="calendar-grid-wrapper"></div>
 
                     <!-- Resumen -->
                     <div id="calendar-summary" class="mt-3 d-none">
@@ -167,12 +157,7 @@
                         </div>
                     </div>
 
-                    <div id="client-calendar-grid" class="calendar-grid-wrapper">
-                        <div class="text-center text-muted py-5">
-                            <i class="bi bi-calendar3 display-4 mb-3 d-block opacity-50"></i>
-                            <p class="mb-0">Cargando calendario...</p>
-                        </div>
-                    </div>
+                    <div id="client-calendar-grid" class="calendar-grid-wrapper"></div>
 
                     <div id="client-calendar-summary" class="mt-3 d-none">
                         <div class="lt-surface p-3">

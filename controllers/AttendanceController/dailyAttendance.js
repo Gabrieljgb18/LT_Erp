@@ -237,14 +237,60 @@ const AttendanceDailyAttendance = (function () {
      * @param {string} fechaStr - Fecha
      * @param {Array} rows - Array de registros de asistencia
      */
+    function buildAttendanceIndexForDate_(sheet, fecha) {
+        const map = new Map();
+        if (!sheet) return map;
+        const lastRow = sheet.getLastRow();
+        const lastCol = sheet.getLastColumn();
+        if (lastRow < 2 || lastCol === 0) return map;
+
+        const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+        const idxId = headers.indexOf('ID');
+        const idxFecha = headers.indexOf('FECHA');
+        const idxIdCliente = headers.indexOf('ID_CLIENTE');
+        const idxIdEmpleado = headers.indexOf('ID_EMPLEADO');
+
+        if (idxFecha === -1 || idxIdCliente === -1 || idxIdEmpleado === -1) return map;
+
+        const fechaKey = DataUtils && DataUtils.normalizeCellForSearch
+            ? DataUtils.normalizeCellForSearch(fecha, 'FECHA')
+            : String(fecha || '').trim();
+
+        if (!fechaKey) return map;
+
+        const data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+        data.forEach(function (row) {
+            const rowFecha = DataUtils && DataUtils.normalizeCellForSearch
+                ? DataUtils.normalizeCellForSearch(row[idxFecha], 'FECHA')
+                : String(row[idxFecha] || '').trim();
+            if (rowFecha !== fechaKey) return;
+
+            const idCliente = String(row[idxIdCliente] || '').trim();
+            const idEmpleado = String(row[idxIdEmpleado] || '').trim();
+            if (!idCliente || !idEmpleado) return;
+
+            const rowId = idxId > -1 ? row[idxId] : row[0];
+            if (!rowId) return;
+
+            const key = idCliente + '||' + idEmpleado;
+            if (!map.has(key)) map.set(key, rowId);
+        });
+
+        return map;
+    }
+
     function saveDailyAttendance(fechaStr, rows) {
         const fecha = (fechaStr || '').toString().trim();
-        if (!fecha || !Array.isArray(rows)) return;
+        if (!fecha || !Array.isArray(rows)) return [];
 
         const missingId = rows.find(item => item && ((!item.idCliente && item.cliente) || (!item.idEmpleado && item.empleado)));
         if (missingId) {
             throw new Error('Faltan IDs de cliente o empleado en la asistencia. Seleccioná los registros nuevamente.');
         }
+
+        const sheetAsis = DatabaseService.getDbSheetForFormat('ASISTENCIA');
+        const attendanceIndex = buildAttendanceIndexForDate_(sheetAsis, fecha);
+        const updates = [];
 
         rows.forEach(function (item) {
             if (!item || !item.cliente || !item.empleado) return;
@@ -263,8 +309,15 @@ const AttendanceDailyAttendance = (function () {
             };
 
             const idAsistencia = item.idAsistencia || item.id || '';
+            const key = String(item.idCliente || '').trim() + '||' + String(item.idEmpleado || '').trim();
             if (idAsistencia) {
                 RecordController.updateRecord('ASISTENCIA', idAsistencia, record);
+                if (key) attendanceIndex.set(key, idAsistencia);
+                updates.push({ idCliente: record.ID_CLIENTE, idEmpleado: record.ID_EMPLEADO, idAsistencia: idAsistencia });
+            } else if (key && attendanceIndex.has(key)) {
+                const existingId = attendanceIndex.get(key);
+                RecordController.updateRecord('ASISTENCIA', existingId, record);
+                updates.push({ idCliente: record.ID_CLIENTE, idEmpleado: record.ID_EMPLEADO, idAsistencia: existingId });
             } else if (item.asistenciaRowNumber) {
                 // Fallback legacy: obtener ID desde rowNumber y actualizar por ID
                 try {
@@ -272,16 +325,26 @@ const AttendanceDailyAttendance = (function () {
                     const existingId = sheetAsis.getRange(Number(item.asistenciaRowNumber), 1).getValue();
                     if (existingId) {
                         RecordController.updateRecord('ASISTENCIA', existingId, record);
+                        if (key) attendanceIndex.set(key, existingId);
+                        updates.push({ idCliente: record.ID_CLIENTE, idEmpleado: record.ID_EMPLEADO, idAsistencia: existingId });
                     } else {
-                        RecordController.saveRecord('ASISTENCIA', record);
+                        const newId = RecordController.saveRecord('ASISTENCIA', record);
+                        if (key) attendanceIndex.set(key, newId);
+                        updates.push({ idCliente: record.ID_CLIENTE, idEmpleado: record.ID_EMPLEADO, idAsistencia: newId });
                     }
                 } catch (e) {
-                    RecordController.saveRecord('ASISTENCIA', record);
+                    const newId = RecordController.saveRecord('ASISTENCIA', record);
+                    if (key) attendanceIndex.set(key, newId);
+                    updates.push({ idCliente: record.ID_CLIENTE, idEmpleado: record.ID_EMPLEADO, idAsistencia: newId });
                 }
             } else {
-                RecordController.saveRecord('ASISTENCIA', record);
+                const newId = RecordController.saveRecord('ASISTENCIA', record);
+                if (key) attendanceIndex.set(key, newId);
+                updates.push({ idCliente: record.ID_CLIENTE, idEmpleado: record.ID_EMPLEADO, idAsistencia: newId });
             }
         });
+
+        return updates;
     }
 
     return {

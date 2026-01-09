@@ -58,6 +58,18 @@ var AccountController = (function () {
         return isNaN(n) ? 0 : n;
     }
 
+    function normalizePagosClientesRecord_(record, headers, contextLabel) {
+        if (typeof ValidationService === 'undefined' || !ValidationService || typeof ValidationService.validateAndNormalizeRecord !== 'function') {
+            return record;
+        }
+        const validation = ValidationService.validateAndNormalizeRecord('PAGOS_CLIENTES', record, 'create', { headers: headers });
+        if (!validation.ok) {
+            const prefix = contextLabel ? (contextLabel + ': ') : '';
+            throw new Error(prefix + validation.errors.join(' '));
+        }
+        return validation.record;
+    }
+
     function logToSheet(msg) {
         try {
             const ss = DatabaseService.getDbSpreadsheet();
@@ -692,7 +704,15 @@ var AccountController = (function () {
                     ? `Aplicación de pago #${paymentId}: ${baseDet}`
                     : `Aplicación de pago #${paymentId}`;
             }
-            sheet.appendRow(newRow);
+            const record = {};
+            headers.forEach((header, idx) => {
+                record[header] = newRow[idx];
+            });
+            const normalized = normalizePagosClientesRecord_(record, headers, 'Aplicar pago');
+            const finalRow = headers.map((header) => {
+                return Object.prototype.hasOwnProperty.call(normalized, header) ? normalized[header] : '';
+            });
+            sheet.appendRow(finalRow);
             nextId += 1;
 
             if (r.inv && r.inv.id) {
@@ -718,37 +738,41 @@ var AccountController = (function () {
         }
 
         const sheet = DatabaseService.getDbSheetForFormat('PAGOS_CLIENTES');
+        const headers = [
+            'ID',
+            'ID_CLIENTE',
+            'FECHA',
+            'RAZÓN SOCIAL',
+            'CUIT',
+            'DETALLE',
+            'N° COMPROBANTE',
+            'MEDIO DE PAGO',
+            'MONTO',
+            'ID_FACTURA',
+            'FACTURA_NUMERO'
+        ];
         if (sheet.getLastRow() === 0) {
-            sheet.appendRow([
-                'ID',
-                'ID_CLIENTE',
-                'FECHA',
-                'RAZÓN SOCIAL',
-                'CUIT',
-                'DETALLE',
-                'N° COMPROBANTE',
-                'MEDIO DE PAGO',
-                'MONTO',
-                'ID_FACTURA',
-                'FACTURA_NUMERO'
-            ]);
+            sheet.appendRow(headers);
         }
 
         const id = DatabaseService.getNextId(sheet);
-        const row = [
-            id,
-            idCliente || '',
-            fecha,
-            clienteName,
-            payload.cuit || '',
-            payload.detalle || '',
-            payload['N° COMPROBANTE'] || payload.nroComprobante || '',
-            payload.medioPago || payload['MEDIO DE PAGO'] || '',
-            monto,
-            payload.idFactura || payload.ID_FACTURA || '',
-            payload.facturaNumero || payload.FACTURA_NUMERO || ''
-        ];
-
+        const record = {
+            'ID': id,
+            'ID_CLIENTE': idCliente || '',
+            'FECHA': fecha,
+            'RAZÓN SOCIAL': clienteName,
+            'CUIT': payload.cuit || '',
+            'DETALLE': payload.detalle || '',
+            'N° COMPROBANTE': payload['N° COMPROBANTE'] || payload.nroComprobante || '',
+            'MEDIO DE PAGO': payload.medioPago || payload['MEDIO DE PAGO'] || '',
+            'MONTO': monto,
+            'ID_FACTURA': payload.idFactura || payload.ID_FACTURA || '',
+            'FACTURA_NUMERO': payload.facturaNumero || payload.FACTURA_NUMERO || ''
+        };
+        const normalized = normalizePagosClientesRecord_(record, headers, 'Registro de pago');
+        const row = headers.map((header) => {
+            return Object.prototype.hasOwnProperty.call(normalized, header) ? normalized[header] : '';
+        });
         sheet.appendRow(row);
 
         // Si el pago está vinculado a una factura, actualizar estado de la factura si quedó saldada.
