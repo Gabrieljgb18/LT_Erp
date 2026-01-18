@@ -11,11 +11,36 @@
     if (loading) loading.classList.remove('d-none');
     if (dash) dash.classList.add('d-none');
 
-    if (!global.ApiService || typeof global.ApiService.call !== 'function') return;
+    if (!global.ApiService || typeof global.ApiService.call !== 'function') {
+      if (loading) loading.classList.add('d-none');
+      if (dash) dash.classList.add('d-none');
+      var missingContainer = document.getElementById('analysis-content');
+      if (missingContainer) {
+        if (typeof EmptyState !== 'undefined' && EmptyState && typeof EmptyState.render === 'function') {
+          EmptyState.render(missingContainer, {
+            variant: 'error',
+            title: 'Análisis no disponible',
+            message: 'No se pudo iniciar la conexión con el servidor.'
+          });
+        } else if (state.Dom) {
+          state.Dom.clear(missingContainer);
+          missingContainer.appendChild(
+            state.Dom.el('div', {
+              className: 'alert alert-danger',
+              text: 'Análisis no disponible: no se pudo iniciar la conexión con el servidor.'
+            })
+          );
+        } else {
+          missingContainer.textContent = 'Análisis no disponible: no se pudo iniciar la conexión con el servidor.';
+        }
+      }
+      return;
+    }
 
     var payload = state.currentPeriod
       ? { period: state.currentPeriod, monthsBack: state.currentRange }
       : { monthsBack: state.currentRange };
+    payload.includeTrend = !!state.comparisonVisible;
 
     global.ApiService.call('getAnalyticsSummary', payload)
       .then(function (data) {

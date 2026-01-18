@@ -57,7 +57,9 @@ var AnalyticsController = (function () {
         var gastosMes = gastos.total || 0;
         var netoMes = (invoiceMetrics.total || 0) - sueldosMes - impuestosMes - gastosMes;
 
-        var trend = buildTrend_(year, month, monthsBack);
+        var includeTrend = parseIncludeTrend_(input);
+        var currentTrend = buildTrendItem_(year, month, invoiceMetrics, sueldosMes, impuestosMes, gastosMes, totalHoras);
+        var trend = includeTrend ? buildTrend_(year, month, monthsBack, currentTrend) : [currentTrend];
         var projection = buildProjection_(trend);
 
         return {
@@ -135,6 +137,14 @@ var AnalyticsController = (function () {
         var num = Number(raw);
         if (isNaN(num) || num <= 0) return fallback;
         return Math.max(3, Math.min(12, Math.round(num)));
+    }
+
+    function parseIncludeTrend_(input) {
+        if (input && typeof input === 'object') {
+            if (input.includeTrend != null) return !!input.includeTrend;
+            if (input.withTrend != null) return !!input.withTrend;
+        }
+        return false;
     }
 
     function getMonthRange_(year, month) {
@@ -346,14 +356,18 @@ var AnalyticsController = (function () {
             .sort(function (a, b) { return b.total - a.total; });
     }
 
-    function buildTrend_(year, month, monthsBack) {
+    function buildTrend_(year, month, monthsBack, seed) {
         var items = [];
         var curYear = year;
         var curMonth = month;
 
         for (var i = 0; i < monthsBack; i++) {
-            var metrics = getMonthlyAnalytics_(curYear, curMonth);
-            items.push(metrics);
+            if (i === 0 && seed) {
+                items.push(seed);
+            } else {
+                var metrics = getMonthlyAnalytics_(curYear, curMonth);
+                items.push(metrics);
+            }
 
             curMonth -= 1;
             if (curMonth <= 0) {
@@ -363,6 +377,28 @@ var AnalyticsController = (function () {
         }
 
         return items.reverse();
+    }
+
+    function buildTrendItem_(year, month, invoiceMetrics, sueldosMes, impuestosMes, gastosMes, horasMes) {
+        var label = formatMonthShort_(year, month);
+        var key = year + '-' + pad2_(month);
+        var facturacion = invoiceMetrics && invoiceMetrics.total ? invoiceMetrics.total : 0;
+        var impuestos = impuestosMes || 0;
+        var gastos = gastosMes || 0;
+        var sueldos = sueldosMes || 0;
+        var neto = facturacion - sueldos - impuestos - gastos;
+        return {
+            year: year,
+            month: month,
+            key: key,
+            label: label,
+            facturacion: facturacion,
+            sueldos: sueldos,
+            impuestos: impuestos,
+            gastos: gastos,
+            neto: neto,
+            horas: horasMes || 0
+        };
     }
 
     function buildProjection_(trend) {
