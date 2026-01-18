@@ -331,9 +331,9 @@
     if (btnEliminarModal) {
       btnEliminarModal.addEventListener("click", function () {
         if (RecordManager) {
-          RecordManager.deleteRecord();
-          // Cerrar modal después de eliminar
-          setTimeout(() => {
+          const result = RecordManager.deleteRecord();
+          const handleClose = (ok) => {
+            if (!ok) return;
             if (GridManager) {
               GridManager.closeModal();
               const currentFormat = FormManager && typeof FormManager.getCurrentFormat === "function"
@@ -341,7 +341,12 @@
                 : null;
               GridManager.refreshGrid();
             }
-          }, 500);
+          };
+          if (result && typeof result.then === "function") {
+            result.then(handleClose);
+          } else {
+            handleClose(result === true);
+          }
         }
       });
     }

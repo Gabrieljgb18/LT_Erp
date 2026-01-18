@@ -20365,11 +20365,11 @@ var BulkValuesPanel = (function () {
         function deleteRecord() {
             if (currentMode !== "edit" || !selectedRowNumber) {
                 if (Alerts) Alerts.showAlert("No hay registro seleccionado para eliminar.", "warning");
-                return;
+                return Promise.resolve(false);
             }
 
             const tipoFormato = global.FormManager ? global.FormManager.getCurrentFormat() : null;
-            if (!tipoFormato) return;
+            if (!tipoFormato) return Promise.resolve(false);
 
             const confirmPromise =
                 global.UiDialogs && typeof global.UiDialogs.confirm === "function"
@@ -20384,7 +20384,7 @@ var BulkValuesPanel = (function () {
                     })
                     : Promise.resolve(confirm("¿Estás seguro de que querés eliminar este registro?"));
 
-            confirmPromise.then(function (confirmed) {
+            return confirmPromise.then(function (confirmed) {
                 if (!confirmed) return;
 
             UiState.setGlobalLoading(true, "Eliminando...");
@@ -20392,17 +20392,19 @@ var BulkValuesPanel = (function () {
             if (!RecordsData || typeof RecordsData.deleteRecord !== "function") {
                 if (Alerts) Alerts.showAlert("No se pudo eliminar el registro.", "danger");
                 UiState.setGlobalLoading(false);
-                return;
+                return false;
             }
 
-            RecordsData.deleteRecord(tipoFormato, selectedRowNumber)
+            return RecordsData.deleteRecord(tipoFormato, selectedRowNumber)
                 .then(function () {
                     if (Alerts) Alerts.showAlert("✅ Registro eliminado correctamente.", "success");
                     enterCreateMode(true);
                     refreshReferencesIfNeeded(tipoFormato);
+                    return true;
                 })
                 .catch(function (err) {
                     if (Alerts) Alerts.showAlert("Error al eliminar: " + err.message, "danger");
+                    return false;
                 })
                 .finally(function () {
                     UiState.setGlobalLoading(false);
@@ -20764,9 +20766,9 @@ var BulkValuesPanel = (function () {
     if (btnEliminarModal) {
       btnEliminarModal.addEventListener("click", function () {
         if (RecordManager) {
-          RecordManager.deleteRecord();
-          // Cerrar modal después de eliminar
-          setTimeout(() => {
+          const result = RecordManager.deleteRecord();
+          const handleClose = (ok) => {
+            if (!ok) return;
             if (GridManager) {
               GridManager.closeModal();
               const currentFormat = FormManager && typeof FormManager.getCurrentFormat === "function"
@@ -20774,7 +20776,12 @@ var BulkValuesPanel = (function () {
                 : null;
               GridManager.refreshGrid();
             }
-          }, 500);
+          };
+          if (result && typeof result.then === "function") {
+            result.then(handleClose);
+          } else {
+            handleClose(result === true);
+          }
         }
       });
     }
