@@ -320,7 +320,7 @@
       var script = document.createElement("script");
       script.src = "https://maps.googleapis.com/maps/api/js?key=" +
         encodeURIComponent(key) +
-        "&libraries=places&v=weekly&callback=initGoogleMapsApi";
+        "&libraries=places&v=weekly&loading=async&callback=initGoogleMapsApi";
       script.async = true;
       script.defer = true;
       document.head.appendChild(script);
