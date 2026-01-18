@@ -20416,6 +20416,10 @@ var BulkValuesPanel = (function () {
 
         return {
             enterCreateMode,
+            resetEditState: function () {
+                currentMode = "create";
+                selectedRowNumber = null;
+            },
             loadRecordForEdit,
             saveRecord,
             deleteRecord,
@@ -20680,6 +20684,10 @@ var BulkValuesPanel = (function () {
             Alerts.showAlert("Selecciona una sección primero", "warning");
           }
           return;
+        }
+
+        if (RecordManager && typeof RecordManager.resetEditState === "function") {
+          RecordManager.resetEditState();
         }
 
         // Abrir modal y renderizar formulario en el callback

@@ -314,6 +314,10 @@
 
         return {
             enterCreateMode,
+            resetEditState: function () {
+                currentMode = "create";
+                selectedRowNumber = null;
+            },
             loadRecordForEdit,
             saveRecord,
             deleteRecord,

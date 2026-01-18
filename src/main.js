@@ -253,6 +253,10 @@
           return;
         }
 
+        if (RecordManager && typeof RecordManager.resetEditState === "function") {
+          RecordManager.resetEditState();
+        }
+
         // Abrir modal y renderizar formulario en el callback
         if (GridManager) {
           GridManager.openModal("Nuevo Registro", function () {

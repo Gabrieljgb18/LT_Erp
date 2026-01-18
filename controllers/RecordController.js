@@ -116,6 +116,47 @@ var RecordController = (function () {
     });
   }
 
+  function normalizeDocType_(value) {
+    const raw = String(value || '').trim().toUpperCase();
+    if (raw === 'DNI' || raw === 'CUIL' || raw === 'CUIT') return raw;
+    return raw;
+  }
+
+  function normalizeDocNumber_(value) {
+    if (value === null || value === undefined) return '';
+    return String(value).trim();
+  }
+
+  function ensureUniqueEmployeeDocument_(sheet, headers, record, ignoreId) {
+    if (!record || !headers || !headers.length) return;
+    const idxDocType = headers.indexOf('TIPO DOCUMENTO');
+    const idxDocNumber = headers.indexOf('NUMERO DOCUMENTO');
+    if (idxDocNumber === -1) return;
+    const docNumber = normalizeDocNumber_(record['NUMERO DOCUMENTO']);
+    if (!docNumber) return;
+    const docType = normalizeDocType_(record['TIPO DOCUMENTO']);
+    const idxId = headers.indexOf('ID');
+    const idxNombre = headers.indexOf('EMPLEADO');
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return;
+
+    const rows = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const rowId = idxId > -1 ? row[idxId] : row[0];
+      if (ignoreId != null && String(rowId) === String(ignoreId)) continue;
+      const rowDocNumber = normalizeDocNumber_(idxDocNumber > -1 ? row[idxDocNumber] : '');
+      if (!rowDocNumber || rowDocNumber !== docNumber) continue;
+      const rowDocType = normalizeDocType_(idxDocType > -1 ? row[idxDocType] : '');
+      const typeMatches = docType && rowDocType ? docType === rowDocType : true;
+      if (!typeMatches) continue;
+      const nombre = idxNombre > -1 ? row[idxNombre] : '';
+      const docLabel = (docType ? docType + ' ' : '') + docNumber;
+      const suffix = nombre ? ' (' + nombre + ')' : '';
+      throw new Error('Documento duplicado: ' + docLabel + '. Ya existe un empleado' + suffix + '.');
+    }
+  }
+
   function ensureRequiredIds(tipoFormato, record) {
     const rulesByFormat = {
       ASISTENCIA: [
@@ -221,6 +262,10 @@ var RecordController = (function () {
 
         let newId;
         try {
+            if (tipoFormato === 'EMPLEADOS') {
+                ensureUniqueEmployeeDocument_(sheet, headers, record, null);
+            }
+
             newId = DatabaseService.getNextId(sheet);
             record['ID'] = newId;
 
@@ -321,6 +366,9 @@ var RecordController = (function () {
         incoming['ID'] = id;
 
         ensureRequiredIds(tipoFormato, incoming);
+        if (tipoFormato === 'EMPLEADOS') {
+            ensureUniqueEmployeeDocument_(sheet, headers, incoming, id);
+        }
 
         // Build new row values with ID in correct position
         const newRowValues = buildRowValues(headers, incoming);
