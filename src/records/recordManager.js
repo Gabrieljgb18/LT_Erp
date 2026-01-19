@@ -305,6 +305,11 @@
                     if (Alerts) Alerts.showAlert("✅ Registro eliminado correctamente.", "success");
                     enterCreateMode(true);
                     refreshReferencesIfNeeded(tipoFormato);
+                    if (global.location && typeof global.location.reload === "function") {
+                        setTimeout(function () {
+                            global.location.reload();
+                        }, 300);
+                    }
                     return true;
                 })
                 .catch(function (err) {

@@ -356,7 +356,11 @@
                 return;
             }
 
-            RecordsData.deleteRecord(currentFormat, id)
+            const payload = record._rowNumber
+                ? { id: id, rowNumber: record._rowNumber }
+                : id;
+
+            RecordsData.deleteRecord(currentFormat, payload)
                 .then(function () {
                     Alerts && Alerts.showAlert('✅ Registro eliminado correctamente.', 'success');
                     if (RecordsData && typeof RecordsData.refreshReferenceData === "function") {
@@ -369,6 +373,11 @@
                         FormManager.updateReferenceData(refData);
                     }
                     refreshGrid();
+                    if (global.location && typeof global.location.reload === "function") {
+                        setTimeout(function () {
+                            global.location.reload();
+                        }, 300);
+                    }
                 })
                 .catch(function (err) {
                     Alerts && Alerts.showAlert('Error al eliminar: ' + err.message, 'danger');
