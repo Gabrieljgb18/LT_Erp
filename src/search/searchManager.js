@@ -172,6 +172,9 @@
 
             const item = suggestionResults[idx];
             if (global.RecordManager) {
+                if (item.record && item.rowNumber) {
+                    item.record._rowNumber = item.rowNumber;
+                }
                 // Pass id instead of rowNumber
                 global.RecordManager.loadRecordForEdit(item.id, item.record);
             }

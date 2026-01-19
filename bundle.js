@@ -6691,6 +6691,9 @@ var ClientMediaPanel = (function () {
 
             const item = suggestionResults[idx];
             if (global.RecordManager) {
+                if (item.record && item.rowNumber) {
+                    item.record._rowNumber = item.rowNumber;
+                }
                 // Pass id instead of rowNumber
                 global.RecordManager.loadRecordForEdit(item.id, item.record);
             }
@@ -20134,6 +20137,7 @@ var BulkValuesPanel = (function () {
     const RecordManager = (() => {
         let currentMode = "create"; // "create" | "edit"
         let selectedRowNumber = null;
+        let selectedRowIndex = null;
         const RecordsData = global.RecordsData || null;
 
         function refreshReferencesIfNeeded(tipoFormato) {
@@ -20149,6 +20153,7 @@ var BulkValuesPanel = (function () {
         function enterCreateMode(clear = true) {
             currentMode = "create";
             selectedRowNumber = null;
+            selectedRowIndex = null;
 
             if (clear && global.FormManager) {
                 global.FormManager.clearForm();
@@ -20166,6 +20171,7 @@ var BulkValuesPanel = (function () {
         function enterEditMode(id, record) {
             currentMode = "edit";
             selectedRowNumber = id; // Now stores ID instead of rowNumber
+            selectedRowIndex = record && record._rowNumber ? Number(record._rowNumber) || null : null;
             loadRecordIntoForm(record);
 
             if (global.FooterManager) {
@@ -20420,7 +20426,11 @@ var BulkValuesPanel = (function () {
                 return false;
             }
 
-            return RecordsData.deleteRecord(tipoFormato, selectedRowNumber)
+            const payload = selectedRowIndex
+                ? { id: selectedRowNumber, rowNumber: selectedRowIndex }
+                : selectedRowNumber;
+
+            return RecordsData.deleteRecord(tipoFormato, payload)
                 .then(function () {
                     if (Alerts) Alerts.showAlert("✅ Registro eliminado correctamente.", "success");
                     enterCreateMode(true);
@@ -20446,6 +20456,7 @@ var BulkValuesPanel = (function () {
             resetEditState: function () {
                 currentMode = "create";
                 selectedRowNumber = null;
+                selectedRowIndex = null;
             },
             loadRecordForEdit,
             saveRecord,

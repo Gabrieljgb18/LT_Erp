@@ -418,13 +418,46 @@ var RecordController = (function () {
     function deleteRecord(tipoFormato, id) {
         const sheet = DatabaseService.getDbSheetForFormat(tipoFormato);
 
-        // Find row by ID
-        const rowNumber = DatabaseService.findRowById(sheet, id);
-        if (!rowNumber) {
-            throw new Error('Registro con ID ' + id + ' no encontrado');
+        let targetId = id;
+        let rowNumber = null;
+        if (id && typeof id === 'object') {
+            if (id.id != null) targetId = id.id;
+            if (id.ID != null) targetId = id.ID;
+            rowNumber = Number(id.rowNumber) || null;
         }
 
-        sheet.deleteRow(rowNumber);
+        const targetStr = targetId == null ? '' : String(targetId).trim();
+        const lastRow = sheet.getLastRow();
+        const lastCol = sheet.getLastColumn();
+
+        if (rowNumber && rowNumber >= 2 && rowNumber <= lastRow) {
+            let idCol = 1;
+            if (lastCol > 0) {
+                const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0]
+                    .map(h => String(h || '').trim().toUpperCase());
+                const idxId = headers.indexOf('ID');
+                if (idxId > -1) idCol = idxId + 1;
+            }
+            const rowIdVal = sheet.getRange(rowNumber, idCol).getValue();
+            const rowIdStr = String(rowIdVal || '').trim();
+            const rowIdNum = Number(rowIdStr);
+            const targetNum = Number(targetStr);
+            const matches = targetStr
+                ? (rowIdStr === targetStr || (!isNaN(rowIdNum) && !isNaN(targetNum) && rowIdNum === targetNum))
+                : false;
+            if (matches || !targetStr) {
+                sheet.deleteRow(rowNumber);
+                return;
+            }
+        }
+
+        // Find row by ID
+        const resolvedRow = DatabaseService.findRowById(sheet, targetId);
+        if (!resolvedRow) {
+            throw new Error('Registro con ID ' + targetId + ' no encontrado');
+        }
+
+        sheet.deleteRow(resolvedRow);
     }
 
     /**

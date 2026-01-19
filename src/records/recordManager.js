@@ -7,6 +7,7 @@
     const RecordManager = (() => {
         let currentMode = "create"; // "create" | "edit"
         let selectedRowNumber = null;
+        let selectedRowIndex = null;
         const RecordsData = global.RecordsData || null;
 
         function refreshReferencesIfNeeded(tipoFormato) {
@@ -22,6 +23,7 @@
         function enterCreateMode(clear = true) {
             currentMode = "create";
             selectedRowNumber = null;
+            selectedRowIndex = null;
 
             if (clear && global.FormManager) {
                 global.FormManager.clearForm();
@@ -39,6 +41,7 @@
         function enterEditMode(id, record) {
             currentMode = "edit";
             selectedRowNumber = id; // Now stores ID instead of rowNumber
+            selectedRowIndex = record && record._rowNumber ? Number(record._rowNumber) || null : null;
             loadRecordIntoForm(record);
 
             if (global.FooterManager) {
@@ -293,7 +296,11 @@
                 return false;
             }
 
-            return RecordsData.deleteRecord(tipoFormato, selectedRowNumber)
+            const payload = selectedRowIndex
+                ? { id: selectedRowNumber, rowNumber: selectedRowIndex }
+                : selectedRowNumber;
+
+            return RecordsData.deleteRecord(tipoFormato, payload)
                 .then(function () {
                     if (Alerts) Alerts.showAlert("✅ Registro eliminado correctamente.", "success");
                     enterCreateMode(true);
@@ -319,6 +326,7 @@
             resetEditState: function () {
                 currentMode = "create";
                 selectedRowNumber = null;
+                selectedRowIndex = null;
             },
             loadRecordForEdit,
             saveRecord,
