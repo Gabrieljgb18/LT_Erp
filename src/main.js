@@ -133,6 +133,12 @@
     const searchInput = document.getElementById("search-query");
     if (searchInput) searchInput.parentElement.classList.remove("d-none");
 
+    const inactiveToggle = document.getElementById("registro-inactive-toggle");
+    const checkVerInactivos = document.getElementById("check-ver-inactivos");
+    const supportsInactive = tipoFormato === "CLIENTES" || tipoFormato === "EMPLEADOS";
+    if (inactiveToggle) inactiveToggle.classList.toggle("d-none", !supportsInactive);
+    if (!supportsInactive && checkVerInactivos) checkVerInactivos.checked = false;
+
     const btnNuevo = document.getElementById("btn-nuevo");
     if (btnNuevo) btnNuevo.classList.remove("d-none");
 
@@ -150,7 +156,8 @@
       console.error("RecordsData.searchRecords no disponible");
       return;
     }
-    RecordsData.searchRecords(tipoFormato, "")
+    const includeInactive = checkVerInactivos ? checkVerInactivos.checked : false;
+    RecordsData.searchRecords(tipoFormato, "", includeInactive)
       .then(function (records) {
         if (GridManager) {
           GridManager.renderGrid(tipoFormato, records || []);

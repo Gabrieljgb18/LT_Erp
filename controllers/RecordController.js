@@ -22,6 +22,12 @@ var RecordController = (function () {
      */
     function searchRecords(tipoFormato, query, includeInactive) {
         const sheet = DatabaseService.getDbSheetForFormat(tipoFormato);
+        const includeInactiveBool =
+            includeInactive === true ||
+            includeInactive === 1 ||
+            includeInactive === '1' ||
+            includeInactive === 'true' ||
+            includeInactive === 'TRUE';
 
         // Reparación automática de datos legacy para ADELANTOS (corrimiento de columnas)
         if (tipoFormato === 'ADELANTOS' && DatabaseService && typeof DatabaseService.repairAdelantosLegacyRows === 'function') {
@@ -49,22 +55,17 @@ var RecordController = (function () {
 
         data.forEach(function (row, index) {
             // Filtro de baja lógica para CLIENTES y EMPLEADOS
-            if (!includeInactive && (tipoFormato === 'CLIENTES' || tipoFormato === 'EMPLEADOS')) {
+            if (!includeInactiveBool && (tipoFormato === 'CLIENTES' || tipoFormato === 'EMPLEADOS')) {
                 const idxEstado = headerKeys.indexOf('ESTADO');
                 if (idxEstado > -1) {
                     const estadoVal = row[idxEstado];
-                    // Consideramos activo si es truthy (true, 1, "TRUE", "Activo")
-                    // Si es 0, false, null, o vacío, lo saltamos.
-                    const isActive = estadoVal === true || estadoVal === 1 || String(estadoVal).toUpperCase() === 'TRUE' || String(estadoVal).toUpperCase() === 'ACTIVO';
-                    // Nota: Si la celda está vacía, isActive es false.
-                    // Si queremos que por defecto (sin valor) sean activos, cambiamos la lógica.
-                    // Pero para "Eliminar" seteamos 0, así que debe ocultarse.
-                    // Asumimos que los registros viejos tienen "Activo" o TRUE.
-                    // Si tienen vacío, asumiremos False para ser consistentes con 'isTruthy',
-                    // pero cuidado con datos legacy.
-                    // Mejor usar lógica laxa de DatabaseService:
-                    const isFalsy = estadoVal === 0 || estadoVal === false || estadoVal === 'FALSE' || estadoVal === 'false' || estadoVal === 'Inactivo';
-                    if (isFalsy) return;
+                    const estadoStr = String(estadoVal == null ? '' : estadoVal).trim();
+                    if (estadoStr) {
+                        const isActive = DataUtils && typeof DataUtils.isTruthy === 'function'
+                            ? DataUtils.isTruthy(estadoVal)
+                            : (estadoVal === true || estadoVal === 1);
+                        if (!isActive) return;
+                    }
                 }
             }
 

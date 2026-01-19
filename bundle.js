@@ -587,7 +587,7 @@
       fields: [
         { id: "SECTION_DATOS", label: "Datos del cliente", type: "section", icon: "bi-building" },
         { id: "NOMBRE", label: "Nombre", type: "text", placeholder: "Nombre del cliente" },
-        { id: "ESTADO", label: "Estado", type: "boolean", trueLabel: "Activo", falseLabel: "Inactivo" },
+        { id: "ESTADO", label: "Estado", type: "boolean", trueLabel: "Activo", falseLabel: "Inactivo", defaultChecked: true },
         { id: "RAZON SOCIAL", label: "Razón social", type: "text" },
         { id: "TIPO DOCUMENTO", label: "Tipo de documento", type: "docType" },
         { id: "NUMERO DOCUMENTO", label: "Número de documento", type: "docNumber", docTypeField: "TIPO DOCUMENTO", placeholder: "00-00000000-0" },
@@ -642,7 +642,7 @@
       title: "Registro de empleados",
       fields: [
         { id: "SECTION_DATOS", label: "Datos del empleado", type: "section", icon: "bi-person-badge" },
-        { id: "ESTADO", label: "Estado", type: "boolean", trueLabel: "Activo" },
+        { id: "ESTADO", label: "Estado", type: "boolean", trueLabel: "Activo", falseLabel: "Inactivo", defaultChecked: true },
         { id: "EMPLEADO", label: "Empleado", type: "text", full: true },
         { id: "SECTION_DOC", label: "Documentación", type: "section", icon: "bi-card-text" },
         { id: "TIPO DOCUMENTO", label: "Tipo de documento", type: "docType" },
@@ -20069,18 +20069,19 @@ var BulkValuesPanel = (function () {
     return global.ApiService.call("getAvailableFormats");
   }
 
-  function searchRecords(tipoFormato, query) {
+  function searchRecords(tipoFormato, query, includeInactive) {
     if (!ensureApi()) return Promise.resolve([]);
     if (typeof global.ApiService.callLatest === "function") {
-      const key = "search-" + String(tipoFormato || "") + "|" + String(query || "");
+      const key = "search-" + String(tipoFormato || "") + "|" + String(query || "") + "|" + String(includeInactive || "");
       return global.ApiService.callLatest(
         key,
         "searchRecords",
         tipoFormato,
-        query || ""
+        query || "",
+        includeInactive
       );
     }
-    return global.ApiService.call("searchRecords", tipoFormato, query || "");
+    return global.ApiService.call("searchRecords", tipoFormato, query || "", includeInactive);
   }
 
   function saveRecord(tipoFormato, record) {
@@ -20618,6 +20619,12 @@ var BulkValuesPanel = (function () {
     const searchInput = document.getElementById("search-query");
     if (searchInput) searchInput.parentElement.classList.remove("d-none");
 
+    const inactiveToggle = document.getElementById("registro-inactive-toggle");
+    const checkVerInactivos = document.getElementById("check-ver-inactivos");
+    const supportsInactive = tipoFormato === "CLIENTES" || tipoFormato === "EMPLEADOS";
+    if (inactiveToggle) inactiveToggle.classList.toggle("d-none", !supportsInactive);
+    if (!supportsInactive && checkVerInactivos) checkVerInactivos.checked = false;
+
     const btnNuevo = document.getElementById("btn-nuevo");
     if (btnNuevo) btnNuevo.classList.remove("d-none");
 
@@ -20635,7 +20642,8 @@ var BulkValuesPanel = (function () {
       console.error("RecordsData.searchRecords no disponible");
       return;
     }
-    RecordsData.searchRecords(tipoFormato, "")
+    const includeInactive = checkVerInactivos ? checkVerInactivos.checked : false;
+    RecordsData.searchRecords(tipoFormato, "", includeInactive)
       .then(function (records) {
         if (GridManager) {
           GridManager.renderGrid(tipoFormato, records || []);
@@ -20697,32 +20705,48 @@ var BulkValuesPanel = (function () {
 
     // Search input - Filtrar grilla
     const searchInput = document.getElementById("search-query");
-    if (searchInput) {
-      searchInput.addEventListener("input", function () {
-        const tipoFormato = currentRegistroFormat;
+    const checkVerInactivos = document.getElementById("check-ver-inactivos");
 
-        if (!tipoFormato) {
-          if (this.value.length > 0 && Alerts) {
-            Alerts.showAlert("Selecciona una sección primero para buscar", "warning");
+    function performSearch() {
+      const tipoFormato = currentRegistroFormat;
+      const query = searchInput ? searchInput.value : "";
+      const includeInactive = checkVerInactivos ? checkVerInactivos.checked : false;
+
+      if (!tipoFormato) {
+        if (query.length > 0 && Alerts) {
+          Alerts.showAlert("Selecciona una sección primero para buscar", "warning");
+        }
+        return;
+      }
+
+      // Buscar y actualizar grilla
+      if (!RecordsData || typeof RecordsData.searchRecords !== "function") {
+        console.error("RecordsData.searchRecords no disponible");
+        return;
+      }
+
+      if (GridManager && typeof GridManager.renderLoading === "function") {
+        // Optional: show loading indicator if needed, but for typing usually we wait? 
+        // Actually searchRecords is async, so better show strict loading if it's a new search
+      }
+
+      RecordsData.searchRecords(tipoFormato, query, includeInactive)
+        .then(function (records) {
+          if (GridManager) {
+            GridManager.renderGrid(tipoFormato, records || []);
           }
-          return;
-        }
+        })
+        .catch(function (err) {
+          console.error("Error en búsqueda:", err);
+        });
+    }
 
-        // Buscar y actualizar grilla
-        if (!RecordsData || typeof RecordsData.searchRecords !== "function") {
-          console.error("RecordsData.searchRecords no disponible");
-          return;
-        }
-        RecordsData.searchRecords(tipoFormato, this.value)
-          .then(function (records) {
-            if (GridManager) {
-              GridManager.renderGrid(tipoFormato, records || []);
-            }
-          })
-          .catch(function (err) {
-            console.error("Error en búsqueda:", err);
-          });
-      });
+    if (searchInput) {
+      searchInput.addEventListener("input", performSearch);
+    }
+
+    if (checkVerInactivos) {
+      checkVerInactivos.addEventListener("change", performSearch);
     }
 
     // Botón Nuevo - Abrir modal
@@ -20946,158 +20970,158 @@ var BulkValuesPanel = (function () {
     function handleViewChange(viewId) {
       if (!viewId) return;
       activeViewId = viewId;
-        const pageTitle = document.getElementById('page-title');
-        const titles = {
-          analisis: 'Análisis',
-          mapa: 'Mapa',
-          registro: 'Diccionario',
-          clientes: 'Diccionario de clientes',
-          empleados: 'Diccionario de empleados',
-          adelantos: 'Adelantos de sueldo',
-          pagos: 'Pagos',
-          gastos: 'Gastos',
-          'asistencia-plan': 'Plan Semanal',
-          'asistencia-diaria': 'Tomar Asistencia',
-          'asistencia-calendario': 'Calendario Empleado',
-          'asistencia-clientes': 'Calendario Clientes',
-          reportes: 'Reporte Empleados',
-          'reportes-clientes': 'Reporte Clientes',
-          facturacion: 'Facturación',
-          configuracion: 'Configuración'
-        };
+      const pageTitle = document.getElementById('page-title');
+      const titles = {
+        analisis: 'Análisis',
+        mapa: 'Mapa',
+        registro: 'Diccionario',
+        clientes: 'Diccionario de clientes',
+        empleados: 'Diccionario de empleados',
+        adelantos: 'Adelantos de sueldo',
+        pagos: 'Pagos',
+        gastos: 'Gastos',
+        'asistencia-plan': 'Plan Semanal',
+        'asistencia-diaria': 'Tomar Asistencia',
+        'asistencia-calendario': 'Calendario Empleado',
+        'asistencia-clientes': 'Calendario Clientes',
+        reportes: 'Reporte Empleados',
+        'reportes-clientes': 'Reporte Clientes',
+        facturacion: 'Facturación',
+        configuracion: 'Configuración'
+      };
 
-        const registroConfig = registroViews[viewId] || (viewId === 'registro' ? registroViews.clientes : null);
-        const targetViewId = registroConfig ? 'registro' : viewId;
+      const registroConfig = registroViews[viewId] || (viewId === 'registro' ? registroViews.clientes : null);
+      const targetViewId = registroConfig ? 'registro' : viewId;
 
-        // Update Title
-        if (pageTitle) {
-          const title = titles[viewId] || viewId.charAt(0).toUpperCase() + viewId.slice(1);
-          pageTitle.textContent = title;
+      // Update Title
+      if (pageTitle) {
+        const title = titles[viewId] || viewId.charAt(0).toUpperCase() + viewId.slice(1);
+        pageTitle.textContent = title;
+      }
+
+      // Hide all views
+      document.querySelectorAll('.view-section').forEach(el => {
+        el.classList.add('d-none');
+      });
+
+      // Show target view
+      const targetView = document.getElementById(`view-${targetViewId}`);
+      if (targetView) {
+        targetView.classList.remove('d-none');
+      }
+
+      if (registroConfig) {
+        setRegistroFormat(registroConfig.format, registroConfig.title);
+        return;
+      }
+
+      // Initialize view-specific content
+      if (viewId === 'asistencia-plan' && typeof WeeklyPlanPanel !== 'undefined') {
+        const container = document.getElementById('weekly-plan-panel');
+        if (container) {
+          if (EmptyState) {
+            EmptyState.render(container, { variant: 'loading', message: 'Cargando planes...' });
+          } else {
+            container.textContent = 'Cargando planes...';
+          }
+          if (!AttendancePanelsData || typeof AttendancePanelsData.searchWeeklyPlans !== "function") {
+            console.error("AttendancePanelsData.searchWeeklyPlans no disponible");
+            return;
+          }
+          AttendancePanelsData.searchWeeklyPlans("")
+            .then(records => {
+              WeeklyPlanPanel.renderList(container, records || []);
+            })
+            .catch(err => {
+              console.error('Error cargando planes:', err);
+              if (EmptyState) {
+                EmptyState.render(container, {
+                  variant: 'error',
+                  title: 'Error al cargar planes',
+                  message: 'No se pudo cargar la lista de planes.'
+                });
+              } else {
+                container.textContent = 'Error al cargar planes';
+              }
+            });
         }
-
-        // Hide all views
-        document.querySelectorAll('.view-section').forEach(el => {
-          el.classList.add('d-none');
-        });
-
-        // Show target view
-        const targetView = document.getElementById(`view-${targetViewId}`);
-        if (targetView) {
-          targetView.classList.remove('d-none');
-        }
-
-        if (registroConfig) {
-          setRegistroFormat(registroConfig.format, registroConfig.title);
-          return;
-        }
-
-        // Initialize view-specific content
-        if (viewId === 'asistencia-plan' && typeof WeeklyPlanPanel !== 'undefined') {
-          const container = document.getElementById('weekly-plan-panel');
+      }
+      if (viewId === 'analisis') {
+        const container = document.getElementById('analysis-panel');
+        if (!AnalysisPanel || !container) {
           if (container) {
             if (EmptyState) {
-              EmptyState.render(container, { variant: 'loading', message: 'Cargando planes...' });
-            } else {
-              container.textContent = 'Cargando planes...';
-            }
-            if (!AttendancePanelsData || typeof AttendancePanelsData.searchWeeklyPlans !== "function") {
-              console.error("AttendancePanelsData.searchWeeklyPlans no disponible");
-              return;
-            }
-            AttendancePanelsData.searchWeeklyPlans("")
-              .then(records => {
-                WeeklyPlanPanel.renderList(container, records || []);
-              })
-              .catch(err => {
-                console.error('Error cargando planes:', err);
-                if (EmptyState) {
-                  EmptyState.render(container, {
-                    variant: 'error',
-                    title: 'Error al cargar planes',
-                    message: 'No se pudo cargar la lista de planes.'
-                  });
-                } else {
-                  container.textContent = 'Error al cargar planes';
-                }
+              EmptyState.render(container, {
+                variant: 'error',
+                title: 'Módulo no disponible',
+                message: 'No se pudo cargar el análisis.'
               });
-          }
-        }
-        if (viewId === 'analisis') {
-          const container = document.getElementById('analysis-panel');
-          if (!AnalysisPanel || !container) {
-            if (container) {
-              if (EmptyState) {
-                EmptyState.render(container, {
-                  variant: 'error',
-                  title: 'Módulo no disponible',
-                  message: 'No se pudo cargar el análisis.'
-                });
-              } else {
-                container.textContent = 'No se pudo cargar el análisis.';
-              }
+            } else {
+              container.textContent = 'No se pudo cargar el análisis.';
             }
-          } else {
-            AnalysisPanel.render('analysis-panel');
           }
+        } else {
+          AnalysisPanel.render('analysis-panel');
         }
-        if (viewId === 'mapa') {
-          const container = document.getElementById('maps-panel');
-          if (!MapPanel || !container) {
-            if (container) {
-              if (EmptyState) {
-                EmptyState.render(container, {
-                  variant: 'error',
-                  title: 'Mapa no disponible',
-                  message: 'No se pudo cargar el mapa.'
-                });
-              } else {
-                container.textContent = 'No se pudo cargar el mapa.';
-              }
+      }
+      if (viewId === 'mapa') {
+        const container = document.getElementById('maps-panel');
+        if (!MapPanel || !container) {
+          if (container) {
+            if (EmptyState) {
+              EmptyState.render(container, {
+                variant: 'error',
+                title: 'Mapa no disponible',
+                message: 'No se pudo cargar el mapa.'
+              });
+            } else {
+              container.textContent = 'No se pudo cargar el mapa.';
             }
-          } else {
-            MapPanel.render('maps-panel');
           }
+        } else {
+          MapPanel.render('maps-panel');
         }
+      }
 
-        if (viewId === 'asistencia-diaria' && AttendanceDailyUI) {
-          const container = document.getElementById('daily-attendance-panel');
-          if (container) AttendanceDailyUI.render(container);
-        }
+      if (viewId === 'asistencia-diaria' && AttendanceDailyUI) {
+        const container = document.getElementById('daily-attendance-panel');
+        if (container) AttendanceDailyUI.render(container);
+      }
 
-        if (viewId === 'asistencia-calendario' && EmployeeCalendarPanel) {
-          EmployeeCalendarPanel.render('employee-calendar-panel');
-        }
+      if (viewId === 'asistencia-calendario' && EmployeeCalendarPanel) {
+        EmployeeCalendarPanel.render('employee-calendar-panel');
+      }
 
-        if (viewId === 'asistencia-clientes' && ClientCalendarPanel) {
-          ClientCalendarPanel.render('client-calendar-panel');
-        }
+      if (viewId === 'asistencia-clientes' && ClientCalendarPanel) {
+        ClientCalendarPanel.render('client-calendar-panel');
+      }
 
-        if (viewId === 'reportes' && HoursDetailPanel) {
-          if (MonthlySummaryPanel) MonthlySummaryPanel.render();
-          HoursDetailPanel.render();
-          if (AccountStatementPanel) AccountStatementPanel.render();
+      if (viewId === 'reportes' && HoursDetailPanel) {
+        if (MonthlySummaryPanel) MonthlySummaryPanel.render();
+        HoursDetailPanel.render();
+        if (AccountStatementPanel) AccountStatementPanel.render();
+      }
+      if (viewId === 'reportes-clientes' && ClientReportPanel) {
+        if (ClientMonthlySummaryPanel) {
+          ClientMonthlySummaryPanel.render();
         }
-        if (viewId === 'reportes-clientes' && ClientReportPanel) {
-          if (ClientMonthlySummaryPanel) {
-            ClientMonthlySummaryPanel.render();
-          }
-          if (ClientAccountPanel) {
-            ClientAccountPanel.render();
-          }
-          ClientReportPanel.render();
+        if (ClientAccountPanel) {
+          ClientAccountPanel.render();
         }
-        if (viewId === 'configuracion') {
-          if (BulkValuesPanel) BulkValuesPanel.render();
-          if (DropdownConfigPanel) {
-            DropdownConfigPanel.render();
-          }
+        ClientReportPanel.render();
+      }
+      if (viewId === 'configuracion') {
+        if (BulkValuesPanel) BulkValuesPanel.render();
+        if (DropdownConfigPanel) {
+          DropdownConfigPanel.render();
         }
-        if (viewId === 'facturacion' && InvoicePanel) {
-          InvoicePanel.render();
-        }
-        if (viewId === 'pagos' && PaymentsPanel) {
-          PaymentsPanel.render();
-        }
+      }
+      if (viewId === 'facturacion' && InvoicePanel) {
+        InvoicePanel.render();
+      }
+      if (viewId === 'pagos' && PaymentsPanel) {
+        PaymentsPanel.render();
+      }
     }
 
     // Sidebar Initialization
