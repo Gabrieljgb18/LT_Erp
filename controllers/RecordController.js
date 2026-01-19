@@ -17,9 +17,10 @@ var RecordController = (function () {
      * Busca registros en un formato específico
      * @param {string} tipoFormato - Tipo de formato a buscar
      * @param {string} query - Término de búsqueda
+     * @param {boolean} [includeInactive=false] - Si es true, incluye registros inactivos (baja lógica)
      * @returns {Array} Array de registros que coinciden con la búsqueda
      */
-    function searchRecords(tipoFormato, query) {
+    function searchRecords(tipoFormato, query, includeInactive) {
         const sheet = DatabaseService.getDbSheetForFormat(tipoFormato);
 
         // Reparación automática de datos legacy para ADELANTOS (corrimiento de columnas)
@@ -47,6 +48,26 @@ var RecordController = (function () {
         const results = [];
 
         data.forEach(function (row, index) {
+            // Filtro de baja lógica para CLIENTES y EMPLEADOS
+            if (!includeInactive && (tipoFormato === 'CLIENTES' || tipoFormato === 'EMPLEADOS')) {
+                const idxEstado = headerKeys.indexOf('ESTADO');
+                if (idxEstado > -1) {
+                    const estadoVal = row[idxEstado];
+                    // Consideramos activo si es truthy (true, 1, "TRUE", "Activo")
+                    // Si es 0, false, null, o vacío, lo saltamos.
+                    const isActive = estadoVal === true || estadoVal === 1 || String(estadoVal).toUpperCase() === 'TRUE' || String(estadoVal).toUpperCase() === 'ACTIVO';
+                    // Nota: Si la celda está vacía, isActive es false.
+                    // Si queremos que por defecto (sin valor) sean activos, cambiamos la lógica.
+                    // Pero para "Eliminar" seteamos 0, así que debe ocultarse.
+                    // Asumimos que los registros viejos tienen "Activo" o TRUE.
+                    // Si tienen vacío, asumiremos False para ser consistentes con 'isTruthy',
+                    // pero cuidado con datos legacy.
+                    // Mejor usar lógica laxa de DatabaseService:
+                    const isFalsy = estadoVal === 0 || estadoVal === false || estadoVal === 'FALSE' || estadoVal === 'false' || estadoVal === 'Inactivo';
+                    if (isFalsy) return;
+                }
+            }
+
             const rowStrings = row.map(function (cell, colIdx) {
                 return DataUtils.normalizeCellForSearch(cell, headers[colIdx]);
             });
@@ -110,110 +131,110 @@ var RecordController = (function () {
      * @param {Object} record - Objeto con los datos del registro
      * @returns {Array} Array de valores ordenados según headers
      */
-  function buildRowValues(headers, record) {
-    return headers.map(function (h) {
-      return record[h] != null ? record[h] : '';
-    });
-  }
-
-  function normalizeDocType_(value) {
-    const raw = String(value || '').trim().toUpperCase();
-    if (raw === 'DNI' || raw === 'CUIL' || raw === 'CUIT') return raw;
-    return raw;
-  }
-
-  function normalizeDocNumber_(value) {
-    if (value === null || value === undefined) return '';
-    return String(value).trim();
-  }
-
-  function ensureUniqueEmployeeDocument_(sheet, headers, record, ignoreId) {
-    if (!record || !headers || !headers.length) return;
-    const idxDocType = headers.indexOf('TIPO DOCUMENTO');
-    const idxDocNumber = headers.indexOf('NUMERO DOCUMENTO');
-    if (idxDocNumber === -1) return;
-    const docNumber = normalizeDocNumber_(record['NUMERO DOCUMENTO']);
-    if (!docNumber) return;
-    const docType = normalizeDocType_(record['TIPO DOCUMENTO']);
-    const idxId = headers.indexOf('ID');
-    const idxNombre = headers.indexOf('EMPLEADO');
-    const lastRow = sheet.getLastRow();
-    if (lastRow < 2) return;
-
-    const rows = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      const rowId = idxId > -1 ? row[idxId] : row[0];
-      if (ignoreId != null && String(rowId) === String(ignoreId)) continue;
-      const rowDocNumber = normalizeDocNumber_(idxDocNumber > -1 ? row[idxDocNumber] : '');
-      if (!rowDocNumber || rowDocNumber !== docNumber) continue;
-      const rowDocType = normalizeDocType_(idxDocType > -1 ? row[idxDocType] : '');
-      const typeMatches = docType && rowDocType ? docType === rowDocType : true;
-      if (!typeMatches) continue;
-      const nombre = idxNombre > -1 ? row[idxNombre] : '';
-      const docLabel = (docType ? docType + ' ' : '') + docNumber;
-      const suffix = nombre ? ' (' + nombre + ')' : '';
-      throw new Error('Documento duplicado: ' + docLabel + '. Ya existe un empleado' + suffix + '.');
-    }
-  }
-
-  function ensureRequiredIds(tipoFormato, record) {
-    const rulesByFormat = {
-      ASISTENCIA: [
-        { idField: 'ID_CLIENTE', labelField: 'CLIENTE' },
-        { idField: 'ID_EMPLEADO', labelField: 'EMPLEADO' }
-      ],
-      ASISTENCIA_PLAN: [
-        { idField: 'ID_CLIENTE', labelField: 'CLIENTE' },
-        { idField: 'ID_EMPLEADO', labelField: 'EMPLEADO' }
-      ],
-      ADELANTOS: [
-        { idField: 'ID_EMPLEADO', labelField: 'EMPLEADO' }
-      ],
-      FACTURACION: [
-        { idField: 'ID_CLIENTE', labelField: 'RAZÓN SOCIAL' }
-      ],
-      PAGOS_CLIENTES: [
-        { idField: 'ID_CLIENTE', labelField: 'RAZÓN SOCIAL' }
-      ]
-    };
-
-    const rules = rulesByFormat[tipoFormato];
-    if (!rules || !record) return;
-
-    rules.forEach(rule => {
-      const idVal = record[rule.idField];
-      const labelVal = rule.labelField ? record[rule.labelField] : '';
-      const hasLabel = labelVal != null && String(labelVal).trim() !== '';
-      const hasId = idVal != null && String(idVal).trim() !== '';
-      if (!hasId && (hasLabel || record.hasOwnProperty(rule.idField))) {
-        throw new Error('Falta ' + rule.idField + ' para guardar el registro.');
-      }
-    });
-  }
-
-  function ensureHeaders_(sheet, headers, templateHeaders) {
-    if (!templateHeaders || !templateHeaders.length) return headers;
-    if (!headers || !headers.length) return templateHeaders;
-
-    const missing = templateHeaders.filter(h => headers.indexOf(h) === -1);
-    if (!missing.length) return headers;
-
-    const newHeaders = headers.concat(missing);
-
-    sheet.getRange(1, 1, 1, newHeaders.length).setValues([newHeaders]);
-
-    const lastRow = sheet.getLastRow();
-    if (lastRow > 1) {
-      const blanks = [];
-      for (let i = 0; i < lastRow - 1; i++) {
-        blanks.push(new Array(missing.length).fill(''));
-      }
-      sheet.getRange(2, headers.length + 1, lastRow - 1, missing.length).setValues(blanks);
+    function buildRowValues(headers, record) {
+        return headers.map(function (h) {
+            return record[h] != null ? record[h] : '';
+        });
     }
 
-    return newHeaders;
-  }
+    function normalizeDocType_(value) {
+        const raw = String(value || '').trim().toUpperCase();
+        if (raw === 'DNI' || raw === 'CUIL' || raw === 'CUIT') return raw;
+        return raw;
+    }
+
+    function normalizeDocNumber_(value) {
+        if (value === null || value === undefined) return '';
+        return String(value).trim();
+    }
+
+    function ensureUniqueEmployeeDocument_(sheet, headers, record, ignoreId) {
+        if (!record || !headers || !headers.length) return;
+        const idxDocType = headers.indexOf('TIPO DOCUMENTO');
+        const idxDocNumber = headers.indexOf('NUMERO DOCUMENTO');
+        if (idxDocNumber === -1) return;
+        const docNumber = normalizeDocNumber_(record['NUMERO DOCUMENTO']);
+        if (!docNumber) return;
+        const docType = normalizeDocType_(record['TIPO DOCUMENTO']);
+        const idxId = headers.indexOf('ID');
+        const idxNombre = headers.indexOf('EMPLEADO');
+        const lastRow = sheet.getLastRow();
+        if (lastRow < 2) return;
+
+        const rows = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
+        for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            const rowId = idxId > -1 ? row[idxId] : row[0];
+            if (ignoreId != null && String(rowId) === String(ignoreId)) continue;
+            const rowDocNumber = normalizeDocNumber_(idxDocNumber > -1 ? row[idxDocNumber] : '');
+            if (!rowDocNumber || rowDocNumber !== docNumber) continue;
+            const rowDocType = normalizeDocType_(idxDocType > -1 ? row[idxDocType] : '');
+            const typeMatches = docType && rowDocType ? docType === rowDocType : true;
+            if (!typeMatches) continue;
+            const nombre = idxNombre > -1 ? row[idxNombre] : '';
+            const docLabel = (docType ? docType + ' ' : '') + docNumber;
+            const suffix = nombre ? ' (' + nombre + ')' : '';
+            throw new Error('Documento duplicado: ' + docLabel + '. Ya existe un empleado' + suffix + '.');
+        }
+    }
+
+    function ensureRequiredIds(tipoFormato, record) {
+        const rulesByFormat = {
+            ASISTENCIA: [
+                { idField: 'ID_CLIENTE', labelField: 'CLIENTE' },
+                { idField: 'ID_EMPLEADO', labelField: 'EMPLEADO' }
+            ],
+            ASISTENCIA_PLAN: [
+                { idField: 'ID_CLIENTE', labelField: 'CLIENTE' },
+                { idField: 'ID_EMPLEADO', labelField: 'EMPLEADO' }
+            ],
+            ADELANTOS: [
+                { idField: 'ID_EMPLEADO', labelField: 'EMPLEADO' }
+            ],
+            FACTURACION: [
+                { idField: 'ID_CLIENTE', labelField: 'RAZÓN SOCIAL' }
+            ],
+            PAGOS_CLIENTES: [
+                { idField: 'ID_CLIENTE', labelField: 'RAZÓN SOCIAL' }
+            ]
+        };
+
+        const rules = rulesByFormat[tipoFormato];
+        if (!rules || !record) return;
+
+        rules.forEach(rule => {
+            const idVal = record[rule.idField];
+            const labelVal = rule.labelField ? record[rule.labelField] : '';
+            const hasLabel = labelVal != null && String(labelVal).trim() !== '';
+            const hasId = idVal != null && String(idVal).trim() !== '';
+            if (!hasId && (hasLabel || record.hasOwnProperty(rule.idField))) {
+                throw new Error('Falta ' + rule.idField + ' para guardar el registro.');
+            }
+        });
+    }
+
+    function ensureHeaders_(sheet, headers, templateHeaders) {
+        if (!templateHeaders || !templateHeaders.length) return headers;
+        if (!headers || !headers.length) return templateHeaders;
+
+        const missing = templateHeaders.filter(h => headers.indexOf(h) === -1);
+        if (!missing.length) return headers;
+
+        const newHeaders = headers.concat(missing);
+
+        sheet.getRange(1, 1, 1, newHeaders.length).setValues([newHeaders]);
+
+        const lastRow = sheet.getLastRow();
+        if (lastRow > 1) {
+            const blanks = [];
+            for (let i = 0; i < lastRow - 1; i++) {
+                blanks.push(new Array(missing.length).fill(''));
+            }
+            sheet.getRange(2, headers.length + 1, lastRow - 1, missing.length).setValues(blanks);
+        }
+
+        return newHeaders;
+    }
 
     /**
      * Guarda un nuevo registro
@@ -411,53 +432,92 @@ var RecordController = (function () {
     }
 
     /**
-     * Elimina un registro
+     * Elimina un registro (o realiza baja lógica si corresponde)
      * @param {string} tipoFormato - Tipo de formato
      * @param {number} id - ID del registro a eliminar
      */
     function deleteRecord(tipoFormato, id) {
         const sheet = DatabaseService.getDbSheetForFormat(tipoFormato);
 
-        let targetId = id;
-        let rowNumber = null;
-        if (id && typeof id === 'object') {
-            if (id.id != null) targetId = id.id;
-            if (id.ID != null) targetId = id.ID;
-            rowNumber = Number(id.rowNumber) || null;
+        // Lock para evitar colisiones
+        const lock = LockService.getScriptLock();
+        try {
+            lock.waitLock(30000);
+        } catch (e) {
+            throw new Error('No se pudo obtener lock para eliminar. Reintentá.');
         }
 
-        const targetStr = targetId == null ? '' : String(targetId).trim();
-        const lastRow = sheet.getLastRow();
-        const lastCol = sheet.getLastColumn();
+        try {
+            let targetId = id;
+            let rowNumber = null;
+            if (id && typeof id === 'object') {
+                if (id.id != null) targetId = id.id;
+                if (id.ID != null) targetId = id.ID;
+                rowNumber = Number(id.rowNumber) || null;
+            }
 
-        if (rowNumber && rowNumber >= 2 && rowNumber <= lastRow) {
-            let idCol = 1;
-            if (lastCol > 0) {
+            const targetStr = targetId == null ? '' : String(targetId).trim();
+            const lastRow = sheet.getLastRow();
+            const lastCol = sheet.getLastColumn();
+
+            let finalRow = null;
+
+            // 1. Intentar validar usando el rowNumber provisto para optimizar
+            if (rowNumber && rowNumber >= 2 && rowNumber <= lastRow) {
+                let idCol = 1;
+                let headers = [];
+                if (lastCol > 0) {
+                    headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0]
+                        .map(h => String(h || '').trim().toUpperCase());
+                    const idxId = headers.indexOf('ID');
+                    if (idxId > -1) idCol = idxId + 1;
+                }
+                const rowIdVal = sheet.getRange(rowNumber, idCol).getValue();
+                const rowIdStr = String(rowIdVal || '').trim();
+                const rowIdNum = Number(rowIdStr);
+                const targetNum = Number(targetStr);
+
+                const matches = targetStr
+                    ? (rowIdStr === targetStr || (!isNaN(rowIdNum) && !isNaN(targetNum) && rowIdNum === targetNum))
+                    : false;
+
+                if (matches || !targetStr) {
+                    finalRow = rowNumber;
+                }
+            }
+
+            // 2. Si no se encontró por rowNumber, buscar por ID (fallback)
+            if (!finalRow) {
+                finalRow = DatabaseService.findRowById(sheet, targetId);
+            }
+
+            if (!finalRow) {
+                throw new Error('Registro con ID ' + targetId + ' no encontrado');
+            }
+
+            // 3. Determinar estrategia: Baja Lógica (Soft Delete) vs Baja Física
+            // Para CLIENTES y EMPLEADOS usamos baja lógica para mantener integridad referencial
+            const softDeleteFormats = ['CLIENTES', 'EMPLEADOS'];
+
+            if (softDeleteFormats.indexOf(tipoFormato) !== -1) {
+                // Buscar columna ESTADO
                 const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0]
                     .map(h => String(h || '').trim().toUpperCase());
-                const idxId = headers.indexOf('ID');
-                if (idxId > -1) idCol = idxId + 1;
-            }
-            const rowIdVal = sheet.getRange(rowNumber, idCol).getValue();
-            const rowIdStr = String(rowIdVal || '').trim();
-            const rowIdNum = Number(rowIdStr);
-            const targetNum = Number(targetStr);
-            const matches = targetStr
-                ? (rowIdStr === targetStr || (!isNaN(rowIdNum) && !isNaN(targetNum) && rowIdNum === targetNum))
-                : false;
-            if (matches || !targetStr) {
-                sheet.deleteRow(rowNumber);
-                return;
-            }
-        }
+                const idxEstado = headers.indexOf('ESTADO');
 
-        // Find row by ID
-        const resolvedRow = DatabaseService.findRowById(sheet, targetId);
-        if (!resolvedRow) {
-            throw new Error('Registro con ID ' + targetId + ' no encontrado');
-        }
+                if (idxEstado > -1) {
+                    // Actualizar ESTADO a 0 (Inactivo / Falso)
+                    sheet.getRange(finalRow, idxEstado + 1).setValue(0);
+                    return;
+                }
+            }
 
-        sheet.deleteRow(resolvedRow);
+            // 4. Baja Física (por defecto o si no hay columna ESTADO)
+            sheet.deleteRow(finalRow);
+
+        } finally {
+            lock.releaseLock();
+        }
     }
 
     /**

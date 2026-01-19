@@ -28,8 +28,8 @@ function getAvailableFormats() {
 /**
  * Busca registros en un formato
  */
-function searchRecords(tipoFormato, query) {
-  return RecordController.searchRecords(tipoFormato, query);
+function searchRecords(tipoFormato, query, includeInactive) {
+  return RecordController.searchRecords(tipoFormato, query, includeInactive);
 }
 
 /**

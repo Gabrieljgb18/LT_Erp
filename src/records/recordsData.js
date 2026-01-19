@@ -12,18 +12,19 @@
     return global.ApiService.call("getAvailableFormats");
   }
 
-  function searchRecords(tipoFormato, query) {
+  function searchRecords(tipoFormato, query, includeInactive) {
     if (!ensureApi()) return Promise.resolve([]);
     if (typeof global.ApiService.callLatest === "function") {
-      const key = "search-" + String(tipoFormato || "") + "|" + String(query || "");
+      const key = "search-" + String(tipoFormato || "") + "|" + String(query || "") + "|" + String(includeInactive || "");
       return global.ApiService.callLatest(
         key,
         "searchRecords",
         tipoFormato,
-        query || ""
+        query || "",
+        includeInactive
       );
     }
-    return global.ApiService.call("searchRecords", tipoFormato, query || "");
+    return global.ApiService.call("searchRecords", tipoFormato, query || "", includeInactive);
   }
 
   function saveRecord(tipoFormato, record) {

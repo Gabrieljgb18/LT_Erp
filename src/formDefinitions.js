@@ -8,7 +8,7 @@
       fields: [
         { id: "SECTION_DATOS", label: "Datos del cliente", type: "section", icon: "bi-building" },
         { id: "NOMBRE", label: "Nombre", type: "text", placeholder: "Nombre del cliente" },
-        { id: "ESTADO", label: "Estado", type: "boolean", trueLabel: "Activo", falseLabel: "Inactivo" },
+        { id: "ESTADO", label: "Estado", type: "boolean", trueLabel: "Activo", falseLabel: "Inactivo", defaultChecked: true },
         { id: "RAZON SOCIAL", label: "Razón social", type: "text" },
         { id: "TIPO DOCUMENTO", label: "Tipo de documento", type: "docType" },
         { id: "NUMERO DOCUMENTO", label: "Número de documento", type: "docNumber", docTypeField: "TIPO DOCUMENTO", placeholder: "00-00000000-0" },
@@ -63,7 +63,7 @@
       title: "Registro de empleados",
       fields: [
         { id: "SECTION_DATOS", label: "Datos del empleado", type: "section", icon: "bi-person-badge" },
-        { id: "ESTADO", label: "Estado", type: "boolean", trueLabel: "Activo" },
+        { id: "ESTADO", label: "Estado", type: "boolean", trueLabel: "Activo", falseLabel: "Inactivo", defaultChecked: true },
         { id: "EMPLEADO", label: "Empleado", type: "text", full: true },
         { id: "SECTION_DOC", label: "Documentación", type: "section", icon: "bi-card-text" },
         { id: "TIPO DOCUMENTO", label: "Tipo de documento", type: "docType" },
