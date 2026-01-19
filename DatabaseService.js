@@ -71,14 +71,35 @@ var DatabaseService = (function () {
    */
   function findRowById(sheet, id) {
     const lastRow = sheet.getLastRow();
+    const lastCol = sheet.getLastColumn();
 
     if (lastRow < 2) return null;
 
-    const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    const targetStr = id == null ? '' : String(id).trim();
+    if (!targetStr) return null;
+
+    let idCol = 1;
+    if (lastCol > 0) {
+      const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0]
+        .map(h => String(h || '').trim().toUpperCase());
+      const idxId = headers.indexOf('ID');
+      if (idxId > -1) idCol = idxId + 1;
+    }
+
+    const ids = sheet.getRange(2, idCol, lastRow - 1, 1).getValues();
+    const targetNum = Number(targetStr);
+    const targetHasNum = !isNaN(targetNum);
 
     for (let i = 0; i < ids.length; i++) {
-      if (Number(ids[i][0]) === Number(id)) {
+      const cellStr = String(ids[i][0] || '').trim();
+      if (cellStr && cellStr === targetStr) {
         return i + 2; // +2 because: +1 for 0-index, +1 for header row
+      }
+      if (targetHasNum) {
+        const cellNum = Number(cellStr);
+        if (!isNaN(cellNum) && cellNum === targetNum) {
+          return i + 2;
+        }
       }
     }
 
