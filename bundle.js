@@ -21343,11 +21343,14 @@ var BulkValuesPanel = (function () {
   }
 
   function handleReferenceUpdate(data) {
-    if (!activeViewId) return;
-    const handler = referenceUpdateRegistry.get(activeViewId);
-    if (handler) handler(data);
-    const globalHandler = referenceUpdateRegistry.get("*");
-    if (globalHandler) globalHandler(data);
+    referenceUpdateRegistry.forEach((handler, viewId) => {
+      if (typeof handler !== "function") return;
+      try {
+        handler(data);
+      } catch (err) {
+        console.error("Error en handler de referencia (" + viewId + "):", err);
+      }
+    });
   }
 
   function setupEventHandlers() {

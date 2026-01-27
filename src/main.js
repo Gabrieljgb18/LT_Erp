@@ -45,10 +45,15 @@
     BulkValuesPanel,
     DropdownConfigPanel,
     AnalysisPanel,
+    AnalysisPanelData,
     MapPanel,
+    MapsPanelData,
     AttendanceDailyUI,
+    AttendanceDailyData,
     EmployeeCalendarPanel,
+    EmployeeCalendarData,
     ClientCalendarPanel,
+    ClientCalendarData,
     PaymentsPanel,
     AttendancePanelsData,
     EmptyState,
@@ -63,7 +68,39 @@
   let referenceSubscribed = false;
   let referenceUnsubscribe = null;
   let activeViewId = null;
+  let prefetchScheduled = false;
   const referenceUpdateRegistry = new Map();
+
+  function schedulePrefetchAll() {
+    if (prefetchScheduled) return;
+    prefetchScheduled = true;
+
+    const tasks = [];
+    const addTask = (fn) => {
+      if (typeof fn === "function") tasks.push(fn);
+    };
+
+    addTask(AnalysisPanelData && AnalysisPanelData.prefetch ? AnalysisPanelData.prefetch : null);
+    addTask(MapsPanelData && MapsPanelData.prefetch ? MapsPanelData.prefetch : null);
+    addTask(AttendancePanelsData && AttendancePanelsData.prefetchWeeklyPlans ? AttendancePanelsData.prefetchWeeklyPlans : null);
+    addTask(AttendanceDailyData && AttendanceDailyData.prefetch ? AttendanceDailyData.prefetch : null);
+    addTask(EmployeeCalendarData && EmployeeCalendarData.prefetchEmployees ? EmployeeCalendarData.prefetchEmployees : null);
+    addTask(ClientCalendarData && ClientCalendarData.prefetchClients ? ClientCalendarData.prefetchClients : null);
+
+    let index = 0;
+    const runNext = () => {
+      if (index >= tasks.length) return;
+      const task = tasks[index++];
+      Promise.resolve()
+        .then(task)
+        .catch(() => null)
+        .finally(() => {
+          setTimeout(runNext, 250);
+        });
+    };
+
+    setTimeout(runNext, 500);
+  }
 
   function initApp() {
     if (appInitialized) return;
@@ -108,6 +145,7 @@
     // Setup event handlers
     setupEventHandlers();
     bindReferenceUpdates();
+    schedulePrefetchAll();
   }
 
   const registroViews = {
@@ -160,13 +198,13 @@
     RecordsData.searchRecords(tipoFormato, "", includeInactive)
       .then(function (records) {
         if (GridManager) {
-          GridManager.renderGrid(tipoFormato, records || []);
+          GridManager.renderGrid(tipoFormato, records || [], { resetPage: true });
         }
       })
       .catch(function (err) {
         console.error("Error cargando registros:", err);
         if (GridManager) {
-          GridManager.renderGrid(tipoFormato, []);
+          GridManager.renderGrid(tipoFormato, [], { resetPage: true });
         }
       });
   }
@@ -184,11 +222,14 @@
   }
 
   function handleReferenceUpdate(data) {
-    if (!activeViewId) return;
-    const handler = referenceUpdateRegistry.get(activeViewId);
-    if (handler) handler(data);
-    const globalHandler = referenceUpdateRegistry.get("*");
-    if (globalHandler) globalHandler(data);
+    referenceUpdateRegistry.forEach((handler, viewId) => {
+      if (typeof handler !== "function") return;
+      try {
+        handler(data);
+      } catch (err) {
+        console.error("Error en handler de referencia (" + viewId + "):", err);
+      }
+    });
   }
 
   function setupEventHandlers() {
@@ -247,7 +288,7 @@
       RecordsData.searchRecords(tipoFormato, query, includeInactive)
         .then(function (records) {
           if (GridManager) {
-            GridManager.renderGrid(tipoFormato, records || []);
+            GridManager.renderGrid(tipoFormato, records || [], { resetPage: true });
           }
         })
         .catch(function (err) {
@@ -649,12 +690,12 @@
       });
 
       if (Sidebar.setActive) {
-        Sidebar.setActive('analisis');
+        Sidebar.setActive('asistencia-plan');
       } else {
-        handleViewChange('analisis');
+        handleViewChange('asistencia-plan');
       }
     } else {
-      handleViewChange('analisis');
+      handleViewChange('asistencia-plan');
     }
   }
 
