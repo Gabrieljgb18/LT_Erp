@@ -174,8 +174,10 @@
                 }
 
                 if (field.type === "number" && hasValue) {
-                    const num = Number(value);
-                    if (isNaN(num)) {
+                    const parsedNumber = NumberUtils && typeof NumberUtils.parseLocalizedNumber === "function"
+                        ? NumberUtils.parseLocalizedNumber(value)
+                        : Number(value);
+                    if (parsedNumber === null || isNaN(parsedNumber)) {
                         registerError(field, input);
                     }
                 }

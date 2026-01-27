@@ -50,6 +50,9 @@ var ValidationService = (function () {
   }
 
   function parseNumber_(value) {
+    if (NumberUtils && typeof NumberUtils.parseLocalizedNumber === 'function') {
+      return NumberUtils.parseLocalizedNumber(value);
+    }
     if (typeof value === 'number') return isNaN(value) ? null : value;
     const raw = String(value).trim();
     if (!raw) return null;

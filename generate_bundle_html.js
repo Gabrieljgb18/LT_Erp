@@ -7,6 +7,7 @@ if (typeof require === "undefined") {
 
   const root = __dirname;
   const sources = [
+    path.join(root, "NumberUtils.js"),
     path.join(root, "src", "utils", "htmlHelpers.js"),
     path.join(root, "src", "utils", "domHelpers.js"),
     path.join(root, "src", "utils", "domainHelpers.js"),

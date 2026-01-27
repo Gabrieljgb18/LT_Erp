@@ -1,4 +1,31 @@
 // Archivo generado. Editá los módulos en /src y corré `node generate_bundle_html.js`.
+var NumberUtils = (function () {
+  function normalizeCandidate_(value) {
+    if (value === null || value === undefined) return null;
+    const raw = String(value).trim();
+    if (!raw) return null;
+    return raw;
+  }
+
+  function parseLocalizedNumber(value) {
+    const candidate = normalizeCandidate_(value);
+    if (candidate === null) return null;
+
+    const cleaned = candidate
+      .replace(/\s/g, '')
+      .replace(/[^\d.,-]/g, '')
+      .replace(/\./g, '')
+      .replace(',', '.');
+    const parsed = Number(cleaned);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+
+  return {
+    parseLocalizedNumber
+  };
+})();
+
+
 /**
  * HTML Helpers
  * Utilidades para generación de HTML y escape de strings
@@ -3285,6 +3312,11 @@
     selectsDirty: true,
     planData: null,
     planIndex: createPlanIndex(),
+    prefetchReference: null,
+    prefetchPlanData: null,
+    prefetchPlanIndex: null,
+    prefetchWeekStart: "",
+    prefetchAt: 0,
     currentListItems: [],
     listClickBound: false,
     unsubscribeRef: null,
@@ -3346,6 +3378,7 @@
     console.error("MapsPanelState no disponible");
     return;
   }
+  const PREFETCH_TTL_MS = 5 * 60 * 1000;
 
   function buildPlanIndex(data) {
     const index = state.createPlanIndex();
@@ -3569,6 +3602,73 @@
       });
   }
 
+  function applyPrefetch() {
+    if (!state.prefetchAt || (Date.now() - state.prefetchAt) > PREFETCH_TTL_MS) {
+      return false;
+    }
+    let used = false;
+    if (state.prefetchReference) {
+      state.cachedReference = state.prefetchReference;
+      buildReferenceIndex();
+      state.clientItemsDirty = true;
+      state.selectsDirty = true;
+      used = true;
+    }
+    const currentWeek = state.formatDateISO(state.filters.weekStart);
+    const weekMatches = !state.prefetchWeekStart || state.prefetchWeekStart === currentWeek;
+    if (state.prefetchPlanData && weekMatches) {
+      state.planData = state.prefetchPlanData;
+      state.planIndex = state.prefetchPlanIndex || buildPlanIndex(state.prefetchPlanData);
+      state.clientItemsDirty = true;
+      used = true;
+    }
+    return used;
+  }
+
+  function prefetch() {
+    const tasks = [];
+    if (global.ReferenceService && typeof global.ReferenceService.ensureLoaded === "function") {
+      tasks.push(
+        global.ReferenceService.ensureLoaded()
+          .then(() => {
+            const data = global.ReferenceService.get();
+            state.prefetchReference = data || { clientes: [], empleados: [] };
+            state.prefetchAt = Date.now();
+          })
+          .catch(() => {
+            state.prefetchReference = { clientes: [], empleados: [] };
+            state.prefetchAt = Date.now();
+          })
+      );
+    }
+
+    if (global.MapsService && typeof global.MapsService.getWeeklyClientOverview === "function") {
+      const weekStart = state.filters && state.filters.weekStart
+        ? state.filters.weekStart
+        : state.getMondayOfWeek(new Date());
+      const weekStartStr = state.formatDateISO(weekStart);
+      tasks.push(
+        global.MapsService.getWeeklyClientOverview(weekStartStr)
+          .then((data) => {
+            if (data && data.error) throw new Error(data.error);
+            state.prefetchPlanData = data || null;
+            state.prefetchPlanIndex = buildPlanIndex(state.prefetchPlanData);
+            state.prefetchWeekStart = weekStartStr;
+            state.prefetchAt = Date.now();
+          })
+          .catch(() => {
+            state.prefetchPlanData = null;
+            state.prefetchPlanIndex = buildPlanIndex(null);
+            state.prefetchWeekStart = weekStartStr;
+            state.prefetchAt = Date.now();
+          })
+      );
+    }
+
+    if (!tasks.length) return Promise.resolve(null);
+    return Promise.allSettled(tasks);
+  }
+
   global.MapsPanelData = {
     buildPlanIndex: buildPlanIndex,
     buildReferenceIndex: buildReferenceIndex,
@@ -3577,7 +3677,9 @@
     splitByCoords: splitByCoords,
     refreshReferenceData: refreshReferenceData,
     refreshPlanData: refreshPlanData,
-    subscribeReferenceUpdates: subscribeReferenceUpdates
+    subscribeReferenceUpdates: subscribeReferenceUpdates,
+    applyPrefetch: applyPrefetch,
+    prefetch: prefetch
   };
 })(typeof window !== "undefined" ? window : this);
 
@@ -4693,8 +4795,17 @@
       resetState();
 
       global.MapsPanelHandlers.attachEvents(container);
-      global.MapsPanelData.refreshReferenceData(container);
-      global.MapsPanelData.refreshPlanData(container);
+
+      const usedPrefetch = global.MapsPanelData && typeof global.MapsPanelData.applyPrefetch === "function"
+        ? global.MapsPanelData.applyPrefetch()
+        : false;
+
+      if (usedPrefetch && global.MapsPanelRender) {
+        global.MapsPanelRender.renderView(container);
+      } else {
+        global.MapsPanelData.refreshReferenceData(container);
+        global.MapsPanelData.refreshPlanData(container);
+      }
 
       if (state.unsubscribeRef) state.unsubscribeRef();
       if (global.MapsPanelData && typeof global.MapsPanelData.subscribeReferenceUpdates === "function") {
@@ -5023,6 +5134,11 @@
         let eventsController = null;
         const Dom = global.DomHelpers;
         const RecordsData = global.RecordsData || null;
+        const UiHelpers = global.UIHelpers || null;
+        let currentPage = 1;
+        let currentPageSize = 0;
+        let currentTotalPages = 1;
+        let currentRelevantFields = [];
 
         function formatDateForGrid(value) {
             if (!value) return '';
@@ -5070,82 +5186,132 @@
             return d.toLocaleDateString('es-ES');
         }
 
-        /**
-         * Renderiza la grilla con los registros del formato actual
-         */
-        function renderGrid(tipoFormato, records) {
-            currentFormat = tipoFormato;
+        function getPageSizeForFormat(tipoFormato) {
+            if (tipoFormato === "CLIENTES" || tipoFormato === "EMPLEADOS") {
+                return 15;
+            }
+            return 0;
+        }
 
-            // Vista resumida especial para asistencia diaria
-            if (tipoFormato === 'ASISTENCIA' && global.AttendanceDailyUI) {
-                global.AttendanceDailyUI.renderSummary(records || []);
+        function clampPage(page, totalPages) {
+            const total = Math.max(1, Number(totalPages || 1));
+            const value = Math.max(1, Number(page || 1));
+            return Math.min(value, total);
+        }
+
+        function getPaginationContainer() {
+            return document.getElementById("grid-pagination");
+        }
+
+        function clearPagination() {
+            const container = getPaginationContainer();
+            if (!container || !Dom) return;
+            container.classList.add("d-none");
+            Dom.clear(container);
+        }
+
+        function updatePaginationState(options) {
+            currentPageSize = getPageSizeForFormat(currentFormat);
+            currentTotalPages = currentPageSize
+                ? Math.max(1, Math.ceil(allRecords.length / currentPageSize))
+                : 1;
+
+            if (options && options.resetPage) {
+                currentPage = 1;
+            }
+
+            currentPage = clampPage(currentPage, currentTotalPages);
+        }
+
+        function getPageSlice() {
+            if (!currentPageSize) {
+                return { records: allRecords, offset: 0 };
+            }
+            const start = (currentPage - 1) * currentPageSize;
+            const end = start + currentPageSize;
+            return { records: allRecords.slice(start, end), offset: start };
+        }
+
+        function renderPaginationControls() {
+            const container = getPaginationContainer();
+            if (!container || !Dom) return;
+
+            if (!currentPageSize || allRecords.length <= currentPageSize) {
+                clearPagination();
                 return;
             }
 
-            // Los registros vienen en formato {id, rowNumber, record}
-            // Extraer solo los records y agregar el ID
-            allRecords = (records || []).map(item => {
-                if (item.record) {
-                    // Agregar el ID al record para poder usarlo después
-                    item.record.ID = item.id;
-                    item.record._rowNumber = item.rowNumber;
-                    return item.record;
-                }
-                return item;
+            container.classList.remove("d-none");
+            if (UiHelpers && typeof UiHelpers.renderPagination === "function") {
+                UiHelpers.renderPagination(container, {
+                    page: currentPage,
+                    totalPages: currentTotalPages,
+                    onPageChange: function (page) {
+                        setPage(page);
+                    }
+                });
+            }
+        }
+
+        function setPage(page) {
+            const nextPage = clampPage(page, currentTotalPages);
+            if (nextPage === currentPage) return;
+            currentPage = nextPage;
+            renderPage();
+        }
+
+        function getCurrentQuery() {
+            const input = document.getElementById("search-query");
+            return input ? input.value : "";
+        }
+
+        function getIncludeInactive() {
+            const toggle = document.getElementById("check-ver-inactivos");
+            return toggle ? toggle.checked : false;
+        }
+
+        function renderHeaders(relevantFields) {
+            const headersRow = document.getElementById('grid-headers');
+            if (!headersRow) return;
+
+            Dom.clear(headersRow);
+
+            relevantFields.forEach(field => {
+                headersRow.appendChild(Dom.el('th', { text: field.label }));
             });
 
-            const formDef = FORM_DEFINITIONS[tipoFormato];
-            if (!formDef) return;
+            headersRow.appendChild(Dom.el('th', {
+                text: 'Acciones',
+                style: 'width: 150px; text-align: center;'
+            }));
+        }
 
-            // Obtener los 5 campos más relevantes (sin secciones/ocultos)
-            const visibleFields = formDef.fields.filter(field => field.type !== 'section' && !field.hidden);
-            const relevantFields = visibleFields.slice(0, 5);
+        function renderEmptyState(relevantFields) {
+            const tbody = document.getElementById('grid-body');
+            if (!tbody) return;
+            const colSpan = (relevantFields.length || 1) + 1;
+            tbody.appendChild(Dom.el('tr', null, Dom.el('td', {
+                colSpan: colSpan,
+                className: 'text-center text-muted py-5',
+                text: 'No hay registros para mostrar'
+            })));
+        }
 
-            // Renderizar headers
-            const headersRow = document.getElementById('grid-headers');
-            if (headersRow) {
-                Dom.clear(headersRow);
-
-                relevantFields.forEach(field => {
-                    headersRow.appendChild(Dom.el('th', { text: field.label }));
-                });
-
-                // Columna de acciones
-                headersRow.appendChild(Dom.el('th', {
-                    text: 'Acciones',
-                    style: 'width: 150px; text-align: center;'
-                }));
-            }
-
-            // Renderizar body
+        function renderRows(records, offset, relevantFields) {
             const tbody = document.getElementById('grid-body');
             if (!tbody) return;
 
-            Dom.clear(tbody);
-
-            if (!allRecords.length) {
-                tbody.appendChild(Dom.el('tr', null, Dom.el('td', {
-                    colSpan: relevantFields.length + 1,
-                    className: 'text-center text-muted py-5',
-                    text: 'No hay registros para mostrar'
-                })));
-                return;
-            }
-
-            allRecords.forEach((record, idx) => {
+            records.forEach((record, idx) => {
                 const tr = document.createElement('tr');
 
                 relevantFields.forEach(field => {
                     const td = document.createElement('td');
-                    // Buscar el valor usando el ID del campo (puede estar en mayúsculas o minúsculas)
                     let value = record[field.id];
 
-                    // Si no encuentra, intentar con el label
                     if (value === undefined || value === null) {
                         value = record[field.label];
                     }
 
-                    // Si aún no encuentra, intentar buscar case-insensitive
                     if (value === undefined || value === null) {
                         const keys = Object.keys(record);
                         const matchingKey = keys.find(k => k.toUpperCase() === field.id.toUpperCase());
@@ -5154,7 +5320,6 @@
                         }
                     }
 
-                    // Formatear según el tipo
                     if (field.type === 'boolean') {
                         const isTrue = value === true ||
                             value === 'TRUE' ||
@@ -5182,7 +5347,6 @@
                     tr.appendChild(td);
                 });
 
-                // Botones de acción - inline y más pequeños
                 const tdActions = Dom.el('td', {
                     style: 'text-align: center; white-space: nowrap;'
                 });
@@ -5190,13 +5354,13 @@
                 const btnEdit = Dom.el('button', {
                     className: 'btn btn-sm btn-outline-primary lt-btn-icon me-1',
                     title: 'Editar',
-                    dataset: { gridAction: "edit", index: String(idx) }
+                    dataset: { gridAction: "edit", index: String(offset + idx) }
                 }, Dom.el('i', { className: 'bi bi-pencil-fill' }));
 
                 const btnDelete = Dom.el('button', {
                     className: 'btn btn-sm btn-outline-danger lt-btn-icon',
                     title: 'Eliminar',
-                    dataset: { gridAction: "delete", index: String(idx) }
+                    dataset: { gridAction: "delete", index: String(offset + idx) }
                 }, Dom.el('i', { className: 'bi bi-trash-fill' }));
 
                 tdActions.appendChild(btnEdit);
@@ -5205,8 +5369,59 @@
 
                 tbody.appendChild(tr);
             });
+        }
 
+        function renderPage() {
+            const tbody = document.getElementById('grid-body');
+            if (!tbody) return;
+
+            Dom.clear(tbody);
+
+            if (!allRecords.length) {
+                renderEmptyState(currentRelevantFields);
+                renderPaginationControls();
+                return;
+            }
+
+            const pageSlice = getPageSlice();
+            renderRows(pageSlice.records, pageSlice.offset, currentRelevantFields);
+            renderPaginationControls();
             bindTableEvents();
+        }
+
+        /**
+         * Renderiza la grilla con los registros del formato actual
+         */
+        function renderGrid(tipoFormato, records, options) {
+            currentFormat = tipoFormato;
+
+            if (tipoFormato === 'ASISTENCIA' && global.AttendanceDailyUI) {
+                clearPagination();
+                global.AttendanceDailyUI.renderSummary(records || []);
+                return;
+            }
+
+            allRecords = (records || []).map(item => {
+                if (item.record) {
+                    item.record.ID = item.id;
+                    item.record._rowNumber = item.rowNumber;
+                    return item.record;
+                }
+                return item;
+            });
+
+            const formDef = FORM_DEFINITIONS[tipoFormato];
+            if (!formDef) {
+                clearPagination();
+                return;
+            }
+
+            const visibleFields = formDef.fields.filter(field => field.type !== 'section' && !field.hidden);
+            currentRelevantFields = visibleFields.slice(0, 5);
+
+            renderHeaders(currentRelevantFields);
+            updatePaginationState(options);
+            renderPage();
         }
 
         function renderLoading(tipoFormato, message) {
@@ -5220,6 +5435,7 @@
             const tbody = document.getElementById('grid-body');
             if (!tbody) return;
             Dom.clear(tbody);
+            clearPagination();
             tbody.appendChild(
                 Dom.el('tr', null,
                     Dom.el('td', {
@@ -5462,7 +5678,9 @@
             // Aquí iría la lógica para recargar los datos desde el servidor
             if (RecordsData && typeof RecordsData.searchRecords === 'function') {
                 renderLoading(currentFormat, "Actualizando registros...");
-                RecordsData.searchRecords(currentFormat, '')
+                const query = getCurrentQuery();
+                const includeInactive = getIncludeInactive();
+                RecordsData.searchRecords(currentFormat, query, includeInactive)
                     .then(records => {
                         if (records && records.ignored) return;
                         renderGrid(currentFormat, records);
@@ -7113,6 +7331,10 @@ var WeeklyPlanTemplates = (function (global) {
         currentContainer: null,
         allRecordsCache: [],
         currentOriginalVigencia: null,
+        currentClientId: "",
+        currentClientLabel: "",
+        currentPlanGroups: [],
+        currentPlanKey: "",
         forceNewPlan: false,
         lastInfoHoras: null,
         lastInfoHorasClientId: "",
@@ -7180,6 +7402,64 @@ var WeeklyPlanTemplates = (function (global) {
     const state = global.WeeklyPlanPanelState;
     const Dom = state && state.Dom ? state.Dom : global.DomHelpers;
 
+    function buildPlanKey(desde, hasta) {
+        return String(desde || "") + "|" + String(hasta || "");
+    }
+
+    function buildPlanGroups(planRows) {
+        const grouped = {};
+        (planRows || []).forEach(function (row) {
+            const vigDesde = state.formatDateInput(row["VIGENTE DESDE"] || row.vigDesde);
+            const vigHasta = state.formatDateInput(row["VIGENTE HASTA"] || row.vigHasta);
+            const key = buildPlanKey(vigDesde, vigHasta);
+            if (!grouped[key]) {
+                grouped[key] = {
+                    key: key,
+                    vigDesde: vigDesde,
+                    vigHasta: vigHasta,
+                    rows: []
+                };
+            }
+            grouped[key].rows.push(row);
+        });
+
+        const today = new Date().toISOString().split('T')[0];
+        const list = Object.keys(grouped).map(function (key) {
+            const group = grouped[key];
+            group.isActive = (!group.vigDesde || group.vigDesde <= today) && (!group.vigHasta || group.vigHasta >= today);
+            return group;
+        });
+
+        list.sort(function (a, b) {
+            if (a.isActive !== b.isActive) {
+                return a.isActive ? -1 : 1;
+            }
+            const aDesde = a.vigDesde || "";
+            const bDesde = b.vigDesde || "";
+            if (aDesde === bDesde) {
+                return (a.vigHasta || "").localeCompare(b.vigHasta || "");
+            }
+            return bDesde.localeCompare(aDesde);
+        });
+
+        return list;
+    }
+
+    function findDefaultGroup(groups) {
+        if (!groups || !groups.length) return null;
+        const active = groups.find(function (g) { return g.isActive; });
+        return active || groups[0] || null;
+    }
+
+    function cloneRowForNewPlan(row) {
+        return Object.assign({}, row, {
+            ID: "",
+            id: "",
+            vigDesde: "",
+            vigHasta: ""
+        });
+    }
+
     function fetchWeeklyPlanForClient() {
         const container = document.getElementById("plan-semanal-cards-container");
         const clienteSelect = document.getElementById("field-CLIENTE");
@@ -7217,27 +7497,31 @@ var WeeklyPlanTemplates = (function (global) {
                 const currentCliente = currentOption ? currentOption.textContent : '';
                 if (!selectedId || selectedId !== idCliente) return;
 
-                if (!planRows.length) {
-                    state.currentOriginalVigencia = null;
-                    state.forceNewPlan = true;
-                }
+                state.currentClientId = selectedId;
+                state.currentClientLabel = currentCliente;
 
-                let rowsToRender = planRows;
-                if (state.forceNewPlan && planRows.length) {
-                    rowsToRender = planRows.map(function (row) {
-                        return Object.assign({}, row, {
-                            ID: '',
-                            id: '',
-                            vigDesde: '',
-                            vigHasta: ''
-                        });
-                    });
+                const planGroups = buildPlanGroups(planRows);
+                state.currentPlanGroups = planGroups;
+
+                let rowsToRender = [];
+                if (!planGroups.length) {
                     state.currentOriginalVigencia = null;
-                } else if (planRows.length) {
-                    const first = planRows[0];
-                    const vigDesde = state.formatDateInput(first["VIGENTE DESDE"] || first.vigDesde);
-                    const vigHasta = state.formatDateInput(first["VIGENTE HASTA"] || first.vigHasta);
-                    state.currentOriginalVigencia = { desde: vigDesde, hasta: vigHasta };
+                    state.currentPlanKey = "";
+                    state.forceNewPlan = true;
+                } else if (state.forceNewPlan) {
+                    const baseGroup = findDefaultGroup(planGroups);
+                    rowsToRender = baseGroup ? baseGroup.rows.map(cloneRowForNewPlan) : [];
+                    state.currentOriginalVigencia = null;
+                    state.currentPlanKey = "";
+                } else {
+                    const keyFromState = state.currentPlanKey ||
+                        (state.currentOriginalVigencia ? buildPlanKey(state.currentOriginalVigencia.desde, state.currentOriginalVigencia.hasta) : "");
+                    const selectedGroup = planGroups.find(function (g) { return g.key === keyFromState; }) || findDefaultGroup(planGroups);
+                    if (selectedGroup) {
+                        state.currentPlanKey = selectedGroup.key;
+                        state.currentOriginalVigencia = { desde: selectedGroup.vigDesde, hasta: selectedGroup.vigHasta };
+                        rowsToRender = selectedGroup.rows;
+                    }
                 }
 
                 state.lastInfoHorasClientId = idCliente;
@@ -7441,6 +7725,49 @@ var WeeklyPlanTemplates = (function (global) {
     const UI = global.UIHelpers;
     const formatClientLabel = state && state.formatClientLabel ? state.formatClientLabel : (v => v || '');
     const WEEK_DAYS = ["LUNES", "MARTES", "MIERCOLES", "JUEVES", "VIERNES", "SABADO", "DOMINGO"];
+
+    function buildPlanSelector() {
+        if (!Dom) return null;
+        const plans = state.currentPlanGroups || [];
+        if (!plans.length) return null;
+
+        const wrapper = Dom.el("div", { className: "lt-surface lt-surface--subtle p-3 mb-3" });
+        const header = Dom.el("div", { className: "d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2" });
+        header.appendChild(Dom.el("div", { className: "small text-muted fw-semibold", text: "Planes del cliente" }));
+
+        const newBtn = Dom.el("button", {
+            type: "button",
+            className: "btn btn-sm " + (state.forceNewPlan ? "btn-primary" : "btn-outline-primary"),
+            "data-action": "new-weekly-plan-client"
+        }, [
+            Dom.el("i", { className: "bi bi-plus-lg me-1" }),
+            Dom.text("Nuevo plan")
+        ]);
+        header.appendChild(newBtn);
+        wrapper.appendChild(header);
+
+        const list = Dom.el("div", { className: "d-flex flex-wrap gap-2" });
+        const today = new Date().toISOString().split('T')[0];
+
+        plans.forEach(plan => {
+            if (!plan) return;
+            const label = (plan.vigDesde || "Inicio") + " -> " + (plan.vigHasta || "Fin");
+            const isSelected = !state.forceNewPlan && plan.key === state.currentPlanKey;
+            const isActive = plan.isActive != null
+                ? plan.isActive
+                : ((!plan.vigDesde || plan.vigDesde <= today) && (!plan.vigHasta || plan.vigHasta >= today));
+            const btn = Dom.el("button", {
+                type: "button",
+                className: "btn btn-sm " + (isSelected ? "btn-primary" : "btn-outline-primary"),
+                title: isActive ? "Plan vigente" : "Plan inactivo",
+                dataset: { action: "select-weekly-plan", planKey: plan.key }
+            }, Dom.text(label));
+            list.appendChild(btn);
+        });
+
+        wrapper.appendChild(list);
+        return wrapper;
+    }
 
     function buildEmployeeOptions() {
         const opts = [];
@@ -7740,16 +8067,25 @@ var WeeklyPlanTemplates = (function (global) {
             ? state.getClientDefaultHoraEntrada(clienteId)
             : "";
 
+        const defaultVigDesde = state.forceNewPlan
+            ? ""
+            : (global.WeeklyPlanPanelHandlers && global.WeeklyPlanPanelHandlers.vigDesdeInputVal
+                ? global.WeeklyPlanPanelHandlers.vigDesdeInputVal()
+                : "");
+        const defaultVigHasta = state.forceNewPlan
+            ? ""
+            : (global.WeeklyPlanPanelHandlers && global.WeeklyPlanPanelHandlers.vigHastaInputVal
+                ? global.WeeklyPlanPanelHandlers.vigHastaInputVal()
+                : "");
+
         if (!rows.length) {
             rows = [{
                 empleado: "",
                 diaSemana: "",
                 horaEntrada: defaultHoraEntrada || "",
                 horasPlan: "",
-                vigDesde: global.WeeklyPlanPanelHandlers && global.WeeklyPlanPanelHandlers.vigDesdeInputVal
-                    ? global.WeeklyPlanPanelHandlers.vigDesdeInputVal() : "",
-                vigHasta: global.WeeklyPlanPanelHandlers && global.WeeklyPlanPanelHandlers.vigHastaInputVal
-                    ? global.WeeklyPlanPanelHandlers.vigHastaInputVal() : "",
+                vigDesde: defaultVigDesde,
+                vigHasta: defaultVigHasta,
                 id: "",
                 observaciones: ""
             }];
@@ -7760,8 +8096,12 @@ var WeeklyPlanTemplates = (function (global) {
                 return Object.assign({}, r, { horaEntrada: defaultHoraEntrada });
             });
         }
-        const vigDesdeVal = state.formatDateInput(rows[0].vigDesde || (global.WeeklyPlanPanelHandlers && global.WeeklyPlanPanelHandlers.vigDesdeInputVal ? global.WeeklyPlanPanelHandlers.vigDesdeInputVal() : ''));
-        const vigHastaVal = state.formatDateInput(rows[0].vigHasta || (global.WeeklyPlanPanelHandlers && global.WeeklyPlanPanelHandlers.vigHastaInputVal ? global.WeeklyPlanPanelHandlers.vigHastaInputVal() : ''));
+        const vigDesdeVal = state.forceNewPlan
+            ? ""
+            : state.formatDateInput(rows[0].vigDesde || (global.WeeklyPlanPanelHandlers && global.WeeklyPlanPanelHandlers.vigDesdeInputVal ? global.WeeklyPlanPanelHandlers.vigDesdeInputVal() : ''));
+        const vigHastaVal = state.forceNewPlan
+            ? ""
+            : state.formatDateInput(rows[0].vigHasta || (global.WeeklyPlanPanelHandlers && global.WeeklyPlanPanelHandlers.vigHastaInputVal ? global.WeeklyPlanPanelHandlers.vigHastaInputVal() : ''));
 
         const groupedByEmpleado = {};
         rows.forEach((r, idx) => {
@@ -7782,6 +8122,11 @@ var WeeklyPlanTemplates = (function (global) {
             : panel;
 
         const hoursBlock = buildHorasBlock(effectiveInfoHoras);
+        const planSelector = buildPlanSelector();
+        if (planSelector) {
+            container.appendChild(planSelector);
+        }
+
         const topSection = WeeklyPlanTemplates.buildEditorTopSection(hoursBlock);
         container.appendChild(topSection);
 
@@ -7851,8 +8196,12 @@ var WeeklyPlanTemplates = (function (global) {
 
         const vigDesdeInput = document.getElementById('plan-vig-desde');
         const vigHastaInput = document.getElementById('plan-vig-hasta');
-        if (vigDesdeInput && rows[0]) vigDesdeInput.value = state.formatDateInput(rows[0].vigDesde || vigDesdeVal);
-        if (vigHastaInput && rows[0]) vigHastaInput.value = state.formatDateInput(rows[0].vigHasta || vigHastaVal);
+        if (vigDesdeInput && rows[0]) {
+            vigDesdeInput.value = state.forceNewPlan ? "" : state.formatDateInput(rows[0].vigDesde || vigDesdeVal);
+        }
+        if (vigHastaInput && rows[0]) {
+            vigHastaInput.value = state.forceNewPlan ? "" : state.formatDateInput(rows[0].vigHasta || vigHastaVal);
+        }
 
         bindWeeklyPlanCollapseArrows();
         if (global.WeeklyPlanPanelHandlers && typeof global.WeeklyPlanPanelHandlers.attachWeeklyPlanHandlers === 'function') {
@@ -7960,8 +8309,32 @@ var WeeklyPlanTemplates = (function (global) {
         if (!container) return;
 
         state.currentOriginalVigencia = originalVigencia || null;
+        if (originalVigencia) {
+            const desde = originalVigencia.desde || "";
+            const hasta = originalVigencia.hasta || "";
+            state.currentPlanKey = String(desde) + "|" + String(hasta);
+        } else {
+            state.currentPlanKey = "";
+        }
+        state.currentClientId = String(clienteId || "");
+        state.currentClientLabel = String(clienteLabel || "");
         state.forceNewPlan = false;
         state.openGroupKeys = new Set();
+        if (state.planGroupsCache && clienteId) {
+            const prefix = "id:" + String(clienteId).trim() + "|";
+            const cachedGroups = [];
+            Object.keys(state.planGroupsCache).forEach(function (key) {
+                if (key.indexOf(prefix) !== 0) return;
+                const parts = key.split("|");
+                cachedGroups.push({
+                    key: key,
+                    vigDesde: parts[1] || "",
+                    vigHasta: parts[2] || "",
+                    rows: state.planGroupsCache[key] || []
+                });
+            });
+            state.currentPlanGroups = cachedGroups;
+        }
 
         if (global.WeeklyPlanPanelRender && typeof global.WeeklyPlanPanelRender.render === "function") {
             global.WeeklyPlanPanelRender.render(container);
@@ -8044,6 +8417,7 @@ var WeeklyPlanTemplates = (function (global) {
         const container = state.currentContainer;
         if (!container) return;
         state.currentOriginalVigencia = null;
+        state.currentPlanKey = "";
         state.forceNewPlan = true;
         state.openGroupKeys = new Set();
         if (global.WeeklyPlanPanelRender && typeof global.WeeklyPlanPanelRender.render === "function") {
@@ -8051,6 +8425,69 @@ var WeeklyPlanTemplates = (function (global) {
         }
         const panel = document.getElementById("plan-semanal-panel");
         insertBackButton(panel);
+    }
+
+    function openNewPlanForClient() {
+        const clienteSelect = document.getElementById("field-CLIENTE");
+        if (!clienteSelect) return;
+
+        const clienteId = clienteSelect.value;
+        if (!clienteId) {
+            if (Alerts) Alerts.showAlert("Seleccioná un cliente primero.", "warning");
+            return;
+        }
+
+        const selectedOption = clienteSelect.selectedOptions ? clienteSelect.selectedOptions[0] : null;
+        const clienteLabel = selectedOption ? selectedOption.textContent : clienteId;
+        const defaultHoraEntrada = state.getClientDefaultHoraEntrada
+            ? state.getClientDefaultHoraEntrada(clienteId)
+            : "";
+
+        state.currentOriginalVigencia = null;
+        state.currentPlanKey = "";
+        state.currentClientId = String(clienteId || "");
+        state.currentClientLabel = String(clienteLabel || "");
+        state.forceNewPlan = true;
+        state.openGroupKeys = new Set();
+
+        const rows = [{
+            empleado: "",
+            diaSemana: "",
+            horaEntrada: defaultHoraEntrada || "",
+            horasPlan: "",
+            vigDesde: "",
+            vigHasta: "",
+            id: "",
+            observaciones: ""
+        }];
+
+        const infoHoras = getInfoHorasForClient(clienteId);
+        if (global.WeeklyPlanPanelRender && typeof global.WeeklyPlanPanelRender.buildWeeklyPlanPanel === "function") {
+            global.WeeklyPlanPanelRender.buildWeeklyPlanPanel(rows, clienteLabel, infoHoras);
+        }
+    }
+
+    function loadPlanByKey(planKey) {
+        if (!planKey) return;
+        const group = (state.currentPlanGroups || []).find(function (g) { return g && g.key === planKey; });
+        if (!group) return;
+
+        const clienteSelect = document.getElementById("field-CLIENTE");
+        const clienteId = clienteSelect ? clienteSelect.value : state.currentClientId;
+        const selectedOption = clienteSelect && clienteSelect.selectedOptions ? clienteSelect.selectedOptions[0] : null;
+        const clienteLabel = selectedOption ? selectedOption.textContent : (state.currentClientLabel || clienteId);
+
+        state.currentOriginalVigencia = { desde: group.vigDesde || "", hasta: group.vigHasta || "" };
+        state.currentPlanKey = planKey;
+        state.currentClientId = String(clienteId || "");
+        state.currentClientLabel = String(clienteLabel || "");
+        state.forceNewPlan = false;
+        state.openGroupKeys = new Set();
+
+        const infoHoras = getInfoHorasForClient(clienteId);
+        if (global.WeeklyPlanPanelRender && typeof global.WeeklyPlanPanelRender.buildWeeklyPlanPanel === "function") {
+            global.WeeklyPlanPanelRender.buildWeeklyPlanPanel(group.rows || [], clienteLabel, infoHoras);
+        }
     }
 
     function addEmptyPlanRow() {
@@ -8352,8 +8789,10 @@ var WeeklyPlanTemplates = (function (global) {
         init: init,
         setup: setup,
         openNewPlan: openNewPlan,
+        openNewPlanForClient: openNewPlanForClient,
         switchToDetail: switchToDetail,
         captureOpenGroupKeys: captureOpenGroupKeys,
+        loadPlanByKey: loadPlanByKey,
         addEmptyPlanRow: addEmptyPlanRow,
         deletePlanRow: deletePlanRow,
         deleteWeeklyPlan: deleteWeeklyPlan,
@@ -8436,6 +8875,8 @@ var WeeklyPlanTemplates = (function (global) {
         const detailSignal = state.detailEventsController.signal;
         clienteSelect.addEventListener("change", () => {
             state.currentOriginalVigencia = null;
+            state.currentPlanKey = "";
+            state.currentPlanGroups = [];
             global.WeeklyPlanPanelData.fetchWeeklyPlanForClient();
         }, { signal: detailSignal });
     }
@@ -8469,6 +8910,15 @@ var WeeklyPlanTemplates = (function (global) {
                 if (actions && typeof actions.deleteWeeklyPlan === "function") {
                     actions.deleteWeeklyPlan();
                 }
+            } else if (action === "new-weekly-plan-client") {
+                if (actions && typeof actions.openNewPlanForClient === "function") {
+                    actions.openNewPlanForClient();
+                }
+            } else if (action === "select-weekly-plan") {
+                const key = actionBtn.getAttribute("data-plan-key") || "";
+                if (actions && typeof actions.loadPlanByKey === "function") {
+                    actions.loadPlanByKey(key);
+                }
             }
         }, { signal: signal });
     }
@@ -8477,10 +8927,12 @@ var WeeklyPlanTemplates = (function (global) {
         init: actions && actions.init ? actions.init : function () { },
         setup: actions && actions.setup ? actions.setup : function () { },
         openNewPlan: actions && actions.openNewPlan ? actions.openNewPlan : function () { },
+        openNewPlanForClient: actions && actions.openNewPlanForClient ? actions.openNewPlanForClient : function () { },
         switchToDetail: actions && actions.switchToDetail ? actions.switchToDetail : function () { },
         attachListEvents: attachListEvents,
         attachDetailEvents: attachDetailEvents,
         attachWeeklyPlanHandlers: attachWeeklyPlanHandlers,
+        loadPlanByKey: actions && actions.loadPlanByKey ? actions.loadPlanByKey : function () { },
         addEmptyPlanRow: actions && actions.addEmptyPlanRow ? actions.addEmptyPlanRow : function () { },
         deletePlanRow: actions && actions.deletePlanRow ? actions.deletePlanRow : function () { },
         deleteWeeklyPlan: actions && actions.deleteWeeklyPlan ? actions.deleteWeeklyPlan : function () { },
@@ -8843,6 +9295,26 @@ var WeeklyPlanTemplates = (function (global) {
  * Capa de datos para asistencia diaria.
  */
 (function (global) {
+  const PLAN_CACHE_TTL_MS = 5 * 60 * 1000;
+  const planCache = new Map();
+
+  function getCachedPlan(fecha) {
+    if (!fecha) return null;
+    const entry = planCache.get(fecha);
+    if (!entry) return null;
+    if ((Date.now() - entry.ts) > PLAN_CACHE_TTL_MS) {
+      planCache.delete(fecha);
+      return null;
+    }
+    return entry.rows || [];
+  }
+
+  function storeCachedPlan(fecha, rows) {
+    if (!fecha) return rows;
+    planCache.set(fecha, { ts: Date.now(), rows: Array.isArray(rows) ? rows : [] });
+    return rows;
+  }
+
   function ensureApi() {
     return global.ApiService && typeof global.ApiService.callLatest === "function";
   }
@@ -8872,11 +9344,13 @@ var WeeklyPlanTemplates = (function (global) {
   }
 
   function loadDailyPlan(fecha) {
+    const cached = getCachedPlan(fecha);
+    if (cached) return Promise.resolve(cached);
     if (!ensureApi()) return Promise.resolve([]);
     return global.ApiService.callLatest("attendance-plan-" + fecha, "getDailyAttendancePlan", fecha)
       .then((rows) => {
         if (rows && rows.ignored) return rows;
-        if (Array.isArray(rows)) return rows;
+        if (Array.isArray(rows)) return storeCachedPlan(fecha, rows);
         return [];
       });
   }
@@ -8899,7 +9373,19 @@ var WeeklyPlanTemplates = (function (global) {
     loadReference: loadReference,
     loadDailyPlan: loadDailyPlan,
     searchRecords: searchRecords,
-    saveDailyAttendance: saveDailyAttendance
+    saveDailyAttendance: saveDailyAttendance,
+    prefetch: function (fecha) {
+      const targetDate = fecha || (global.AttendanceDailyState && typeof global.AttendanceDailyState.getTodayIso === "function"
+        ? global.AttendanceDailyState.getTodayIso()
+        : "");
+      return loadReference()
+        .then(function () {
+          return loadDailyPlan(targetDate);
+        })
+        .catch(function () {
+          return null;
+        });
+    }
   };
 })(typeof window !== "undefined" ? window : this);
 
@@ -9911,6 +10397,9 @@ var WeeklyPlanTemplates = (function (global) {
 
 
 (function (global) {
+    const WEEKLY_CACHE_TTL_MS = 5 * 60 * 1000;
+    const weeklyCache = { data: null, ts: 0, inFlight: null };
+
     const AttendancePanelsData = {
         fetchDailyAttendance: function (tipoFormato, fecha) {
             if (!global.AttendanceDailyData || typeof global.AttendanceDailyData.searchRecords !== "function") {
@@ -9918,11 +10407,42 @@ var WeeklyPlanTemplates = (function (global) {
             }
             return global.AttendanceDailyData.searchRecords(tipoFormato, fecha);
         },
-        searchWeeklyPlans: function (query) {
+        searchWeeklyPlans: function (query, options) {
             if (!global.RecordsData || typeof global.RecordsData.searchRecords !== "function") {
                 return Promise.resolve([]);
             }
-            return global.RecordsData.searchRecords("ASISTENCIA_PLAN", query || "");
+            const q = query || "";
+            const force = options && options.force;
+            if (!q && !force && weeklyCache.data && (Date.now() - weeklyCache.ts) < WEEKLY_CACHE_TTL_MS) {
+                return Promise.resolve(weeklyCache.data);
+            }
+            if (!q && !force && weeklyCache.inFlight) {
+                return weeklyCache.inFlight;
+            }
+            const request = global.RecordsData.searchRecords("ASISTENCIA_PLAN", q)
+                .then(function (records) {
+                    if (records && records.ignored) return records;
+                    if (!q) {
+                        weeklyCache.data = records || [];
+                        weeklyCache.ts = Date.now();
+                    }
+                    weeklyCache.inFlight = null;
+                    return records;
+                })
+                .catch(function (err) {
+                    weeklyCache.inFlight = null;
+                    throw err;
+                });
+            if (!q) {
+                weeklyCache.inFlight = request;
+            }
+            return request;
+        },
+        prefetchWeeklyPlans: function () {
+            return AttendancePanelsData.searchWeeklyPlans("", { force: true })
+                .catch(function () {
+                    return null;
+                });
         }
     };
 
@@ -10096,6 +10616,19 @@ var WeeklyPlanTemplates = (function (global) {
  * Capa de datos para calendario de empleados.
  */
 (function (global) {
+  const EMP_CACHE_TTL_MS = 5 * 60 * 1000;
+  const employeeCache = { list: null, ts: 0, inFlight: null };
+
+  function isCacheFresh() {
+    return !!(employeeCache.list && (Date.now() - employeeCache.ts) < EMP_CACHE_TTL_MS);
+  }
+
+  function storeCache(list) {
+    employeeCache.list = Array.isArray(list) ? list : [];
+    employeeCache.ts = Date.now();
+    return employeeCache.list;
+  }
+
   function loadEmployeesFromReference() {
     if (!global.ReferenceService || typeof global.ReferenceService.ensureLoaded !== "function") {
       return Promise.resolve([]);
@@ -10115,20 +10648,35 @@ var WeeklyPlanTemplates = (function (global) {
       });
   }
 
-  function loadEmployees() {
-    if (global.AttendanceService && typeof global.AttendanceService.getEmpleadosConId === "function") {
-      return global.AttendanceService.getEmpleadosConId()
-        .then((items) => items || [])
-        .catch((err) => {
-          if (Alerts && Alerts.notifyError) {
-            Alerts.notifyError("Error cargando empleados", err, { silent: true });
-          } else {
-            console.warn("Error cargando empleados:", err);
-          }
-          return loadEmployeesFromReference();
-        });
+  function loadEmployees(options) {
+    const force = options && options.force;
+    if (!force && isCacheFresh()) {
+      return Promise.resolve(employeeCache.list);
     }
-    return loadEmployeesFromReference();
+    if (!force && employeeCache.inFlight) {
+      return employeeCache.inFlight;
+    }
+
+    const request = (global.AttendanceService && typeof global.AttendanceService.getEmpleadosConId === "function")
+      ? global.AttendanceService.getEmpleadosConId()
+          .then((items) => storeCache(items || []))
+          .catch((err) => {
+            if (Alerts && Alerts.notifyError) {
+              Alerts.notifyError("Error cargando empleados", err, { silent: true });
+            } else {
+              console.warn("Error cargando empleados:", err);
+            }
+            return loadEmployeesFromReference().then(storeCache);
+          })
+      : loadEmployeesFromReference().then(storeCache);
+
+    if (!force) {
+      employeeCache.inFlight = request;
+    }
+
+    return request.finally(function () {
+      employeeCache.inFlight = null;
+    });
   }
 
   function fetchSchedule(options) {
@@ -10172,6 +10720,11 @@ var WeeklyPlanTemplates = (function (global) {
 
   global.EmployeeCalendarData = {
     loadEmployees: loadEmployees,
+    prefetchEmployees: function () {
+      return loadEmployees({ force: true }).catch(function () {
+        return [];
+      });
+    },
     fetchSchedule: fetchSchedule,
     generatePdf: generatePdf,
     listClientMedia: listClientMedia,
@@ -11173,14 +11726,33 @@ var WeeklyPlanTemplates = (function (global) {
  * Capa de datos para calendario de clientes.
  */
 (function (global) {
+  const CLIENT_CACHE_TTL_MS = 5 * 60 * 1000;
+  const clientCache = { list: null, ts: 0, inFlight: null };
+
+  function isCacheFresh() {
+    return !!(clientCache.list && (Date.now() - clientCache.ts) < CLIENT_CACHE_TTL_MS);
+  }
+
+  function storeCache(list) {
+    clientCache.list = Array.isArray(list) ? list : [];
+    clientCache.ts = Date.now();
+    return clientCache.list;
+  }
+
   function loadClients() {
-    if (!global.ReferenceService || typeof global.ReferenceService.ensureLoaded !== "function") {
-      return Promise.resolve([]);
+    if (isCacheFresh()) {
+      return Promise.resolve(clientCache.list);
     }
-    return global.ReferenceService.ensureLoaded()
+    if (clientCache.inFlight) {
+      return clientCache.inFlight;
+    }
+    if (!global.ReferenceService || typeof global.ReferenceService.ensureLoaded !== "function") {
+      return Promise.resolve(storeCache([]));
+    }
+    const request = global.ReferenceService.ensureLoaded()
       .then(() => {
         const ref = global.ReferenceService.get();
-        return ref && ref.clientes ? ref.clientes : [];
+        return storeCache(ref && ref.clientes ? ref.clientes : []);
       })
       .catch((err) => {
         if (Alerts && Alerts.notifyError) {
@@ -11188,8 +11760,12 @@ var WeeklyPlanTemplates = (function (global) {
         } else {
           console.warn("Error cargando clientes:", err);
         }
-        return [];
+        return storeCache([]);
       });
+    clientCache.inFlight = request;
+    return request.finally(function () {
+      clientCache.inFlight = null;
+    });
   }
 
   function fetchSchedule(options) {
@@ -11219,6 +11795,11 @@ var WeeklyPlanTemplates = (function (global) {
 
   global.ClientCalendarData = {
     loadClients: loadClients,
+    prefetchClients: function () {
+      return loadClients().catch(function () {
+        return [];
+      });
+    },
     fetchSchedule: fetchSchedule,
     listClientMedia: listClientMedia,
     getClientMediaImage: getClientMediaImage
@@ -12005,6 +12586,9 @@ var WeeklyPlanTemplates = (function (global) {
     currentRange: 6,
     comparisonVisible: false,
     lastData: null,
+    prefetchKey: "",
+    prefetchData: null,
+    prefetchAt: 0,
     Dom: (typeof DomHelpers !== 'undefined' && DomHelpers) ? DomHelpers : null,
     eventsController: null,
     escapeHtml: (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.escapeHtml === 'function')
@@ -12551,6 +13135,47 @@ var WeeklyPlanTemplates = (function (global) {
  */
 (function (global) {
   const state = global.AnalysisPanelState;
+  const PREFETCH_TTL_MS = 5 * 60 * 1000;
+
+  function buildPayload() {
+    var payload = state.currentPeriod
+      ? { period: state.currentPeriod, monthsBack: state.currentRange }
+      : { monthsBack: state.currentRange };
+    payload.includeTrend = !!state.comparisonVisible;
+    return payload;
+  }
+
+  function buildKey(payload) {
+    if (!payload) return "";
+    var period = payload.period || "";
+    var monthsBack = payload.monthsBack || "";
+    var trend = payload.includeTrend ? "1" : "0";
+    return [period, monthsBack, trend].join("|");
+  }
+
+  function isPrefetchFresh(key) {
+    if (!state.prefetchData || !state.prefetchKey) return false;
+    if (key !== state.prefetchKey) return false;
+    return (Date.now() - (state.prefetchAt || 0)) < PREFETCH_TTL_MS;
+  }
+
+  function prefetch() {
+    if (!global.ApiService || typeof global.ApiService.call !== "function") {
+      return Promise.resolve(null);
+    }
+    var payload = buildPayload();
+    var key = buildKey(payload);
+    return global.ApiService.call('getAnalyticsSummary', payload)
+      .then(function (data) {
+        state.prefetchData = data || {};
+        state.prefetchKey = key;
+        state.prefetchAt = Date.now();
+        return state.prefetchData;
+      })
+      .catch(function () {
+        return null;
+      });
+  }
 
   function load() {
     var loading = document.getElementById('analysis-loading');
@@ -12584,10 +13209,18 @@ var WeeklyPlanTemplates = (function (global) {
       return;
     }
 
-    var payload = state.currentPeriod
-      ? { period: state.currentPeriod, monthsBack: state.currentRange }
-      : { monthsBack: state.currentRange };
-    payload.includeTrend = !!state.comparisonVisible;
+    var payload = buildPayload();
+    var key = buildKey(payload);
+
+    if (isPrefetchFresh(key)) {
+      state.lastData = state.prefetchData || {};
+      if (global.AnalysisPanelRender && typeof global.AnalysisPanelRender.renderDashboard === 'function') {
+        global.AnalysisPanelRender.renderDashboard(state.lastData);
+      }
+      if (loading) loading.classList.add('d-none');
+      if (dash) dash.classList.remove('d-none');
+      return;
+    }
 
     global.ApiService.call('getAnalyticsSummary', payload)
       .then(function (data) {
@@ -12635,7 +13268,7 @@ var WeeklyPlanTemplates = (function (global) {
       });
   }
 
-  global.AnalysisPanelData = { load: load };
+  global.AnalysisPanelData = { load: load, prefetch: prefetch };
 })(typeof window !== 'undefined' ? window : this);
 
 
@@ -20314,8 +20947,10 @@ var BulkValuesPanel = (function () {
                 }
 
                 if (field.type === "number" && hasValue) {
-                    const num = Number(value);
-                    if (isNaN(num)) {
+                    const parsedNumber = NumberUtils && typeof NumberUtils.parseLocalizedNumber === "function"
+                        ? NumberUtils.parseLocalizedNumber(value)
+                        : Number(value);
+                    if (parsedNumber === null || isNaN(parsedNumber)) {
                         registerError(field, input);
                     }
                 }
@@ -20531,10 +21166,15 @@ var BulkValuesPanel = (function () {
     BulkValuesPanel,
     DropdownConfigPanel,
     AnalysisPanel,
+    AnalysisPanelData,
     MapPanel,
+    MapsPanelData,
     AttendanceDailyUI,
+    AttendanceDailyData,
     EmployeeCalendarPanel,
+    EmployeeCalendarData,
     ClientCalendarPanel,
+    ClientCalendarData,
     PaymentsPanel,
     AttendancePanelsData,
     EmptyState,
@@ -20549,7 +21189,39 @@ var BulkValuesPanel = (function () {
   let referenceSubscribed = false;
   let referenceUnsubscribe = null;
   let activeViewId = null;
+  let prefetchScheduled = false;
   const referenceUpdateRegistry = new Map();
+
+  function schedulePrefetchAll() {
+    if (prefetchScheduled) return;
+    prefetchScheduled = true;
+
+    const tasks = [];
+    const addTask = (fn) => {
+      if (typeof fn === "function") tasks.push(fn);
+    };
+
+    addTask(AnalysisPanelData && AnalysisPanelData.prefetch ? AnalysisPanelData.prefetch : null);
+    addTask(MapsPanelData && MapsPanelData.prefetch ? MapsPanelData.prefetch : null);
+    addTask(AttendancePanelsData && AttendancePanelsData.prefetchWeeklyPlans ? AttendancePanelsData.prefetchWeeklyPlans : null);
+    addTask(AttendanceDailyData && AttendanceDailyData.prefetch ? AttendanceDailyData.prefetch : null);
+    addTask(EmployeeCalendarData && EmployeeCalendarData.prefetchEmployees ? EmployeeCalendarData.prefetchEmployees : null);
+    addTask(ClientCalendarData && ClientCalendarData.prefetchClients ? ClientCalendarData.prefetchClients : null);
+
+    let index = 0;
+    const runNext = () => {
+      if (index >= tasks.length) return;
+      const task = tasks[index++];
+      Promise.resolve()
+        .then(task)
+        .catch(() => null)
+        .finally(() => {
+          setTimeout(runNext, 250);
+        });
+    };
+
+    setTimeout(runNext, 500);
+  }
 
   function initApp() {
     if (appInitialized) return;
@@ -20594,6 +21266,7 @@ var BulkValuesPanel = (function () {
     // Setup event handlers
     setupEventHandlers();
     bindReferenceUpdates();
+    schedulePrefetchAll();
   }
 
   const registroViews = {
@@ -20646,13 +21319,13 @@ var BulkValuesPanel = (function () {
     RecordsData.searchRecords(tipoFormato, "", includeInactive)
       .then(function (records) {
         if (GridManager) {
-          GridManager.renderGrid(tipoFormato, records || []);
+          GridManager.renderGrid(tipoFormato, records || [], { resetPage: true });
         }
       })
       .catch(function (err) {
         console.error("Error cargando registros:", err);
         if (GridManager) {
-          GridManager.renderGrid(tipoFormato, []);
+          GridManager.renderGrid(tipoFormato, [], { resetPage: true });
         }
       });
   }
@@ -20733,7 +21406,7 @@ var BulkValuesPanel = (function () {
       RecordsData.searchRecords(tipoFormato, query, includeInactive)
         .then(function (records) {
           if (GridManager) {
-            GridManager.renderGrid(tipoFormato, records || []);
+            GridManager.renderGrid(tipoFormato, records || [], { resetPage: true });
           }
         })
         .catch(function (err) {
@@ -21135,12 +21808,12 @@ var BulkValuesPanel = (function () {
       });
 
       if (Sidebar.setActive) {
-        Sidebar.setActive('analisis');
+        Sidebar.setActive('asistencia-plan');
       } else {
-        handleViewChange('analisis');
+        handleViewChange('asistencia-plan');
       }
     } else {
-      handleViewChange('analisis');
+      handleViewChange('asistencia-plan');
     }
   }
 
