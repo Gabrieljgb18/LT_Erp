@@ -38,10 +38,6 @@
         </a>
       </div>
       <nav class="sidebar-nav">
-        <a class="nav-link active" data-target="analisis">
-          <i class="bi bi-graph-up-arrow nav-icon"></i>
-          <span>Análisis</span>
-        </a>
         <a class="nav-link" data-target="mapa">
           <i class="bi bi-geo-alt nav-icon"></i>
           <span>Mapa</span>
@@ -99,7 +95,7 @@
             <i class="bi bi-chevron-right nav-arrow"></i>
           </a>
           <div id="submenu-asistencia" class="nav-submenu">
-            <a class="nav-link" data-target="asistencia-plan">
+            <a class="nav-link active" data-target="asistencia-plan">
               <i class="bi bi-diagram-3 nav-icon"></i>
               <span>Plan Semanal</span>
             </a>
@@ -130,6 +126,10 @@
           <i class="bi bi-receipt-cutoff nav-icon"></i>
           <span>Gastos</span>
         </a>
+        <a class="nav-link" data-target="analisis">
+          <i class="bi bi-graph-up-arrow nav-icon"></i>
+          <span>Análisis</span>
+        </a>
         <a class="nav-link" data-target="configuracion">
           <i class="bi bi-sliders nav-icon"></i>
           <span>Configuración</span>
@@ -147,7 +147,7 @@
         <button id="sidebar-toggle" class="sidebar-toggle" title="Colapsar menú">
           <i class="bi bi-layout-sidebar-inset"></i>
         </button>
-        <h5 class="m-0" id="page-title">Análisis</h5>
+        <h5 class="m-0" id="page-title">Plan Semanal</h5>
         <div id="global-loading" class="ms-auto d-none"></div>
       </header>
 
@@ -227,6 +227,7 @@
                     </tbody>
                   </table>
                 </div>
+                <div id="grid-pagination" class="grid-pagination d-flex justify-content-between align-items-center px-3 py-2 border-top d-none"></div>
               </div>
             </div>
 

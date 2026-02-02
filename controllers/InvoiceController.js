@@ -131,6 +131,20 @@ var InvoiceController = (function () {
      */
     function createInvoice(data) {
         data = data || {};
+
+        // Validar duplicado de periodo para el cliente antes de crear
+        const clienteData = {
+            id: data.ID_CLIENTE || data.id_cliente || '',
+            razonSocial: data['RAZÓN SOCIAL'] || data.razonSocial || data.cliente || ''
+        };
+        const periodo = data.PERIODO || data.periodo || '';
+
+        if (periodo && (clienteData.id || clienteData.razonSocial)) {
+            if (existsInvoiceForPeriod_(clienteData, periodo)) {
+                throw new Error('Ya existe una factura para este cliente en el período ' + periodo);
+            }
+        }
+
         applyTotals_(data);
         return RecordController.saveRecord(FORMAT_ID, data);
     }
@@ -298,7 +312,7 @@ var InvoiceController = (function () {
         let totalImporte = 0;
         const targetId = normalizeIdString_(clienteData.id);
         const targetNorm = normalize_(clienteData.razonSocial || '');
-        const resolveRateAtDate = buildClientRateResolver_(clienteData.razonSocial || '');
+        const resolveRateAtDate = buildClientRateResolver_(clienteData.razonSocial || '', clienteData.id || '');
 
         data.forEach(row => {
             const fecha = row[idxFecha] instanceof Date ? row[idxFecha] : new Date(row[idxFecha]);
@@ -366,63 +380,41 @@ var InvoiceController = (function () {
     /**
      * Construye un resolver de tarifas para un cliente leyendo el histórico una sola vez.
      */
-    function buildClientRateResolver_(clientName) {
-        const fallbackRateRaw = DatabaseService.getClientHourlyRate ? DatabaseService.getClientHourlyRate(clientName) : 0;
+    function buildClientRateResolver_(clientName, idCliente) {
+        const fallbackRateRaw = DatabaseService.getClientHourlyRate
+            ? DatabaseService.getClientHourlyRate(clientName, idCliente)
+            : 0;
         const fallbackRate = isNaN(fallbackRateRaw) ? 0 : Number(fallbackRateRaw);
-        const ss = DatabaseService.getDbSpreadsheet ? DatabaseService.getDbSpreadsheet() : null;
-        const sheet = ss ? ss.getSheetByName('CLIENTES_VHORA_DB') : null;
-        if (!sheet) {
-            return () => fallbackRate;
-        }
 
-        const lastRow = sheet.getLastRow();
-        if (lastRow < 2) {
-            return () => fallbackRate;
-        }
-
-        const data = sheet.getRange(2, 1, lastRow - 1, 3).getValues();
-        const targetNorm = normalizeClientNameForRates_(clientName);
-        const entries = [];
-
-        data.forEach(r => {
-            const cliNorm = normalizeClientNameForRates_(r[0]);
-            if (!cliNorm || !targetNorm) return;
-            const matches = cliNorm === targetNorm ||
-                cliNorm.indexOf(targetNorm) !== -1 ||
-                targetNorm.indexOf(cliNorm) !== -1;
-            if (!matches) return;
-
-            const fecha = parseDateSafe_(r[1]);
-            if (!fecha) return;
-            const rate = Number(r[2]);
-            if (isNaN(rate)) return;
-            entries.push({ ts: fecha.getTime(), rate: rate });
-        });
-
-        if (!entries.length) {
-            return () => fallbackRate;
-        }
-
-        entries.sort((a, b) => a.ts - b.ts);
-
-        return (dateObj) => {
-            const d = parseDateSafe_(dateObj);
-            if (!d) return fallbackRate;
-            const ts = d.getTime();
-            let lo = 0;
-            let hi = entries.length - 1;
-            let best = null;
-            while (lo <= hi) {
-                const mid = Math.floor((lo + hi) / 2);
-                if (entries[mid].ts <= ts) {
-                    best = entries[mid].rate;
-                    lo = mid + 1;
-                } else {
-                    hi = mid - 1;
-                }
+        if (DatabaseService.getClientRateHistoryEntries) {
+            const entries = DatabaseService.getClientRateHistoryEntries(clientName, idCliente) || [];
+            if (entries.length) {
+                entries.sort((a, b) => a.ts - b.ts);
+                return (dateObj) => {
+                    const d = parseDateSafe_(dateObj);
+                    if (!d) return fallbackRate;
+                    const ts = d.getTime();
+                    let lo = 0;
+                    let hi = entries.length - 1;
+                    let best = null;
+                    while (lo <= hi) {
+                        const mid = Math.floor((lo + hi) / 2);
+                        if (entries[mid].ts <= ts) {
+                            best = entries[mid].rate;
+                            lo = mid + 1;
+                        } else {
+                            hi = mid - 1;
+                        }
+                    }
+                    return best != null ? best : fallbackRate;
+                };
             }
-            return best != null ? best : fallbackRate;
-        };
+        }
+
+        if (DatabaseService.getClientRateAtDate) {
+            return (dateObj) => DatabaseService.getClientRateAtDate(clientName, dateObj, idCliente);
+        }
+        return () => fallbackRate;
     }
 
     function normalize_(val) {
@@ -541,24 +533,36 @@ var InvoiceController = (function () {
         return s === e ? s : (s + ' a ' + e);
     }
 
-    function existsInvoiceForPeriod_(clienteData, periodoLabel) {
+    function existsInvoiceForPeriod_(clienteData, periodoLabel, excludeId) {
         const sheet = DatabaseService.getDbSheetForFormat(FORMAT_ID);
         const lastRow = sheet.getLastRow();
         const lastCol = sheet.getLastColumn();
         if (lastRow < 2 || lastCol === 0) return false;
 
         const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || '').toUpperCase());
+        const idxId = headers.indexOf('ID');
         const idxIdCliente = headers.indexOf('ID_CLIENTE');
         const idxCliente = headers.indexOf('RAZÓN SOCIAL');
         const idxPeriodo = headers.indexOf('PERIODO');
+        const idxEstado = headers.indexOf('ESTADO');
 
         if (idxPeriodo === -1) return false;
 
         const data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
         const targetId = clienteData.id ? String(clienteData.id) : '';
         const targetNorm = normalize_(clienteData.razonSocial || '');
+        const normExcludeId = excludeId != null ? String(excludeId) : null;
 
-        return data.some(row => {
+        return data.some((row, i) => {
+            // Excluir si es el mismo registro
+            if (normExcludeId) {
+                const rowId = idxId > -1 ? String(row[idxId]) : String(i + 2);
+                if (rowId === normExcludeId) return false;
+            }
+
+            // Excluir si está anulada
+            if (idxEstado > -1 && String(row[idxEstado] || '').toLowerCase() === 'anulada') return false;
+
             const periodoRow = row[idxPeriodo];
             if (periodoRow !== periodoLabel) return false;
 
@@ -712,144 +716,273 @@ var InvoiceController = (function () {
 
         const style = `
             <style>
+                @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
                 * { box-sizing: border-box; }
-                body { font-family: Arial, sans-serif; color: #0f172a; padding: 28px; }
-                .top { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin-bottom: 18px; }
-                .brand { font-size: 16px; font-weight: 800; letter-spacing: 0.2px; }
-                .doc { text-align:right; }
-                .doc .title { font-size: 18px; font-weight: 800; margin:0; }
-                .doc .num { color:#475569; font-size: 12px; margin-top: 2px; }
-                .pill { display:inline-block; padding: 4px 10px; border-radius: 999px; background: #e0e7ff; color: #3730a3; font-size: 11px; font-weight: 700; }
-                .grid { display:flex; gap:12px; margin: 14px 0 18px; }
-                .card { border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 14px; flex:1; }
-                .k { color:#64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
-                .v { margin-top: 4px; font-size: 12px; font-weight: 700; }
-                .row { display:flex; gap: 12px; margin-top: 8px; }
-                table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-                th, td { padding: 9px 10px; border-bottom: 1px solid #e2e8f0; text-align: left; font-size: 11.5px; }
-                th { background: #f8fafc; color: #475569; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; }
-                .right { text-align:right; }
-                .totals { margin-top: 10px; display:flex; justify-content:flex-end; }
-                .totals .box { width: 260px; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 12px; }
-                .totals .line { display:flex; justify-content:space-between; padding: 4px 0; font-size: 11.5px; }
-                .totals .grand { font-size: 13px; font-weight: 900; padding-top: 8px; border-top: 1px dashed #cbd5e1; margin-top: 6px; }
-                .muted { color:#64748b; font-size: 11px; }
-                h3 { margin: 18px 0 6px; font-size: 13px; }
+                body { 
+                    font-family: 'Inter', -apple-system, sans-serif; 
+                    color: #1e293b; 
+                    padding: 40px; 
+                    line-height: 1.5;
+                    background: #fff;
+                }
+                .header-container { 
+                    display: flex; 
+                    justify-content: space-between; 
+                    align-items: flex-start; 
+                    margin-bottom: 40px;
+                    border-bottom: 2px solid #f1f5f9;
+                    padding-bottom: 20px;
+                }
+                .brand-box h1 { 
+                    font-size: 28px; 
+                    font-weight: 800; 
+                    margin: 0; 
+                    color: #0f172a;
+                    letter-spacing: -0.02em;
+                }
+                .brand-box p { 
+                    margin: 4px 0 0 0; 
+                    color: #64748b; 
+                    font-size: 13px;
+                    font-weight: 500;
+                }
+                .invoice-info { text-align: right; }
+                .invoice-info h2 { 
+                    font-size: 24px; 
+                    font-weight: 700; 
+                    margin: 0; 
+                    color: #2563eb;
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                }
+                .invoice-info .number { 
+                    font-size: 14px; 
+                    font-weight: 600; 
+                    color: #475569;
+                    margin-top: 4px;
+                }
+
+                .details-grid { 
+                    display: grid; 
+                    grid-template-columns: 1.5fr 1fr; 
+                    gap: 24px; 
+                    margin-bottom: 30px; 
+                }
+                .info-card { 
+                    background: #f8fafc; 
+                    border: 1px solid #e2e8f0; 
+                    border-radius: 12px; 
+                    padding: 20px; 
+                }
+                .section-title { 
+                    font-size: 11px; 
+                    font-weight: 700; 
+                    text-transform: uppercase; 
+                    letter-spacing: 0.1em; 
+                    color: #64748b; 
+                    margin-bottom: 12px;
+                    border-bottom: 1px solid #e2e8f0;
+                    padding-bottom: 4px;
+                }
+                .info-row { display: flex; margin-bottom: 8px; font-size: 13px; }
+                .info-row:last-child { margin-bottom: 0; }
+                .info-label { width: 80px; color: #94a3b8; font-weight: 500; }
+                .info-value { flex: 1; color: #1e293b; font-weight: 600; }
+
+                table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                th { 
+                    text-align: left; 
+                    padding: 12px 16px; 
+                    background: #f1f5f9; 
+                    color: #475569; 
+                    font-size: 11px; 
+                    font-weight: 700; 
+                    text-transform: uppercase; 
+                    letter-spacing: 0.05em;
+                }
+                td { 
+                    padding: 16px; 
+                    border-bottom: 1px solid #f1f5f9; 
+                    font-size: 13px; 
+                    color: #334155;
+                }
+                .text-right { text-align: right; }
+                .fw-bold { font-weight: 700; }
+
+                .totals-container { 
+                    display: flex; 
+                    justify-content: flex-end; 
+                    margin-top: 30px; 
+                }
+                .totals-box { 
+                    width: 280px; 
+                    background: #f8fafc; 
+                    border-radius: 12px; 
+                    padding: 20px;
+                }
+                .total-row { 
+                    display: flex; 
+                    justify-content: space-between; 
+                    margin-bottom: 8px; 
+                    font-size: 13px;
+                }
+                .total-row.grand-total { 
+                    margin-top: 12px; 
+                    padding-top: 12px; 
+                    border-top: 2px solid #e2e8f0;
+                    font-size: 16px;
+                    font-weight: 800;
+                    color: #0f172a;
+                }
+                .observations { 
+                    margin-top: 40px; 
+                    padding: 16px; 
+                    border-left: 4px solid #e2e8f0;
+                    background: #f8fafc;
+                    font-size: 12px;
+                    color: #64748b;
+                }
+                h3 { 
+                    font-size: 16px; 
+                    font-weight: 700; 
+                    margin: 40px 0 16px; 
+                    color: #0f172a;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                }
+                h3::after {
+                    content: '';
+                    flex: 1;
+                    height: 1px;
+                    background: #e2e8f0;
+                }
             </style>
         `;
 
         const asistenciaRows = asistencia.map(r => `
             <tr>
-                <td>${escapeHtml_(r.fecha || '')}</td>
+                <td class="fw-bold">${escapeHtml_(r.fecha || '')}</td>
                 <td>${escapeHtml_(r.empleado || '')}</td>
-                <td class="right">${escapeHtml_(String(r.horas || '0'))}</td>
-                <td>${escapeHtml_(r.observaciones || '')}</td>
+                <td class="text-right fw-bold">${escapeHtml_(String(r.horas || '0'))} hs</td>
+                <td style="color: #64748b; font-style: italic;">${escapeHtml_(r.observaciones || '')}</td>
             </tr>
         `).join('');
 
         const html = `
             <!DOCTYPE html>
-            <html><head>${style}</head>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                ${style}
+            </head>
             <body>
-                <div class="top">
-                    <div>
-                        <div class="brand">LT ERP</div>
-                        <div class="muted">${escapeHtml_(inv['COMPROBANTE'] || 'Factura')}</div>
+                <div class="header-container">
+                    <div class="brand-box">
+                        <h1>LT ERP</h1>
+                        <p>Gestión de Servicios Profesionales</p>
                     </div>
-                    <div class="doc">
-                        <div class="pill">${escapeHtml_(inv['ESTADO'] || '-')}</div>
-                        <div class="title">Factura</div>
-                        <div class="num">Nº ${escapeHtml_(inv['NUMERO'] || inv['ID'] || '')}</div>
+                    <div class="invoice-info">
+                        <h2>${escapeHtml_(inv['COMPROBANTE'] || 'Factura')}</h2>
+                        <div class="number">Nº ${escapeHtml_(inv['NUMERO'] || inv['ID'] || '')}</div>
+                        <div class="muted" style="margin-top: 4px; font-size: 11px;">Fecha emisión: ${escapeHtml_(inv['FECHA'] || '-')}</div>
                     </div>
                 </div>
 
-                <div class="grid">
-                    <div class="card">
-                        <div class="k">Cliente</div>
-                        <div class="v">${escapeHtml_(inv['RAZÓN SOCIAL'] || '-')}</div>
-                        <div class="row">
-                            <div style="flex:1;">
-                                <div class="k">CUIT</div>
-                                <div class="v">${escapeHtml_(inv['CUIT'] || '-')}</div>
-                            </div>
-                            <div style="flex:1;">
-                                <div class="k">IVA</div>
-                                <div class="v">${escapeHtml_(ivaLabel)}</div>
-                            </div>
+                <div class="details-grid">
+                    <div class="info-card">
+                        <div class="section-title">Datos del Cliente</div>
+                        <div class="info-row">
+                            <div class="info-label">Cliente</div>
+                            <div class="info-value" style="font-size: 15px;">${escapeHtml_(inv['RAZÓN SOCIAL'] || '-')}</div>
+                        </div>
+                        <div class="info-row">
+                            <div class="info-label">CUIT</div>
+                            <div class="info-value">${escapeHtml_(inv['CUIT'] || '-')}</div>
+                        </div>
+                        <div class="info-row">
+                            <div class="info-label">IVA</div>
+                            <div class="info-value">Responsable Inscripto (21%)</div>
                         </div>
                     </div>
-                    <div class="card">
-                        <div class="row" style="margin-top:0;">
-                            <div style="flex:1;">
-                                <div class="k">Fecha</div>
-                                <div class="v">${escapeHtml_(inv['FECHA'] || '-')}</div>
-                            </div>
-                            <div style="flex:1;">
-                                <div class="k">Periodo</div>
-                                <div class="v">${escapeHtml_(inv['PERIODO'] || '-')}</div>
-                            </div>
+                    <div class="info-card">
+                        <div class="section-title">Resumen Período</div>
+                        <div class="info-row">
+                            <div class="info-label">Período</div>
+                            <div class="info-value">${escapeHtml_(inv['PERIODO'] || '-')}</div>
                         </div>
-                        <div class="row">
-                            <div style="flex:1;">
-                                <div class="k">Horas</div>
-                                <div class="v">${escapeHtml_(String(inv['HORAS'] || '0'))}</div>
-                            </div>
-                            <div style="flex:1;">
-                                <div class="k">Valor hora</div>
-                                <div class="v">$ ${escapeHtml_(money_(inv['VALOR HORA'] || 0))}</div>
-                            </div>
+                        <div class="info-row">
+                            <div class="info-label">Horas</div>
+                            <div class="info-value">${escapeHtml_(String(inv['HORAS'] || '0'))} hs</div>
+                        </div>
+                        <div class="info-row">
+                            <div class="info-label">Valor/H</div>
+                            <div class="info-value">$ ${escapeHtml_(money_(inv['VALOR HORA'] || 0))}</div>
                         </div>
                     </div>
                 </div>
 
-                <div class="card">
-                    <div class="k">Concepto</div>
-                    <div class="v">${escapeHtml_(inv['CONCEPTO'] || 'Servicios profesionales')}</div>
+                <div class="info-card" style="padding: 0; overflow: hidden;">
                     <table>
                         <thead>
                             <tr>
-                                <th>Detalle</th>
-                                <th class="right">Importe</th>
+                                <th>Descripción de Servicios</th>
+                                <th class="text-right" style="width: 150px;">Importe</th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr>
-                                <td>${escapeHtml_(inv['CONCEPTO'] || 'Servicios profesionales')}</td>
-                                <td class="right">$ ${escapeHtml_(money_(subtotal))}</td>
+                                <td class="fw-bold">
+                                    ${escapeHtml_(inv['CONCEPTO'] || 'Servicios profesionales correspondientes al período')}
+                                </td>
+                                <td class="text-right fw-bold" style="font-size: 15px;">
+                                    $ ${escapeHtml_(money_(subtotal))}
+                                </td>
                             </tr>
                         </tbody>
                     </table>
+                </div>
 
-                    <div class="totals">
-                        <div class="box">
-                            <div class="line"><span class="muted">Subtotal</span><strong>$ ${escapeHtml_(money_(subtotal))}</strong></div>
-                            <div class="line"><span class="muted">IVA</span><strong>$ ${escapeHtml_(money_(iva))}</strong></div>
-                            <div class="line grand"><span>Total</span><span>$ ${escapeHtml_(money_(total))}</span></div>
+                <div class="totals-container">
+                    <div class="totals-box">
+                        <div class="total-row">
+                            <span style="color: #64748b;">Subtotal</span>
+                            <span>$ ${escapeHtml_(money_(subtotal))}</span>
                         </div>
-                    </div>
-
-                    <div class="muted" style="margin-top:10px;">
-                        Observaciones: ${escapeHtml_(inv['OBSERVACIONES'] || 'N/A')}
+                        <div class="total-row">
+                            <span style="color: #64748b;">IVA (21%)</span>
+                            <span>$ ${escapeHtml_(money_(iva))}</span>
+                        </div>
+                        <div class="total-row grand-total">
+                            <span>Total</span>
+                            <span>$ ${escapeHtml_(money_(total))}</span>
+                        </div>
                     </div>
                 </div>
 
+                <div class="observations">
+                    <strong>Observaciones:</strong><br>
+                    ${escapeHtml_(inv['OBSERVACIONES'] || 'Servicios liquidados según planilla de asistencia adjunta.')}
+                </div>
+
                 <h3>Detalle de días trabajados</h3>
-                <div class="card">
+                <div class="info-card" style="padding: 0; overflow: hidden;">
                     <table>
                         <thead>
                             <tr>
                                 <th>Fecha</th>
                                 <th>Empleado</th>
-                                <th class="right">Horas</th>
+                                <th class="text-right">Horas</th>
                                 <th>Observaciones</th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${asistenciaRows || '<tr><td colspan="4">Sin registros</td></tr>'}
+                            ${asistenciaRows || '<tr><td colspan="4" style="text-align: center;">Sin registros de asistencia detallada</td></tr>'}
                         </tbody>
                     </table>
                 </div>
-            </body></html>
+            </body>
+            </html>
         `;
 
         const output = HtmlService.createHtmlOutput(html).setTitle('Factura');

@@ -250,17 +250,17 @@ var HoursController = (function () {
         return total;
     }
 
-    function getClientHourlyRate(clientName) {
+    function getClientHourlyRate(clientName, idCliente) {
         if (typeof DatabaseService.getClientHourlyRate === 'function') {
-            return DatabaseService.getClientHourlyRate(clientName);
+            return DatabaseService.getClientHourlyRate(clientName, idCliente);
         }
         return 0;
     }
-    function getClientRateAtDate(clientName, dateObj) {
+    function getClientRateAtDate(clientName, dateObj, idCliente) {
         if (typeof DatabaseService.getClientRateAtDate === 'function') {
-            return DatabaseService.getClientRateAtDate(clientName, dateObj);
+            return DatabaseService.getClientRateAtDate(clientName, dateObj, idCliente);
         }
-        return getClientHourlyRate(clientName);
+        return getClientHourlyRate(clientName, idCliente);
     }
 
     function getClientNameById_(idCliente) {
@@ -420,7 +420,14 @@ var HoursController = (function () {
 
         const start = parseDateAtStart(startDateStr);
         const end = parseDateAtEnd(endDateStr);
-        const targetClientId = clientIdFromPayload ? String(clientIdFromPayload).trim() : '';
+        const normalizeId_ = (val) => {
+            if (val === null || val === undefined) return '';
+            const s = String(val).trim();
+            if (!s) return '';
+            const n = Number(s);
+            return isNaN(n) ? s : String(n);
+        };
+        const targetClientId = normalizeId_(clientIdFromPayload);
         if (clientName && !targetClientId) {
             return { rows: [], summary: {} };
         }
@@ -435,7 +442,7 @@ var HoursController = (function () {
         let totalFacturacion = 0;
 
         rows.forEach(function (row) {
-            const rowIdCliente = idxIdCliente > -1 ? String(row[idxIdCliente] || '').trim() : '';
+            const rowIdCliente = idxIdCliente > -1 ? normalizeId_(row[idxIdCliente]) : '';
             if (!rowIdCliente || rowIdCliente !== targetClientId) return;
 
             const rowDate = row[idxFecha] instanceof Date ? row[idxFecha] : new Date(row[idxFecha]);
@@ -461,7 +468,7 @@ var HoursController = (function () {
             if (rowDate && !isNaN(rowDate.getTime())) {
                 diasSet.add(rowDate.toISOString().slice(0, 10));
             }
-            const rateForDate = getClientRateAtDate(rateClientName, rowDate);
+            const rateForDate = getClientRateAtDate(rateClientName, rowDate, targetClientId);
             const horasNum = isNaN(horas) ? 0 : Number(horas);
             const rateNum = isNaN(rateForDate) ? 0 : Number(rateForDate);
             totalFacturacion += rateNum * horasNum;
@@ -475,7 +482,7 @@ var HoursController = (function () {
             const h = Number(r.horas);
             return acc + (isNaN(h) ? 0 : h);
         }, 0);
-        const valorHoraCli = getClientRateAtDate(rateClientName, end || new Date());
+        const valorHoraCli = getClientRateAtDate(rateClientName, end || new Date(), targetClientId);
 
         const summary = {
             totalHoras: totalHoras,
@@ -504,6 +511,7 @@ var HoursController = (function () {
             const start = new Date(year, month - 1, 1);
             const end = new Date(year, month, 0, 23, 59, 59, 999);
 
+            // 1. Cargar Asistencia
             const sheet = DatabaseService.getDbSheetForFormat('ASISTENCIA');
             if (!sheet) return [];
             const data = sheet.getDataRange().getValues();
@@ -523,13 +531,66 @@ var HoursController = (function () {
                 return [];
             }
 
+            // 2. Cargar Historial de Tarifas UNA VEZ en memoria
+            const ratesMap = new Map();
+            const ss = DatabaseService.getDbSpreadsheet();
+            const sheetRates = ss.getSheetByName('CLIENTES_VHORA_DB');
+
+            if (sheetRates && sheetRates.getLastRow() >= 2) {
+                const ratesData = sheetRates.getRange(2, 1, sheetRates.getLastRow() - 1, 4).getValues();
+                ratesData.forEach(r => {
+                    const rId = String(r[0] || '').trim();
+                    if (!rId) return;
+
+                    const rFecha = r[2] instanceof Date ? r[2] : new Date(r[2]);
+                    if (!rFecha || isNaN(rFecha.getTime())) return;
+
+                    const rVal = Number(r[3]);
+                    if (isNaN(rVal)) return;
+
+                    if (!ratesMap.has(rId)) {
+                        ratesMap.set(rId, []);
+                    }
+                    ratesMap.get(rId).push({ ts: rFecha.getTime(), val: rVal });
+                });
+
+                // Ordenar cada array por fecha descendente
+                ratesMap.forEach(list => {
+                    list.sort((a, b) => b.ts - a.ts);
+                });
+            }
+
+            // Helper para buscar tarifa en memoria
+            const getRateInMemory = (idStr, dateObj) => {
+                if (!idStr) return 0;
+                const ts = dateObj.getTime();
+
+                // Buscar en historial
+                if (ratesMap.has(idStr)) {
+                    const list = ratesMap.get(idStr);
+                    // Buscar el primero que sea <= fecha
+                    for (let i = 0; i < list.length; i++) {
+                        if (list[i].ts <= ts) {
+                            return list[i].val;
+                        }
+                    }
+                }
+                // Fallback: intentar obtener valor actual
+                if (typeof getClientHourlyRate === 'function') {
+                    return getClientHourlyRate('', idStr);
+                }
+                return 0;
+            };
+
             const summaryMap = new Map(); // key -> {idCliente, cliente, horas, empleados:Set, dias:Set, totalFacturacion}
+            let rowCount = 0;
 
             rows.forEach(function (row) {
-                const fecha = row[idxFecha] instanceof Date ? row[idxFecha] : new Date(row[idxFecha]);
+                const rowDateRaw = row[idxFecha];
+                const fecha = rowDateRaw instanceof Date ? rowDateRaw : new Date(rowDateRaw);
                 if (isNaN(fecha.getTime()) || fecha < start || fecha > end) return;
 
-                const cliente = row[idxCliente];
+                const cliente = row[idxCliente] || 'S/D';
                 const rowIdCliente = idxIdCliente > -1 ? String(row[idxIdCliente] || '').trim() : '';
                 if (!rowIdCliente) return;
 
@@ -538,34 +599,38 @@ var HoursController = (function () {
 
                 const horasVal = idxHoras > -1 ? Number(row[idxHoras]) : 0;
                 const horas = isNaN(horasVal) ? 0 : horasVal;
-                const rateName = getClientNameById_(rowIdCliente) || cliente || '';
-                const rate = getClientRateAtDate(rateName, fecha);
+
+                const rate = getRateInMemory(rowIdCliente, fecha);
                 const facturacion = horas * (isNaN(rate) ? 0 : rate);
 
                 const key = rowIdCliente;
-                const entry = summaryMap.get(key) || {
-                    idCliente: rowIdCliente,
-                    cliente: getClientNameById_(rowIdCliente) || cliente,
-                    horas: 0,
-                    empleados: new Set(),
-                    dias: new Set(),
-                    totalFacturacion: 0
-                };
+                let entry = summaryMap.get(key);
+
+                if (!entry) {
+                    const clientName = (typeof getClientNameById_ === 'function' ? getClientNameById_(rowIdCliente) : '') || cliente;
+                    entry = {
+                        idCliente: rowIdCliente,
+                        cliente: clientName,
+                        horas: 0,
+                        empleados: new Set(),
+                        dias: new Set(),
+                        totalFacturacion: 0
+                    };
+                    summaryMap.set(key, entry);
+                }
 
                 entry.horas += horas;
                 entry.totalFacturacion += facturacion;
                 if (idxEmpleado > -1 && row[idxEmpleado]) entry.empleados.add(row[idxEmpleado]);
                 entry.dias.add(fecha.toISOString().slice(0, 10));
-
-                summaryMap.set(key, entry);
+                rowCount++;
             });
 
             const result = [];
             summaryMap.forEach(function (entry) {
-                const displayName = entry.cliente || '';
-                const rateFin = getClientRateAtDate(displayName, end);
+                const rateFin = getRateInMemory(entry.idCliente, end);
                 result.push({
-                    cliente: displayName,
+                    cliente: entry.cliente || '',
                     idCliente: entry.idCliente || '',
                     horas: entry.horas,
                     empleados: entry.empleados.size,
@@ -575,11 +640,13 @@ var HoursController = (function () {
                 });
             });
 
+            Logger.log('Resumen Mensual: Procesadas ' + rowCount + ' filas de asistencia. ' + result.length + ' clientes resultantes.');
+
             return result.sort(function (a, b) {
                 return b.totalFacturacion - a.totalFacturacion;
             });
         } catch (err) {
-            Logger.log('Error getMonthlySummaryByClient: ' + err);
+            Logger.log('Error CRITICO getMonthlySummaryByClient: ' + err + '\n' + err.stack);
             return [];
         }
     }

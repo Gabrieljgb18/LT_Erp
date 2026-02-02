@@ -13,8 +13,8 @@
     formatClientLabel: (typeof DomainHelpers !== "undefined" && DomainHelpers && typeof DomainHelpers.getClientLabel === "function")
       ? DomainHelpers.getClientLabel
       : function (cli) {
-          return cli == null ? "" : String(cli);
-        }
+        return cli == null ? "" : String(cli);
+      }
   };
 
   state.setClientMap = function (clients) {
@@ -44,12 +44,23 @@
 
   state.getClientIdFromLabel = function (label) {
     if (!label) return "";
+
+    // Primero buscar en el mapa (fuente de verdad)
+    const labelStr = String(label).trim();
+    if (state.clientIdMap.has(labelStr)) {
+      return state.clientIdMap.get(labelStr);
+    }
+
+    // Fallback: intentar extraer del label
     if (typeof DomainHelpers !== "undefined" && DomainHelpers && typeof DomainHelpers.extractIdFromLabel === "function") {
       const extracted = DomainHelpers.extractIdFromLabel(label);
       if (extracted) return extracted;
     }
+
+    // Fallback: si es un número puro, usarlo
     const plain = String(label).trim();
     if (/^\\d+$/.test(plain)) return plain;
+
     return "";
   };
 

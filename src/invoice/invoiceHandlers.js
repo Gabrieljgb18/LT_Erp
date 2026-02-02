@@ -240,18 +240,45 @@
 
     request
       .then((res) => {
-        const newId = res && res.id ? res.id : res;
-        Alerts && Alerts.showAlert("Factura guardada exitosamente", "success");
+        const newId = res && (res.id || res);
+        const isUpdate = !!id;
+
         bootstrap.Modal.getInstance(document.getElementById("invoice-modal")).hide();
         state.invoicePage = 1;
+
         if (global.InvoicePanelData) {
           global.InvoicePanelData.refreshGeneratorList();
         }
+
         if (newId) {
-          state.lastSavedInvoiceId = newId;
+          state.lastSavedInvoiceId = String(newId);
           if (global.InvoicePanelRender) {
             global.InvoicePanelRender.updateSelectionUi();
           }
+        }
+
+        // Si es creación, ofrecer descarga
+        if (!isUpdate && newId) {
+          const confirmMsg = `Factura guardada correctamente.\n\n¿Querés descargar el PDF ahora?`;
+          const confirmDownload = (window.UiDialogs && typeof window.UiDialogs.confirm === "function")
+            ? window.UiDialogs.confirm({
+              title: "Factura Guardada",
+              message: confirmMsg,
+              confirmText: "Descargar",
+              cancelText: "Cerrar",
+              confirmVariant: "success",
+              icon: "bi-check-circle-fill",
+              iconClass: "text-success"
+            })
+            : Promise.resolve(confirm(confirmMsg));
+
+          confirmDownload.then((confirmed) => {
+            if (confirmed) {
+              downloadPdf(String(newId));
+            }
+          });
+        } else {
+          Alerts && Alerts.showAlert("Factura actualizada exitosamente", "success");
         }
       })
       .catch((err) => {
@@ -513,8 +540,8 @@
   function deleteInvoice(id, skipRefreshMain) {
     const confirmPromise =
       typeof window !== "undefined" &&
-      window.UiDialogs &&
-      typeof window.UiDialogs.confirm === "function"
+        window.UiDialogs &&
+        typeof window.UiDialogs.confirm === "function"
         ? window.UiDialogs.confirm({
           title: "Anular factura",
           message: "¿Estás seguro de que querés anular esta factura?",
@@ -560,31 +587,69 @@
     const cli = String(cliente || "").trim();
     const id = String(idCliente || "").trim();
 
-    UiState && UiState.setGlobalLoading(true);
-    InvoiceService.createInvoiceFromAttendance(cli || { cliente: cli, idCliente: id }, range.start, range.end, {
-      observaciones: `Período: ${range.start} a ${range.end}`
-    }, id || "")
-      .then((res) => {
-        const newId = res && (res.id || (res.record && res.record.ID));
-        if (newId) {
-          state.lastSavedInvoiceId = String(newId);
-          Alerts && Alerts.showAlert("Factura generada correctamente.", "success");
-        } else {
-          Alerts && Alerts.showAlert("Factura generada.", "success");
-        }
-        if (global.InvoicePanelData) {
-          global.InvoicePanelData.handleCoverageSearch();
+    const Dom = global.DomHelpers;
+
+    (window.UiDialogs && typeof window.UiDialogs.prompt === "function")
+      ? window.UiDialogs.prompt({
+        title: "Número de Factura",
+        message: `Ingresá el número para la factura de ${cli}:`,
+        placeholder: "0000-00000000",
+        onAction: async (numFactura) => {
+          if (!numFactura) throw new Error("Debes ingresar un número de factura.");
+
+          UiState && UiState.setGlobalLoading(true, "Generando factura y preparando PDF...");
+          try {
+            const res = await InvoiceService.createInvoiceFromAttendance(
+              cli || { cliente: cli, idCliente: id },
+              range.start,
+              range.end,
+              {
+                numero: numFactura,
+                observaciones: `Período: ${range.start} a ${range.end}`
+              },
+              id || ""
+            );
+
+            const newId = res && (res.id || (res.record && res.record.ID));
+            if (!newId) throw new Error("No se pudo obtener el ID de la factura.");
+
+            state.lastSavedInvoiceId = String(newId);
+            if (global.InvoicePanelData) {
+              global.InvoicePanelData.handleCoverageSearch();
+            }
+
+            return {
+              success: true,
+              render: (container) => {
+                container.appendChild(Dom.el("div", { className: "text-center py-2" }, [
+                  Dom.el("div", { className: "text-success mb-2" }, [
+                    Dom.el("i", { className: "bi bi-check-circle-fill fs-2" })
+                  ]),
+                  Dom.el("div", { className: "fw-bold mb-3", text: "¡Factura generada!" }),
+                  Dom.el("button", {
+                    className: "btn btn-primary w-100 d-flex align-items-center justify-content-center gap-2",
+                    onClick: () => downloadPdf(String(newId))
+                  }, [
+                    Dom.el("i", { className: "bi bi-file-earmark-pdf-fill" }),
+                    Dom.text("Descargar PDF")
+                  ])
+                ]));
+              }
+            };
+          } catch (err) {
+            if (Alerts && typeof Alerts.showError === "function") {
+              Alerts.showError("Error generando factura", err);
+            } else {
+              console.error("Error generando factura (cobertura):", err);
+              Alerts && Alerts.showAlert("Error generando factura", "danger");
+            }
+            throw err; // Re-throw to indicate failure to the dialog
+          } finally {
+            UiState && UiState.setGlobalLoading(false);
+          }
         }
       })
-      .catch((err) => {
-        if (Alerts && typeof Alerts.showError === "function") {
-          Alerts.showError("Error generando factura", err);
-        } else {
-          console.error("Error generando factura (cobertura):", err);
-          Alerts && Alerts.showAlert("Error generando factura", "danger");
-        }
-      })
-      .finally(() => UiState && UiState.setGlobalLoading(false));
+      : Promise.resolve(null);
   }
 
   function editAttendance(id) {
@@ -627,8 +692,8 @@
   function deleteAttendance(id) {
     const confirmPromise =
       typeof window !== "undefined" &&
-      window.UiDialogs &&
-      typeof window.UiDialogs.confirm === "function"
+        window.UiDialogs &&
+        typeof window.UiDialogs.confirm === "function"
         ? window.UiDialogs.confirm({
           title: "Eliminar asistencia",
           message: "¿Eliminar este registro de asistencia?",

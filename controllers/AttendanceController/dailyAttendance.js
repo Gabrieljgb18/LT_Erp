@@ -17,6 +17,35 @@ const AttendanceDailyAttendance = (function () {
         const dayName = DateUtils.getDayNameFromDateString(fecha);
         if (!dayName) return [];
 
+        const parseDateOnly = (value) => {
+            if (!value) return null;
+            if (Object.prototype.toString.call(value) === '[object Date]') {
+                return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+            }
+            const s = String(value).trim();
+            if (!s) return null;
+            if (s.indexOf('-') >= 0) {
+                const p = s.split('-');
+                if (p.length === 3) {
+                    const d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+                    return isNaN(d) ? null : d;
+                }
+            }
+            if (s.indexOf('/') >= 0) {
+                const p = s.split('/');
+                if (p.length === 3) {
+                    const d = new Date(Number(p[2]), Number(p[1]) - 1, Number(p[0]));
+                    return isNaN(d) ? null : d;
+                }
+            }
+            const d = new Date(s);
+            if (isNaN(d)) return null;
+            return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        };
+
+        const fechaDate = parseDateOnly(fecha);
+        if (!fechaDate) return [];
+
         const planSheet = DatabaseService.getDbSheetForFormat('ASISTENCIA_PLAN');
         const lastRowPlan = planSheet.getLastRow();
         const lastColPlan = planSheet.getLastColumn();
@@ -61,19 +90,11 @@ const AttendanceDailyAttendance = (function () {
             if (diaRow !== dayName) return;
 
             // Vigencia
-            let vigDesdeDate = null;
-            let vigHastaDate = null;
-            if (idxVigDesde > -1 && row[idxVigDesde]) {
-                const d = row[idxVigDesde] instanceof Date ? row[idxVigDesde] : new Date(row[idxVigDesde]);
-                vigDesdeDate = isNaN(d) ? null : d;
-            }
-            if (idxVigHasta > -1 && row[idxVigHasta]) {
-                const d = row[idxVigHasta] instanceof Date ? row[idxVigHasta] : new Date(row[idxVigHasta]);
-                vigHastaDate = isNaN(d) ? null : d;
-            }
+            const vigDesdeDate = idxVigDesde > -1 ? parseDateOnly(row[idxVigDesde]) : null;
+            const vigHastaDate = idxVigHasta > -1 ? parseDateOnly(row[idxVigHasta]) : null;
 
-            if (vigDesdeDate && vigDesdeDate > fecha) return;
-            if (vigHastaDate && vigHastaDate < fecha) return;
+            if (vigDesdeDate && vigDesdeDate.getTime() > fechaDate.getTime()) return;
+            if (vigHastaDate && vigHastaDate.getTime() < fechaDate.getTime()) return;
 
             const cliente = row[idxClientePlan];
             const empleado = row[idxEmpleadoPlan];
@@ -279,9 +300,52 @@ const AttendanceDailyAttendance = (function () {
         return map;
     }
 
-    function saveDailyAttendance(fechaStr, rows) {
+    function collectAttendanceRowsForDate_(sheet, fecha) {
+        const rows = [];
+        if (!sheet) return rows;
+        const lastRow = sheet.getLastRow();
+        const lastCol = sheet.getLastColumn();
+        if (lastRow < 2 || lastCol === 0) return rows;
+
+        const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+        const idxId = headers.indexOf('ID');
+        const idxFecha = headers.indexOf('FECHA');
+        if (idxFecha === -1) return rows;
+
+        const fechaKey = DataUtils && DataUtils.normalizeCellForSearch
+            ? DataUtils.normalizeCellForSearch(fecha, 'FECHA')
+            : String(fecha || '').trim();
+        if (!fechaKey) return rows;
+
+        const data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+        data.forEach(function (row, i) {
+            const rowFecha = DataUtils && DataUtils.normalizeCellForSearch
+                ? DataUtils.normalizeCellForSearch(row[idxFecha], 'FECHA')
+                : String(row[idxFecha] || '').trim();
+            if (rowFecha !== fechaKey) return;
+            const rowId = idxId > -1 ? row[idxId] : row[0];
+            if (!rowId) return;
+            rows.push({ id: rowId, rowNumber: i + 2 });
+        });
+
+        return rows;
+    }
+
+    function saveDailyAttendance(fechaStr, payload) {
         const fecha = (fechaStr || '').toString().trim();
-        if (!fecha || !Array.isArray(rows)) return [];
+        if (!fecha) return [];
+
+        let rows = [];
+        let removed = [];
+        let purgeMissing = false;
+        if (Array.isArray(payload)) {
+            rows = payload;
+        } else if (payload && typeof payload === 'object') {
+            rows = Array.isArray(payload.rows) ? payload.rows : [];
+            removed = Array.isArray(payload.removed) ? payload.removed : [];
+            purgeMissing = payload.purgeMissing === true || payload.purgeMissing === 'true';
+        }
+        if (!Array.isArray(rows)) return [];
 
         const missingId = rows.find(item => item && ((!item.idCliente && item.cliente) || (!item.idEmpleado && item.empleado)));
         if (missingId) {
@@ -291,6 +355,8 @@ const AttendanceDailyAttendance = (function () {
         const sheetAsis = DatabaseService.getDbSheetForFormat('ASISTENCIA');
         const attendanceIndex = buildAttendanceIndexForDate_(sheetAsis, fecha);
         const updates = [];
+        const activeKeys = new Set();
+        const activeIds = new Set();
 
         rows.forEach(function (item) {
             if (!item || !item.cliente || !item.empleado) return;
@@ -310,6 +376,8 @@ const AttendanceDailyAttendance = (function () {
 
             const idAsistencia = item.idAsistencia || item.id || '';
             const key = String(item.idCliente || '').trim() + '||' + String(item.idEmpleado || '').trim();
+            if (key) activeKeys.add(key);
+            if (idAsistencia) activeIds.add(String(idAsistencia));
             if (idAsistencia) {
                 RecordController.updateRecord('ASISTENCIA', idAsistencia, record);
                 if (key) attendanceIndex.set(key, idAsistencia);
@@ -317,6 +385,7 @@ const AttendanceDailyAttendance = (function () {
             } else if (key && attendanceIndex.has(key)) {
                 const existingId = attendanceIndex.get(key);
                 RecordController.updateRecord('ASISTENCIA', existingId, record);
+                if (existingId) activeIds.add(String(existingId));
                 updates.push({ idCliente: record.ID_CLIENTE, idEmpleado: record.ID_EMPLEADO, idAsistencia: existingId });
             } else if (item.asistenciaRowNumber) {
                 // Fallback legacy: obtener ID desde rowNumber y actualizar por ID
@@ -326,24 +395,63 @@ const AttendanceDailyAttendance = (function () {
                     if (existingId) {
                         RecordController.updateRecord('ASISTENCIA', existingId, record);
                         if (key) attendanceIndex.set(key, existingId);
+                        activeIds.add(String(existingId));
                         updates.push({ idCliente: record.ID_CLIENTE, idEmpleado: record.ID_EMPLEADO, idAsistencia: existingId });
                     } else {
                         const newId = RecordController.saveRecord('ASISTENCIA', record);
                         if (key) attendanceIndex.set(key, newId);
+                        activeIds.add(String(newId));
                         updates.push({ idCliente: record.ID_CLIENTE, idEmpleado: record.ID_EMPLEADO, idAsistencia: newId });
                     }
                 } catch (e) {
                     const newId = RecordController.saveRecord('ASISTENCIA', record);
                     if (key) attendanceIndex.set(key, newId);
+                    activeIds.add(String(newId));
                     updates.push({ idCliente: record.ID_CLIENTE, idEmpleado: record.ID_EMPLEADO, idAsistencia: newId });
                 }
             } else {
                 const newId = RecordController.saveRecord('ASISTENCIA', record);
                 if (key) attendanceIndex.set(key, newId);
+                activeIds.add(String(newId));
                 updates.push({ idCliente: record.ID_CLIENTE, idEmpleado: record.ID_EMPLEADO, idAsistencia: newId });
             }
         });
 
+        let deletedCount = 0;
+        if (purgeMissing) {
+            const rowsForDate = collectAttendanceRowsForDate_(sheetAsis, fecha);
+            rowsForDate.forEach(function (row) {
+                const idStr = String(row.id || '').trim();
+                if (!idStr) return;
+                if (activeIds.has(idStr)) return;
+                RecordController.deleteRecord('ASISTENCIA', { id: row.id, rowNumber: row.rowNumber });
+                deletedCount += 1;
+            });
+        } else if (removed.length) {
+            removed.forEach(function (item) {
+                if (!item) return;
+                const idCandidate = item.idAsistencia || item.id || item.ID || '';
+                const rowNumber = item.asistenciaRowNumber || item.rowNumber || null;
+                const key = String(item.idCliente || '').trim() + '||' + String(item.idEmpleado || '').trim();
+                if (idCandidate && activeIds.has(String(idCandidate))) return;
+                if (key && activeKeys.has(key)) return;
+
+                if (idCandidate) {
+                    RecordController.deleteRecord('ASISTENCIA', { id: idCandidate, rowNumber: rowNumber });
+                    deletedCount += 1;
+                    return;
+                }
+                if (key && attendanceIndex.has(key)) {
+                    const existingId = attendanceIndex.get(key);
+                    if (existingId) {
+                        RecordController.deleteRecord('ASISTENCIA', { id: existingId });
+                        deletedCount += 1;
+                    }
+                }
+            });
+        }
+
+        updates.deleted = deletedCount;
         return updates;
     }
 

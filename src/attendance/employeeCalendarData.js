@@ -3,6 +3,19 @@
  * Capa de datos para calendario de empleados.
  */
 (function (global) {
+  const EMP_CACHE_TTL_MS = 5 * 60 * 1000;
+  const employeeCache = { list: null, ts: 0, inFlight: null };
+
+  function isCacheFresh() {
+    return !!(employeeCache.list && (Date.now() - employeeCache.ts) < EMP_CACHE_TTL_MS);
+  }
+
+  function storeCache(list) {
+    employeeCache.list = Array.isArray(list) ? list : [];
+    employeeCache.ts = Date.now();
+    return employeeCache.list;
+  }
+
   function loadEmployeesFromReference() {
     if (!global.ReferenceService || typeof global.ReferenceService.ensureLoaded !== "function") {
       return Promise.resolve([]);
@@ -22,20 +35,35 @@
       });
   }
 
-  function loadEmployees() {
-    if (global.AttendanceService && typeof global.AttendanceService.getEmpleadosConId === "function") {
-      return global.AttendanceService.getEmpleadosConId()
-        .then((items) => items || [])
-        .catch((err) => {
-          if (Alerts && Alerts.notifyError) {
-            Alerts.notifyError("Error cargando empleados", err, { silent: true });
-          } else {
-            console.warn("Error cargando empleados:", err);
-          }
-          return loadEmployeesFromReference();
-        });
+  function loadEmployees(options) {
+    const force = options && options.force;
+    if (!force && isCacheFresh()) {
+      return Promise.resolve(employeeCache.list);
     }
-    return loadEmployeesFromReference();
+    if (!force && employeeCache.inFlight) {
+      return employeeCache.inFlight;
+    }
+
+    const request = (global.AttendanceService && typeof global.AttendanceService.getEmpleadosConId === "function")
+      ? global.AttendanceService.getEmpleadosConId()
+          .then((items) => storeCache(items || []))
+          .catch((err) => {
+            if (Alerts && Alerts.notifyError) {
+              Alerts.notifyError("Error cargando empleados", err, { silent: true });
+            } else {
+              console.warn("Error cargando empleados:", err);
+            }
+            return loadEmployeesFromReference().then(storeCache);
+          })
+      : loadEmployeesFromReference().then(storeCache);
+
+    if (!force) {
+      employeeCache.inFlight = request;
+    }
+
+    return request.finally(function () {
+      employeeCache.inFlight = null;
+    });
   }
 
   function fetchSchedule(options) {
@@ -79,6 +107,11 @@
 
   global.EmployeeCalendarData = {
     loadEmployees: loadEmployees,
+    prefetchEmployees: function () {
+      return loadEmployees({ force: true }).catch(function () {
+        return [];
+      });
+    },
     fetchSchedule: fetchSchedule,
     generatePdf: generatePdf,
     listClientMedia: listClientMedia,

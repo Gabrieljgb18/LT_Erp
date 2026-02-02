@@ -15,24 +15,52 @@ var PdfController = (function () {
     }
 
     function generateClientHoursPdf(startDateStr, endDateStr, clientName, idCliente) {
+        // Obtener información completa del cliente desde el ID
+        let clientInfo = { nombre: '', docType: '', docNumber: '' };
+
+        if (idCliente && DatabaseService && typeof DatabaseService.findClienteById === 'function') {
+            const cli = DatabaseService.findClienteById(idCliente);
+            if (cli) {
+                clientInfo.nombre = cli.nombre || cli.razonSocial || clientName || '';
+                clientInfo.docType = cli.docType || cli['TIPO DOCUMENTO'] || '';
+                clientInfo.docNumber = cli.docNumber || cli['NUMERO DOCUMENTO'] || cli.cuit || '';
+            }
+        } else if (clientName) {
+            clientInfo.nombre = clientName;
+        }
+
         const data = HoursController.getHoursByClient(startDateStr, endDateStr, clientName, idCliente);
         if (!data || !data.rows) return null;
 
-        const html = buildClientHtml(data.rows, data.summary || {}, startDateStr, endDateStr, clientName);
+        const html = buildClientHtml(data.rows, data.summary || {}, startDateStr, endDateStr, clientInfo);
         const output = HtmlService.createHtmlOutput(html).setTitle('Reporte Cliente');
         const pdfBlob = output.getAs('application/pdf');
         const base64 = Utilities.base64Encode(pdfBlob.getBytes());
-        const filename = `reporte_cliente_${clientName || 'cliente'}_${startDateStr || ''}_${endDateStr || ''}.pdf`;
+        const filename = `reporte_cliente_${clientInfo.nombre || 'cliente'}_${startDateStr || ''}_${endDateStr || ''}.pdf`;
         return { filename: filename, base64: base64 };
     }
 
     function generateClientAccountStatementPdf(clientName, startDateStr, endDateStr, idCliente) {
+        // Obtener información completa del cliente desde el ID
+        let clientInfo = { nombre: '', docType: '', docNumber: '' };
+
+        if (idCliente && DatabaseService && typeof DatabaseService.findClienteById === 'function') {
+            const cli = DatabaseService.findClienteById(idCliente);
+            if (cli) {
+                clientInfo.nombre = cli.nombre || cli.razonSocial || clientName || '';
+                clientInfo.docType = cli.docType || cli['TIPO DOCUMENTO'] || '';
+                clientInfo.docNumber = cli.docNumber || cli['NUMERO DOCUMENTO'] || cli.cuit || '';
+            }
+        } else if (clientName) {
+            clientInfo.nombre = clientName;
+        }
+
         const data = AccountController.getClientAccountStatement(clientName, startDateStr, endDateStr, idCliente);
-        const html = buildClientAccountHtml(data || {}, startDateStr, endDateStr, clientName);
+        const html = buildClientAccountHtml(data || {}, startDateStr, endDateStr, clientInfo);
         const output = HtmlService.createHtmlOutput(html).setTitle('Cuenta Corriente');
         const pdfBlob = output.getAs('application/pdf');
         const base64 = Utilities.base64Encode(pdfBlob.getBytes());
-        const filename = `cuenta_corriente_${clientName || 'cliente'}_${startDateStr || ''}_${endDateStr || ''}.pdf`;
+        const filename = `cuenta_corriente_${clientInfo.nombre || 'cliente'}_${startDateStr || ''}_${endDateStr || ''}.pdf`;
         return { filename: filename, base64: base64 };
     }
 
@@ -382,7 +410,8 @@ var PdfController = (function () {
                 <div class="subtitle">LT ERP System</div>
             </div>
             <div class="meta-section">
-                <div class="meta-item">Cliente: <strong>${client || 'No indicado'}</strong></div>
+                <div class="meta-item">Cliente: <strong>${typeof client === 'object' ? (client.nombre || 'No indicado') : (client || 'No indicado')}</strong></div>
+                ${typeof client === 'object' && client.docNumber ? `<div class="meta-item">${client.docType || 'CUIT'}: <strong>${client.docNumber}</strong></div>` : ''}
                 <div class="meta-item">Período: <strong>${start || '-'} al ${end || '-'}</strong></div>
                 <div class="meta-item">Fecha de emisión: <strong>${new Date().toLocaleDateString('es-AR')}</strong></div>
             </div>
@@ -590,7 +619,8 @@ var PdfController = (function () {
                 <div class="subtitle">LT ERP System</div>
             </div>
             <div class="meta-section">
-                <div class="meta-item">Cliente: <strong>${client || 'No indicado'}</strong></div>
+                <div class="meta-item">Cliente: <strong>${typeof client === 'object' ? (client.nombre || 'No indicado') : (client || 'No indicado')}</strong></div>
+                ${typeof client === 'object' && client.docNumber ? `<div class="meta-item">${client.docType || 'CUIT'}: <strong>${client.docNumber}</strong></div>` : ''}
                 <div class="meta-item">Período: <strong>${start || '-'} al ${end || '-'}</strong></div>
                 <div class="meta-item">Fecha de emisión: <strong>${new Date().toLocaleDateString('es-AR')}</strong></div>
             </div>

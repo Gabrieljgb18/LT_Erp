@@ -8,6 +8,7 @@
     console.error("MapsPanelState no disponible");
     return;
   }
+  const PREFETCH_TTL_MS = 5 * 60 * 1000;
 
   function buildPlanIndex(data) {
     const index = state.createPlanIndex();
@@ -231,6 +232,73 @@
       });
   }
 
+  function applyPrefetch() {
+    if (!state.prefetchAt || (Date.now() - state.prefetchAt) > PREFETCH_TTL_MS) {
+      return false;
+    }
+    let used = false;
+    if (state.prefetchReference) {
+      state.cachedReference = state.prefetchReference;
+      buildReferenceIndex();
+      state.clientItemsDirty = true;
+      state.selectsDirty = true;
+      used = true;
+    }
+    const currentWeek = state.formatDateISO(state.filters.weekStart);
+    const weekMatches = !state.prefetchWeekStart || state.prefetchWeekStart === currentWeek;
+    if (state.prefetchPlanData && weekMatches) {
+      state.planData = state.prefetchPlanData;
+      state.planIndex = state.prefetchPlanIndex || buildPlanIndex(state.prefetchPlanData);
+      state.clientItemsDirty = true;
+      used = true;
+    }
+    return used;
+  }
+
+  function prefetch() {
+    const tasks = [];
+    if (global.ReferenceService && typeof global.ReferenceService.ensureLoaded === "function") {
+      tasks.push(
+        global.ReferenceService.ensureLoaded()
+          .then(() => {
+            const data = global.ReferenceService.get();
+            state.prefetchReference = data || { clientes: [], empleados: [] };
+            state.prefetchAt = Date.now();
+          })
+          .catch(() => {
+            state.prefetchReference = { clientes: [], empleados: [] };
+            state.prefetchAt = Date.now();
+          })
+      );
+    }
+
+    if (global.MapsService && typeof global.MapsService.getWeeklyClientOverview === "function") {
+      const weekStart = state.filters && state.filters.weekStart
+        ? state.filters.weekStart
+        : state.getMondayOfWeek(new Date());
+      const weekStartStr = state.formatDateISO(weekStart);
+      tasks.push(
+        global.MapsService.getWeeklyClientOverview(weekStartStr)
+          .then((data) => {
+            if (data && data.error) throw new Error(data.error);
+            state.prefetchPlanData = data || null;
+            state.prefetchPlanIndex = buildPlanIndex(state.prefetchPlanData);
+            state.prefetchWeekStart = weekStartStr;
+            state.prefetchAt = Date.now();
+          })
+          .catch(() => {
+            state.prefetchPlanData = null;
+            state.prefetchPlanIndex = buildPlanIndex(null);
+            state.prefetchWeekStart = weekStartStr;
+            state.prefetchAt = Date.now();
+          })
+      );
+    }
+
+    if (!tasks.length) return Promise.resolve(null);
+    return Promise.allSettled(tasks);
+  }
+
   global.MapsPanelData = {
     buildPlanIndex: buildPlanIndex,
     buildReferenceIndex: buildReferenceIndex,
@@ -239,6 +307,8 @@
     splitByCoords: splitByCoords,
     refreshReferenceData: refreshReferenceData,
     refreshPlanData: refreshPlanData,
-    subscribeReferenceUpdates: subscribeReferenceUpdates
+    subscribeReferenceUpdates: subscribeReferenceUpdates,
+    applyPrefetch: applyPrefetch,
+    prefetch: prefetch
   };
 })(typeof window !== "undefined" ? window : this);

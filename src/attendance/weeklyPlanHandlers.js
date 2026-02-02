@@ -70,6 +70,8 @@
         const detailSignal = state.detailEventsController.signal;
         clienteSelect.addEventListener("change", () => {
             state.currentOriginalVigencia = null;
+            state.currentPlanKey = "";
+            state.currentPlanGroups = [];
             global.WeeklyPlanPanelData.fetchWeeklyPlanForClient();
         }, { signal: detailSignal });
     }
@@ -103,6 +105,15 @@
                 if (actions && typeof actions.deleteWeeklyPlan === "function") {
                     actions.deleteWeeklyPlan();
                 }
+            } else if (action === "new-weekly-plan-client") {
+                if (actions && typeof actions.openNewPlanForClient === "function") {
+                    actions.openNewPlanForClient();
+                }
+            } else if (action === "select-weekly-plan") {
+                const key = actionBtn.getAttribute("data-plan-key") || "";
+                if (actions && typeof actions.loadPlanByKey === "function") {
+                    actions.loadPlanByKey(key);
+                }
             }
         }, { signal: signal });
     }
@@ -111,10 +122,12 @@
         init: actions && actions.init ? actions.init : function () { },
         setup: actions && actions.setup ? actions.setup : function () { },
         openNewPlan: actions && actions.openNewPlan ? actions.openNewPlan : function () { },
+        openNewPlanForClient: actions && actions.openNewPlanForClient ? actions.openNewPlanForClient : function () { },
         switchToDetail: actions && actions.switchToDetail ? actions.switchToDetail : function () { },
         attachListEvents: attachListEvents,
         attachDetailEvents: attachDetailEvents,
         attachWeeklyPlanHandlers: attachWeeklyPlanHandlers,
+        loadPlanByKey: actions && actions.loadPlanByKey ? actions.loadPlanByKey : function () { },
         addEmptyPlanRow: actions && actions.addEmptyPlanRow ? actions.addEmptyPlanRow : function () { },
         deletePlanRow: actions && actions.deletePlanRow ? actions.deletePlanRow : function () { },
         deleteWeeklyPlan: actions && actions.deleteWeeklyPlan ? actions.deleteWeeklyPlan : function () { },

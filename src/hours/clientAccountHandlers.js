@@ -62,6 +62,10 @@
     const startDate = document.getElementById("client-acc-start")?.value || "";
     const endDate = document.getElementById("client-acc-end")?.value || "";
 
+    console.log("[ClientAccount] handleSearch - clientRaw:", clientRaw);
+    console.log("[ClientAccount] handleSearch - idCliente extracted:", idCliente);
+    console.log("[ClientAccount] handleSearch - clientIdMap:", Array.from(state.clientIdMap.entries()));
+
     if (!clientRaw) {
       Alerts && Alerts.showAlert("Seleccioná un cliente", "warning");
       return;
@@ -76,10 +80,13 @@
     }
 
     state.lastQuery = { clientRaw, idCliente, startDate, endDate };
+    console.log("[ClientAccount] handleSearch - calling fetchAccountStatement with:", state.lastQuery);
+
     global.ClientAccountPanelRender.toggleLoading(true);
 
     global.ClientAccountPanelData.fetchAccountStatement(state.lastQuery)
       .then((data) => {
+        console.log("[ClientAccount] handleSearch - response:", data);
         global.ClientAccountPanelRender.renderTable(data);
         global.ClientAccountPanelRender.setDebug({ query: state.lastQuery, response: data }, false);
 
@@ -97,6 +104,7 @@
         }
       })
       .catch((err) => {
+        console.error("[ClientAccount] handleSearch - error:", err);
         if (Alerts && typeof Alerts.showError === "function") {
           Alerts.showError("Error al cargar cuenta corriente", err);
         } else {
@@ -129,12 +137,20 @@
 
     const btn = document.getElementById("client-acc-pdf");
     const ui = global.UIHelpers;
-      if (btn && ui && typeof ui.withSpinner === "function") {
-        ui.withSpinner(btn, true, "Descargando...");
-      }
+    if (btn && ui && typeof ui.withSpinner === "function") {
+      ui.withSpinner(btn, true, "Descargando...");
+    }
+
+    // Extraer nombre limpio del cliente quitando metadatos (ID: XX, CUIT, etc)
+    const cleanClientName = clientRaw.replace(/\s*\([^)]*\)\s*$/g, '').trim();
 
     UiState && UiState.setGlobalLoading(true, "Generando PDF...");
-    global.ClientAccountPanelData.generatePdf({ clientRaw, idCliente, startDate, endDate })
+    global.ClientAccountPanelData.generatePdf({
+      clientRaw: cleanClientName, // Pasar el nombre limpio
+      idCliente,
+      startDate,
+      endDate
+    })
       .then((res) => {
         if (!res || !res.base64) throw new Error("No se pudo generar PDF");
         const link = document.createElement("a");
@@ -153,9 +169,9 @@
       })
       .finally(() => {
         UiState && UiState.setGlobalLoading(false);
-      if (btn && ui && typeof ui.withSpinner === "function") {
-        ui.withSpinner(btn, false);
-      }
+        if (btn && ui && typeof ui.withSpinner === "function") {
+          ui.withSpinner(btn, false);
+        }
       });
   }
 

@@ -72,9 +72,59 @@ var BulkValuesController = (function () {
             }
         }
 
-        const range = sheet.getRange(2, idx + 1, lastRow - 1, 1);
-        const values = range.getValues().map(() => [normalizedValue]);
+        const rowCount = lastRow - 1;
+        const range = sheet.getRange(2, idx + 1, rowCount, 1);
+
+        const shouldLogClientRate = formatId === 'CLIENTES' && columnName === 'VALOR HORA';
+        const shouldLogEmployeeRate = formatId === 'EMPLEADOS' && columnName === 'VALOR DE HORA';
+        const shouldLogRate = shouldLogClientRate || shouldLogEmployeeRate;
+
+        const data = shouldLogRate ? sheet.getRange(2, 1, rowCount, lastCol).getValues() : null;
+        const values = [];
+
+        let idxId = -1;
+        let idxNombre = -1;
+        let idxRazon = -1;
+        if (shouldLogClientRate) {
+            idxId = headers.indexOf('ID');
+            idxNombre = headers.indexOf('NOMBRE');
+            idxRazon = headers.indexOf('RAZON SOCIAL');
+        } else if (shouldLogEmployeeRate) {
+            idxId = headers.indexOf('ID');
+            idxNombre = headers.indexOf('EMPLEADO');
+        }
+
+        for (let i = 0; i < rowCount; i++) {
+            values.push([normalizedValue]);
+            if (!shouldLogRate) continue;
+
+            const row = data[i];
+            const oldVal = row[idx];
+            if (valuesEqual_(oldVal, normalizedValue)) continue;
+
+            const idVal = idxId > -1 ? row[idxId] : '';
+            let nameVal = idxNombre > -1 ? row[idxNombre] : '';
+            if (shouldLogClientRate && !nameVal && idxRazon > -1) {
+                nameVal = row[idxRazon] || '';
+            }
+            if (!nameVal && !idVal) continue;
+
+            if (shouldLogClientRate) {
+                DatabaseService.appendHoraLogCliente(idVal, nameVal, normalizedValue);
+            } else if (shouldLogEmployeeRate) {
+                DatabaseService.appendHoraLogEmpleado(idVal, nameVal, normalizedValue);
+            }
+        }
+
         range.setValues(values);
+    }
+
+    function valuesEqual_(left, right) {
+        if (left == null && right == null) return true;
+        const nLeft = Number(left);
+        const nRight = Number(right);
+        if (!isNaN(nLeft) && !isNaN(nRight)) return nLeft === nRight;
+        return String(left == null ? '' : left) === String(right == null ? '' : right);
     }
 
     return {

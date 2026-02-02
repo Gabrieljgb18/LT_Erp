@@ -1514,8 +1514,147 @@ var NumberUtils = (function () {
     });
   }
 
+  function promptDialog(options = {}) {
+    const title = options.title || "Ingresar dato";
+    const message = options.message || "Por favor, ingresá el valor:";
+    const confirmText = options.confirmText || "Aceptar";
+    const cancelText = options.cancelText || "Cancelar";
+    const placeholder = options.placeholder || "";
+    const defaultValue = options.defaultValue || "";
+    const inputType = options.inputType || "text";
+    const onAction = typeof options.onAction === "function" ? options.onAction : null;
+
+    if (!global.document || !global.document.body || !global.bootstrap || !global.bootstrap.Modal) {
+      const val = global.prompt(`${title}\n\n${message}`, defaultValue);
+      return Promise.resolve(val);
+    }
+
+    const modalId = "lt-erp-prompt-" + Date.now();
+    const inputId = modalId + "-input";
+
+    const modalEl = Dom.el("div", { className: "modal fade", id: modalId, tabindex: "-1", "data-bs-backdrop": "static" }, [
+      Dom.el("div", { className: "modal-dialog modal-dialog-centered modal-sm" }, [
+        Dom.el("div", { className: "modal-content border-0 shadow" }, [
+          Dom.el("div", { className: "modal-header py-2" }, [
+            Dom.el("h6", { className: "modal-title fw-bold", text: title }),
+            Dom.el("button", { type: "button", className: "btn-close", "data-bs-dismiss": "modal", id: modalId + "-close" })
+          ]),
+          Dom.el("div", { className: "modal-body", id: modalId + "-body" }, [
+            Dom.el("label", { className: "form-label small text-muted fw-bold", text: message }),
+            Dom.el("input", {
+              type: inputType,
+              id: inputId,
+              className: "form-control",
+              placeholder: placeholder,
+              value: defaultValue
+            })
+          ]),
+          Dom.el("div", { className: "modal-footer py-2", id: modalId + "-footer" }, [
+            Dom.el("button", { type: "button", className: "btn btn-sm btn-link text-muted mx-auto", "data-bs-dismiss": "modal" }, cancelText),
+            Dom.el("button", { type: "button", className: "btn btn-sm btn-primary px-4", "data-lt-confirm": "1" }, confirmText)
+          ])
+        ])
+      ])
+    ]);
+
+    document.body.appendChild(modalEl);
+
+    return new Promise((resolve) => {
+      let resolvedValue = null;
+      const modal = new global.bootstrap.Modal(modalEl);
+      const input = modalEl.querySelector("input");
+      const confirmBtn = modalEl.querySelector('[data-lt-confirm="1"]');
+      const body = document.getElementById(modalId + "-body");
+      const footer = document.getElementById(modalId + "-footer");
+      const closeBtn = document.getElementById(modalId + "-close");
+
+      modalEl.addEventListener("shown.bs.modal", () => {
+        if (input) {
+          input.focus();
+          if (defaultValue) input.select();
+        }
+      });
+
+      const onConfirm = async () => {
+        const val = input ? input.value : "";
+        if (onAction) {
+          // Modo asíncrono: mostrar spiner y ejecutar
+          try {
+            if (input) input.disabled = true;
+            if (confirmBtn) {
+              confirmBtn.disabled = true;
+              const ui = global.UIHelpers;
+              if (ui && typeof ui.withSpinner === "function") {
+                ui.withSpinner(confirmBtn, true, "...");
+              } else {
+                confirmBtn.textContent = "⌛";
+              }
+            }
+
+            // Ejecutar la acción asíncrona
+            const result = await onAction(val);
+
+            // Si la acción devuelve un objeto con 'success' y 'render', mostramos eso
+            if (result && result.success && typeof result.render === "function") {
+              if (body) {
+                Dom.clear(body);
+                result.render(body);
+              }
+              if (footer) {
+                footer.innerHTML = "";
+                const doneBtn = Dom.el("button", {
+                  className: "btn btn-sm btn-outline-secondary mx-auto",
+                  text: "Cerrar",
+                  onClick: () => modal.hide()
+                });
+                footer.appendChild(doneBtn);
+              }
+            } else {
+              // Comportamiento por defecto tras éxito: cerrar
+              resolvedValue = val;
+              modal.hide();
+            }
+          } catch (err) {
+            console.error("Error en prompt action:", err);
+            if (input) input.disabled = false;
+            if (confirmBtn) {
+              const ui = global.UIHelpers;
+              if (ui && typeof ui.withSpinner === "function") {
+                ui.withSpinner(confirmBtn, false);
+              }
+              confirmBtn.textContent = confirmText;
+              confirmBtn.disabled = false;
+            }
+            if (global.Alerts) global.Alerts.showAlert(err.message || "Error al procesar", "danger");
+          }
+        } else {
+          // Modo síncrono: resolver y cerrar
+          resolvedValue = val;
+          modal.hide();
+        }
+      };
+
+      if (input) {
+        input.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" && !input.disabled) onConfirm();
+        });
+      }
+
+      confirmBtn.addEventListener("click", onConfirm);
+
+      modalEl.addEventListener("hidden.bs.modal", () => {
+        modal.dispose();
+        modalEl.remove();
+        resolve(resolvedValue);
+      });
+
+      modal.show();
+    });
+  }
+
   global.UiDialogs = {
-    confirm: confirmDialog
+    confirm: confirmDialog,
+    prompt: promptDialog
   };
 })(typeof window !== "undefined" ? window : this);
 
@@ -9208,6 +9347,7 @@ var WeeklyPlanTemplates = (function (global) {
     rootEl: null,
     pendingFecha: null,
     pendingFocus: null,
+    removedRows: [],
     eventsController: null,
     rowEventsController: null,
     summaryEventsController: null,
@@ -9226,6 +9366,7 @@ var WeeklyPlanTemplates = (function (global) {
     AttendanceDailyState.fecha = fecha || AttendanceDailyState.getTodayIso();
     AttendanceDailyState.rows = [];
     AttendanceDailyState.loading = false;
+    AttendanceDailyState.removedRows = [];
   };
 
   AttendanceDailyState.setRoot = function (el) {
@@ -9574,13 +9715,11 @@ var WeeklyPlanTemplates = (function (global) {
         dataset: { role: "observaciones", uid: row.uid }
       }, row.observaciones || "");
 
-      const removeCell = row.fueraDePlan
-        ? Dom.el("button", {
-          className: "btn btn-sm btn-outline-danger",
-          dataset: { role: "remove-row", uid: row.uid },
-          title: "Quitar fila"
-        }, "✕")
-        : Dom.el("span", { className: "text-muted small d-inline-block mt-3", text: "\u00a0" });
+      const removeCell = Dom.el("button", {
+        className: row.fueraDePlan ? "btn btn-sm btn-outline-danger" : "btn btn-sm btn-outline-secondary",
+        dataset: { role: "remove-row", uid: row.uid },
+        title: "Quitar fila"
+      }, "✕");
 
       const rowInputs = Dom.el("div", { className: "row g-3 align-items-center mt-1" }, [
         Dom.el("div", { className: "col-12 col-md-3" }, [
@@ -10200,6 +10339,16 @@ var WeeklyPlanTemplates = (function (global) {
         function removeRow(uid) {
             const idx = state.rows.findIndex(r => r.uid === uid);
             if (idx === -1) return;
+            const removed = state.rows[idx];
+            if (removed && (removed.idAsistencia || removed.asistenciaRowNumber || removed.idCliente || removed.idEmpleado)) {
+                if (!Array.isArray(state.removedRows)) state.removedRows = [];
+                state.removedRows.push({
+                    idAsistencia: removed.idAsistencia || null,
+                    asistenciaRowNumber: removed.asistenciaRowNumber || null,
+                    idCliente: removed.idCliente || "",
+                    idEmpleado: removed.idEmpleado || ""
+                });
+            }
             state.rows.splice(idx, 1);
             render.renderRows();
             handlers.bindRowEvents({
@@ -10311,18 +10460,22 @@ var WeeklyPlanTemplates = (function (global) {
             if (saveBtn) saveBtn.disabled = true;
             UiState.setGlobalLoading(true, "Guardando asistencia...");
 
-            const payload = state.rows.map(r => ({
-                cliente: r.cliente,
-                idCliente: r.idCliente || "",
-                empleado: r.empleado,
-                idEmpleado: r.idEmpleado || "",
-                asistencia: !!r.asistencia,
-                horasReales: r.horasReales !== undefined && r.horasReales !== null ? r.horasReales : "",
-                horasPlan: r.horasPlan !== undefined && r.horasPlan !== null ? r.horasPlan : "",
-                observaciones: r.observaciones || "",
-                asistenciaRowNumber: r.asistenciaRowNumber || null,
-                idAsistencia: r.idAsistencia || null
-            }));
+            const payload = {
+                rows: state.rows.map(r => ({
+                    cliente: r.cliente,
+                    idCliente: r.idCliente || "",
+                    empleado: r.empleado,
+                    idEmpleado: r.idEmpleado || "",
+                    asistencia: !!r.asistencia,
+                    horasReales: r.horasReales !== undefined && r.horasReales !== null ? r.horasReales : "",
+                    horasPlan: r.horasPlan !== undefined && r.horasPlan !== null ? r.horasPlan : "",
+                    observaciones: r.observaciones || "",
+                    asistenciaRowNumber: r.asistenciaRowNumber || null,
+                    idAsistencia: r.idAsistencia || null
+                })),
+                removed: Array.isArray(state.removedRows) ? state.removedRows.slice() : [],
+                purgeMissing: true
+            };
 
             if (!data || typeof data.saveDailyAttendance !== "function") {
                 if (Alerts) Alerts.showAlert("No se puede guardar la asistencia en este momento.", "danger");
@@ -10334,6 +10487,9 @@ var WeeklyPlanTemplates = (function (global) {
 
             data.saveDailyAttendance(fecha, payload)
                 .then(function (res) {
+                    const deletedCount = Array.isArray(res) && typeof res.deleted === "number"
+                        ? res.deleted
+                        : (res && typeof res.deleted === "number" ? res.deleted : 0);
                     if (Array.isArray(res) && res.length) {
                         const byKey = new Map();
                         res.forEach(function (item) {
@@ -10351,7 +10507,13 @@ var WeeklyPlanTemplates = (function (global) {
                             });
                         }
                     }
-                    if (Alerts) Alerts.showAlert("Asistencia guardada correctamente.", "success");
+                    if (Alerts) {
+                        const msg = deletedCount > 0
+                            ? "Asistencia guardada correctamente. Se eliminaron " + deletedCount + " registros."
+                            : "Asistencia guardada correctamente.";
+                        Alerts.showAlert(msg, "success");
+                    }
+                    state.removedRows = [];
                     if (GridManager) GridManager.refreshGrid();
                 })
                 .catch(function (err) {
@@ -16015,18 +16177,45 @@ var InvoiceTemplates = (function () {
 
     request
       .then((res) => {
-        const newId = res && res.id ? res.id : res;
-        Alerts && Alerts.showAlert("Factura guardada exitosamente", "success");
+        const newId = res && (res.id || res);
+        const isUpdate = !!id;
+
         bootstrap.Modal.getInstance(document.getElementById("invoice-modal")).hide();
         state.invoicePage = 1;
+
         if (global.InvoicePanelData) {
           global.InvoicePanelData.refreshGeneratorList();
         }
+
         if (newId) {
-          state.lastSavedInvoiceId = newId;
+          state.lastSavedInvoiceId = String(newId);
           if (global.InvoicePanelRender) {
             global.InvoicePanelRender.updateSelectionUi();
           }
+        }
+
+        // Si es creación, ofrecer descarga
+        if (!isUpdate && newId) {
+          const confirmMsg = `Factura guardada correctamente.\n\n¿Querés descargar el PDF ahora?`;
+          const confirmDownload = (window.UiDialogs && typeof window.UiDialogs.confirm === "function")
+            ? window.UiDialogs.confirm({
+              title: "Factura Guardada",
+              message: confirmMsg,
+              confirmText: "Descargar",
+              cancelText: "Cerrar",
+              confirmVariant: "success",
+              icon: "bi-check-circle-fill",
+              iconClass: "text-success"
+            })
+            : Promise.resolve(confirm(confirmMsg));
+
+          confirmDownload.then((confirmed) => {
+            if (confirmed) {
+              downloadPdf(String(newId));
+            }
+          });
+        } else {
+          Alerts && Alerts.showAlert("Factura actualizada exitosamente", "success");
         }
       })
       .catch((err) => {
@@ -16288,8 +16477,8 @@ var InvoiceTemplates = (function () {
   function deleteInvoice(id, skipRefreshMain) {
     const confirmPromise =
       typeof window !== "undefined" &&
-      window.UiDialogs &&
-      typeof window.UiDialogs.confirm === "function"
+        window.UiDialogs &&
+        typeof window.UiDialogs.confirm === "function"
         ? window.UiDialogs.confirm({
           title: "Anular factura",
           message: "¿Estás seguro de que querés anular esta factura?",
@@ -16335,31 +16524,69 @@ var InvoiceTemplates = (function () {
     const cli = String(cliente || "").trim();
     const id = String(idCliente || "").trim();
 
-    UiState && UiState.setGlobalLoading(true);
-    InvoiceService.createInvoiceFromAttendance(cli || { cliente: cli, idCliente: id }, range.start, range.end, {
-      observaciones: `Período: ${range.start} a ${range.end}`
-    }, id || "")
-      .then((res) => {
-        const newId = res && (res.id || (res.record && res.record.ID));
-        if (newId) {
-          state.lastSavedInvoiceId = String(newId);
-          Alerts && Alerts.showAlert("Factura generada correctamente.", "success");
-        } else {
-          Alerts && Alerts.showAlert("Factura generada.", "success");
-        }
-        if (global.InvoicePanelData) {
-          global.InvoicePanelData.handleCoverageSearch();
+    const Dom = global.DomHelpers;
+
+    (window.UiDialogs && typeof window.UiDialogs.prompt === "function")
+      ? window.UiDialogs.prompt({
+        title: "Número de Factura",
+        message: `Ingresá el número para la factura de ${cli}:`,
+        placeholder: "0000-00000000",
+        onAction: async (numFactura) => {
+          if (!numFactura) throw new Error("Debes ingresar un número de factura.");
+
+          UiState && UiState.setGlobalLoading(true, "Generando factura y preparando PDF...");
+          try {
+            const res = await InvoiceService.createInvoiceFromAttendance(
+              cli || { cliente: cli, idCliente: id },
+              range.start,
+              range.end,
+              {
+                numero: numFactura,
+                observaciones: `Período: ${range.start} a ${range.end}`
+              },
+              id || ""
+            );
+
+            const newId = res && (res.id || (res.record && res.record.ID));
+            if (!newId) throw new Error("No se pudo obtener el ID de la factura.");
+
+            state.lastSavedInvoiceId = String(newId);
+            if (global.InvoicePanelData) {
+              global.InvoicePanelData.handleCoverageSearch();
+            }
+
+            return {
+              success: true,
+              render: (container) => {
+                container.appendChild(Dom.el("div", { className: "text-center py-2" }, [
+                  Dom.el("div", { className: "text-success mb-2" }, [
+                    Dom.el("i", { className: "bi bi-check-circle-fill fs-2" })
+                  ]),
+                  Dom.el("div", { className: "fw-bold mb-3", text: "¡Factura generada!" }),
+                  Dom.el("button", {
+                    className: "btn btn-primary w-100 d-flex align-items-center justify-content-center gap-2",
+                    onClick: () => downloadPdf(String(newId))
+                  }, [
+                    Dom.el("i", { className: "bi bi-file-earmark-pdf-fill" }),
+                    Dom.text("Descargar PDF")
+                  ])
+                ]));
+              }
+            };
+          } catch (err) {
+            if (Alerts && typeof Alerts.showError === "function") {
+              Alerts.showError("Error generando factura", err);
+            } else {
+              console.error("Error generando factura (cobertura):", err);
+              Alerts && Alerts.showAlert("Error generando factura", "danger");
+            }
+            throw err; // Re-throw to indicate failure to the dialog
+          } finally {
+            UiState && UiState.setGlobalLoading(false);
+          }
         }
       })
-      .catch((err) => {
-        if (Alerts && typeof Alerts.showError === "function") {
-          Alerts.showError("Error generando factura", err);
-        } else {
-          console.error("Error generando factura (cobertura):", err);
-          Alerts && Alerts.showAlert("Error generando factura", "danger");
-        }
-      })
-      .finally(() => UiState && UiState.setGlobalLoading(false));
+      : Promise.resolve(null);
   }
 
   function editAttendance(id) {
@@ -16402,8 +16629,8 @@ var InvoiceTemplates = (function () {
   function deleteAttendance(id) {
     const confirmPromise =
       typeof window !== "undefined" &&
-      window.UiDialogs &&
-      typeof window.UiDialogs.confirm === "function"
+        window.UiDialogs &&
+        typeof window.UiDialogs.confirm === "function"
         ? window.UiDialogs.confirm({
           title: "Eliminar asistencia",
           message: "¿Eliminar este registro de asistencia?",
@@ -17761,8 +17988,8 @@ var InvoicePanel = (function () {
     formatClientLabel: (typeof DomainHelpers !== "undefined" && DomainHelpers && typeof DomainHelpers.getClientLabel === "function")
       ? DomainHelpers.getClientLabel
       : function (cli) {
-          return cli == null ? "" : String(cli);
-        }
+        return cli == null ? "" : String(cli);
+      }
   };
 
   state.setClientMap = function (clients) {
@@ -17792,12 +18019,23 @@ var InvoicePanel = (function () {
 
   state.getClientIdFromLabel = function (label) {
     if (!label) return "";
+
+    // Primero buscar en el mapa (fuente de verdad)
+    const labelStr = String(label).trim();
+    if (state.clientIdMap.has(labelStr)) {
+      return state.clientIdMap.get(labelStr);
+    }
+
+    // Fallback: intentar extraer del label
     if (typeof DomainHelpers !== "undefined" && DomainHelpers && typeof DomainHelpers.extractIdFromLabel === "function") {
       const extracted = DomainHelpers.extractIdFromLabel(label);
       if (extracted) return extracted;
     }
+
+    // Fallback: si es un número puro, usarlo
     const plain = String(label).trim();
     if (/^\\d+$/.test(plain)) return plain;
+
     return "";
   };
 
@@ -18280,6 +18518,10 @@ var InvoicePanel = (function () {
     const startDate = document.getElementById("client-acc-start")?.value || "";
     const endDate = document.getElementById("client-acc-end")?.value || "";
 
+    console.log("[ClientAccount] handleSearch - clientRaw:", clientRaw);
+    console.log("[ClientAccount] handleSearch - idCliente extracted:", idCliente);
+    console.log("[ClientAccount] handleSearch - clientIdMap:", Array.from(state.clientIdMap.entries()));
+
     if (!clientRaw) {
       Alerts && Alerts.showAlert("Seleccioná un cliente", "warning");
       return;
@@ -18294,10 +18536,13 @@ var InvoicePanel = (function () {
     }
 
     state.lastQuery = { clientRaw, idCliente, startDate, endDate };
+    console.log("[ClientAccount] handleSearch - calling fetchAccountStatement with:", state.lastQuery);
+
     global.ClientAccountPanelRender.toggleLoading(true);
 
     global.ClientAccountPanelData.fetchAccountStatement(state.lastQuery)
       .then((data) => {
+        console.log("[ClientAccount] handleSearch - response:", data);
         global.ClientAccountPanelRender.renderTable(data);
         global.ClientAccountPanelRender.setDebug({ query: state.lastQuery, response: data }, false);
 
@@ -18315,6 +18560,7 @@ var InvoicePanel = (function () {
         }
       })
       .catch((err) => {
+        console.error("[ClientAccount] handleSearch - error:", err);
         if (Alerts && typeof Alerts.showError === "function") {
           Alerts.showError("Error al cargar cuenta corriente", err);
         } else {
@@ -18347,12 +18593,20 @@ var InvoicePanel = (function () {
 
     const btn = document.getElementById("client-acc-pdf");
     const ui = global.UIHelpers;
-      if (btn && ui && typeof ui.withSpinner === "function") {
-        ui.withSpinner(btn, true, "Descargando...");
-      }
+    if (btn && ui && typeof ui.withSpinner === "function") {
+      ui.withSpinner(btn, true, "Descargando...");
+    }
+
+    // Extraer nombre limpio del cliente quitando metadatos (ID: XX, CUIT, etc)
+    const cleanClientName = clientRaw.replace(/\s*\([^)]*\)\s*$/g, '').trim();
 
     UiState && UiState.setGlobalLoading(true, "Generando PDF...");
-    global.ClientAccountPanelData.generatePdf({ clientRaw, idCliente, startDate, endDate })
+    global.ClientAccountPanelData.generatePdf({
+      clientRaw: cleanClientName, // Pasar el nombre limpio
+      idCliente,
+      startDate,
+      endDate
+    })
       .then((res) => {
         if (!res || !res.base64) throw new Error("No se pudo generar PDF");
         const link = document.createElement("a");
@@ -18371,9 +18625,9 @@ var InvoicePanel = (function () {
       })
       .finally(() => {
         UiState && UiState.setGlobalLoading(false);
-      if (btn && ui && typeof ui.withSpinner === "function") {
-        ui.withSpinner(btn, false);
-      }
+        if (btn && ui && typeof ui.withSpinner === "function") {
+          ui.withSpinner(btn, false);
+        }
       });
   }
 
@@ -18598,8 +18852,8 @@ var InvoicePanel = (function () {
     formatClientLabel: (typeof DomainHelpers !== "undefined" && DomainHelpers && typeof DomainHelpers.getClientLabel === "function")
       ? DomainHelpers.getClientLabel
       : function (cli) {
-          return cli == null ? "" : String(cli);
-        }
+        return cli == null ? "" : String(cli);
+      }
   };
 
   state.setClientMap = function (clients) {
@@ -18629,12 +18883,23 @@ var InvoicePanel = (function () {
 
   state.getClientIdFromLabel = function (label) {
     if (!label) return "";
+
+    // Primero buscar en el mapa (fuente de verdad)
+    const labelStr = String(label).trim();
+    if (state.clientIdMap.has(labelStr)) {
+      return state.clientIdMap.get(labelStr);
+    }
+
+    // Fallback: intentar extraer del label
     if (typeof DomainHelpers !== "undefined" && DomainHelpers && typeof DomainHelpers.extractIdFromLabel === "function") {
       const extracted = DomainHelpers.extractIdFromLabel(label);
       if (extracted) return extracted;
     }
+
+    // Fallback: si es un número puro, usarlo
     const plain = String(label).trim();
     if (/^\\d+$/.test(plain)) return plain;
+
     return "";
   };
 
@@ -18690,7 +18955,7 @@ var InvoicePanel = (function () {
 
   function generatePdf(filters) {
     if (!ensureApi()) return Promise.reject(new Error("ApiService no disponible"));
-    return global.ApiService.call("generateClientHoursPdf", filters.start, filters.end, "", filters.idCliente);
+    return global.ApiService.call("generateClientHoursPdf", filters.start, filters.end, filters.client, filters.idCliente);
   }
 
   global.ClientReportPanelData = {
@@ -19105,25 +19370,35 @@ var InvoicePanel = (function () {
   function handleSearch() {
     if (!ensureDeps()) return;
     const filters = getFilters();
+    console.log("[ClientReport] handleSearch - filters:", filters);
+
     if (!filters.client) {
       Alerts && Alerts.showAlert("Seleccioná un cliente para consultar", "warning");
       return;
     }
 
     const idCliente = state.getClientIdFromLabel(filters.client);
+    console.log("[ClientReport] handleSearch - idCliente extracted:", idCliente);
+    console.log("[ClientReport] handleSearch - clientIdMap:", Array.from(state.clientIdMap.entries()));
+
     if (!idCliente) {
       Alerts && Alerts.showAlert("Seleccioná un cliente válido de la lista.", "warning");
       return;
     }
 
     global.ClientReportPanelRender.toggleLoading(true);
-    global.ClientReportPanelData.fetchReport({
+
+    const requestParams = {
       start: filters.start,
       end: filters.end,
       client: filters.client,
       idCliente: idCliente
-    })
+    };
+    console.log("[ClientReport] handleSearch - calling fetchReport with:", requestParams);
+
+    global.ClientReportPanelData.fetchReport(requestParams)
       .then((res) => {
+        console.log("[ClientReport] handleSearch - response:", res);
         const rows = res && res.rows ? res.rows : [];
         const summary = res && res.summary ? res.summary : {};
         state.lastRows = rows;
@@ -19132,6 +19407,7 @@ var InvoicePanel = (function () {
         global.ClientReportPanelRender.renderAggregate(rows);
       })
       .catch((err) => {
+        console.error("[ClientReport] handleSearch - error:", err);
         if (Alerts && typeof Alerts.showError === "function") {
           Alerts.showError("No se pudo cargar el reporte", err);
         } else {
@@ -19145,6 +19421,8 @@ var InvoicePanel = (function () {
   function handleExportPdf() {
     if (!ensureDeps()) return;
     const filters = getFilters();
+    console.log("[ClientReport] handleExportPdf - filters obtenidos:", filters);
+
     if (!filters.client) {
       Alerts && Alerts.showAlert("Seleccioná un cliente para exportar", "warning");
       return;
@@ -19155,6 +19433,9 @@ var InvoicePanel = (function () {
     }
 
     const idCliente = state.getClientIdFromLabel(filters.client);
+    console.log("[ClientReport] handleExportPdf - idCliente extraído:", idCliente);
+    console.log("[ClientReport] handleExportPdf - clientIdMap:", Array.from(state.clientIdMap.entries()));
+
     if (!idCliente) {
       Alerts && Alerts.showAlert("Seleccioná un cliente válido de la lista.", "warning");
       return;
@@ -19162,16 +19443,24 @@ var InvoicePanel = (function () {
 
     const btn = document.getElementById("client-report-pdf");
     const ui = global.UIHelpers;
-      if (btn && ui && typeof ui.withSpinner === "function") {
-        ui.withSpinner(btn, true, "Descargando...");
-      }
+    if (btn && ui && typeof ui.withSpinner === "function") {
+      ui.withSpinner(btn, true, "Descargando...");
+    }
 
-    UiState && UiState.setGlobalLoading(true, "Generando PDF...");
-    global.ClientReportPanelData.generatePdf({
+    // Extraer nombre limpio del cliente quitando metadatos (ID: XX, CUIT, etc)
+    const cleanClientName = filters.client.replace(/\s*\([^)]*\)\s*$/g, '').trim();
+    console.log("[ClientReport] handleExportPdf - nombre limpio extraído:", cleanClientName);
+
+    const pdfParams = {
       start: filters.start,
       end: filters.end,
+      client: cleanClientName,  // Usar el nombre limpio sin metadatos
       idCliente: idCliente
-    })
+    };
+    console.log("[ClientReport] handleExportPdf - llamando generatePdf con:", pdfParams);
+
+    UiState && UiState.setGlobalLoading(true, "Generando PDF...");
+    global.ClientReportPanelData.generatePdf(pdfParams)
       .then((res) => {
         if (!res || !res.base64) throw new Error("No se pudo generar PDF");
         const link = document.createElement("a");
@@ -19190,9 +19479,9 @@ var InvoicePanel = (function () {
       })
       .finally(() => {
         UiState && UiState.setGlobalLoading(false);
-      if (btn && ui && typeof ui.withSpinner === "function") {
-        ui.withSpinner(btn, false);
-      }
+        if (btn && ui && typeof ui.withSpinner === "function") {
+          ui.withSpinner(btn, false);
+        }
       });
   }
 

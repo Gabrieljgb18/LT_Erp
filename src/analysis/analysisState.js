@@ -9,6 +9,9 @@
     currentRange: 6,
     comparisonVisible: false,
     lastData: null,
+    prefetchKey: "",
+    prefetchData: null,
+    prefetchAt: 0,
     Dom: (typeof DomHelpers !== 'undefined' && DomHelpers) ? DomHelpers : null,
     eventsController: null,
     escapeHtml: (typeof HtmlHelpers !== 'undefined' && HtmlHelpers && typeof HtmlHelpers.escapeHtml === 'function')

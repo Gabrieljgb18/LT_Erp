@@ -116,7 +116,7 @@ var AccountController = (function () {
         return map;
     }
 
-    function getClientInvoices(clientName) {
+    function getClientInvoices(clientName, idCliente) {
         const sheet = DatabaseService.getDbSheetForFormat('FACTURACION');
         if (!sheet) return [];
 
@@ -135,21 +135,13 @@ var AccountController = (function () {
         const idxComp = headers.indexOf('COMPROBANTE');
         const idxTotal = headers.indexOf('TOTAL');
 
-        const targetId = getClientId_(clientName);
-        const targetClient = normalizeClientName_(clientName);
+        const targetId = getClientId_(clientName, idCliente);
+        if (!targetId || idxIdCliente === -1) return [];
 
         return rows.map(row => {
-            let matches = false;
-            if (targetId && idxIdCliente > -1) {
-                matches = String(row[idxIdCliente]) === String(targetId);
-            }
-            if (!matches && idxCliente > -1) {
-                const rowClient = normalizeClientName_(row[idxCliente]);
-                matches = rowClient === targetClient ||
-                    rowClient.indexOf(targetClient) !== -1 ||
-                    targetClient.indexOf(rowClient) !== -1;
-            }
-            if (!matches) return null;
+            const rowId = String(row[idxIdCliente] || '').trim();
+            const rowIdNorm = isNaN(Number(rowId)) ? rowId : String(Number(rowId));
+            if (rowIdNorm !== String(targetId)) return null;
 
             const fecha = parseDateFlexible_(row[idxFecha]);
             return {
@@ -168,8 +160,8 @@ var AccountController = (function () {
         });
     }
 
-    function getClientAccountStatement(clientName, startDateStr, endDateStr) {
-        if (!clientName) return { saldoInicial: 0, movimientos: [] };
+    function getClientAccountStatement(clientName, startDateStr, endDateStr, idCliente) {
+        if (!clientName && !idCliente) return { saldoInicial: 0, movimientos: [] };
 
         const startDate = parseDateFlexible_(startDateStr);
         const endDate = parseDateFlexible_(endDateStr);
@@ -179,11 +171,11 @@ var AccountController = (function () {
         }
 
         // 1. Calcular saldo inicial (antes del período)
-        const saldoInicial = getClientBalanceBeforeDate(clientName, startDate);
+        const saldoInicial = getClientBalanceBeforeDate(clientName, startDate, idCliente);
 
         // 2. Obtener movimientos dentro del período
-        const debitos = getClientDebits(clientName, startDate, endDate);
-        const creditos = getClientPayments(clientName, startDate, endDate);
+        const debitos = getClientDebits(clientName, startDate, endDate, idCliente);
+        const creditos = getClientPayments(clientName, startDate, endDate, idCliente);
 
         // 3. Unificar y ordenar
         const movimientos = [...debitos, ...creditos].sort((a, b) => a.fecha - b.fecha);
@@ -204,26 +196,29 @@ var AccountController = (function () {
         };
     }
 
-    function getClientBalanceBeforeDate(clientName, beforeDate) {
-        if (!clientName || !beforeDate) return 0;
+    function getClientBalanceBeforeDate(clientName, beforeDate, idCliente) {
+        if (!beforeDate || (!clientName && !idCliente)) return 0;
 
         // Calcular débitos (facturas) antes de la fecha
-        const debitosAnteriores = getClientDebits(clientName, null, beforeDate);
+        const debitosAnteriores = getClientDebits(clientName, null, beforeDate, idCliente);
         const totalDebitos = debitosAnteriores.reduce((sum, item) => sum + item.debe, 0);
 
         // Calcular créditos (pagos) antes de la fecha
-        const creditosAnteriores = getClientPayments(clientName, null, beforeDate);
+        const creditosAnteriores = getClientPayments(clientName, null, beforeDate, idCliente);
         const totalCreditos = creditosAnteriores.reduce((sum, item) => sum + item.haber, 0);
 
         return totalDebitos - totalCreditos;
     }
 
-    function getClientId_(clientName) {
-        const found = DatabaseService.findClienteByNombreORazon(clientName);
-        return found && found.id ? found.id : '';
+    function getClientId_(clientName, idCliente) {
+        if (idCliente == null) return '';
+        const s = String(idCliente).trim();
+        if (!s) return '';
+        const n = Number(s);
+        return isNaN(n) ? s : String(n);
     }
 
-    function getClientDebits(clientName, startDate, endDate) {
+    function getClientDebits(clientName, startDate, endDate, idCliente) {
         const sheet = DatabaseService.getDbSheetForFormat('FACTURACION');
         const data = sheet.getDataRange().getValues();
         if (!data || data.length < 2) {
@@ -246,8 +241,8 @@ var AccountController = (function () {
 
         if (idxFecha === -1) return [];
 
-        const targetId = getClientId_(clientName);
-        const targetClient = normalizeClientName_(clientName);
+        const targetId = getClientId_(clientName, idCliente);
+        if (!targetId || idxIdCliente === -1) return [];
         const adjustedEndDate = endDate ? new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 23, 59, 59) : null;
 
         return rows.map(row => {
@@ -260,17 +255,9 @@ var AccountController = (function () {
                 if (fecha >= adjustedEndDate) return null;
             }
 
-            let matches = false;
-            if (targetId && idxIdCliente > -1) {
-                matches = String(row[idxIdCliente]) === String(targetId);
-            }
-            if (!matches && idxCliente > -1) {
-                const rowClient = normalizeClientName_(row[idxCliente]);
-                matches = rowClient === targetClient ||
-                    rowClient.indexOf(targetClient) !== -1 ||
-                    targetClient.indexOf(rowClient) !== -1;
-            }
-            if (!matches) return null;
+            const rowId = String(row[idxIdCliente] || '').trim();
+            const rowIdNorm = isNaN(Number(rowId)) ? rowId : String(Number(rowId));
+            if (rowIdNorm !== String(targetId)) return null;
 
             const monto = idxTotal > -1 ? Number(row[idxTotal]) || 0
                 : idxImporte > -1 ? Number(row[idxImporte]) || 0
@@ -299,18 +286,7 @@ var AccountController = (function () {
         }).filter(Boolean);
     }
 
-    function normalizeClientName_(name) {
-        if (!name) return '';
-        return String(name)
-            .toLowerCase()
-            .replace(/\s+/g, ' ')
-            .replace(/\./g, '')
-            .replace(/s\.?a\.?$/i, 'sa')
-            .replace(/s\.?r\.?l\.?$/i, 'srl')
-            .trim();
-    }
-
-    function getClientPayments(clientName, startDate, endDate) {
+    function getClientPayments(clientName, startDate, endDate, idCliente) {
         const sheet = DatabaseService.getDbSheetForFormat('PAGOS_CLIENTES');
         if (!sheet) return [];
 
@@ -329,8 +305,8 @@ var AccountController = (function () {
         if (idxFecha === -1 || idxMonto === -1) return [];
 
         const data = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
-        const targetClient = normalizeClientName_(clientName);
-        const targetId = getClientId_(clientName);
+        const targetId = getClientId_(clientName, idCliente);
+        if (!targetId || idxIdCliente === -1) return [];
 
         const adjustedEndDate = endDate ? new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 23, 59, 59) : null;
 
@@ -344,17 +320,9 @@ var AccountController = (function () {
                 if (fecha >= adjustedEndDate) return null;
             }
 
-            let matches = false;
-            if (targetId && idxIdCliente > -1) {
-                matches = String(row[idxIdCliente]) === String(targetId);
-            }
-            if (!matches && idxCliente > -1) {
-                const rowClient = normalizeClientName_(row[idxCliente]);
-                matches = rowClient === targetClient ||
-                    rowClient.indexOf(targetClient) !== -1 ||
-                    targetClient.indexOf(rowClient) !== -1;
-            }
-            if (!matches) return null;
+            const rowId = String(row[idxIdCliente] || '').trim();
+            const rowIdNorm = isNaN(Number(rowId)) ? rowId : String(Number(rowId));
+            if (rowIdNorm !== String(targetId)) return null;
 
             const monto = Number(row[idxMonto]) || 0;
             const idFactura = idxFactura > -1 ? row[idxFactura] : '';

@@ -108,33 +108,371 @@ var DatabaseService = (function () {
 
   // ====== LOG VALOR HORA ======
 
-  function appendHoraLogCliente(clienteNombre, valorHora) {
+  const RATE_HISTORY_CACHE_ = {};
+
+  function getRateHistoryConfig_(kind) {
+    if (kind === 'CLIENTES') {
+      return {
+        sheetName: 'CLIENTES_VHORA_DB',
+        idHeader: 'ID_CLIENTE',
+        nameHeader: 'CLIENTE',
+        normalizeName: normalizeClientName_,
+        buildNameIdMap: buildClientNameIdMap_
+      };
+    }
+    if (kind === 'EMPLEADOS') {
+      return {
+        sheetName: 'EMPLEADOS_VHORA_DB',
+        idHeader: 'ID_EMPLEADO',
+        nameHeader: 'EMPLEADO',
+        normalizeName: normalizePersonName_,
+        buildNameIdMap: buildEmployeeNameIdMap_
+      };
+    }
+    return null;
+  }
+
+  function normalizeHeaderCell_(val) {
+    return String(val || '').trim().toUpperCase();
+  }
+
+  function normalizeIdString_(val) {
+    if (val == null) return '';
+    const raw = String(val).trim();
+    if (!raw) return '';
+    if (/^\d+$/.test(raw)) return String(Number(raw));
+    return raw;
+  }
+
+  function isLikelyNumber_(val) {
+    if (val === '' || val == null) return false;
+    const num = Number(val);
+    return !isNaN(num);
+  }
+
+  function isLikelyDate_(val) {
+    if (!val) return false;
+    if (val instanceof Date && !isNaN(val.getTime())) return true;
+    const parsed = parseDateFlexible_(val);
+    return !!(parsed && !isNaN(parsed.getTime()));
+  }
+
+  function isLikelyName_(val) {
+    if (val == null) return false;
+    if (val instanceof Date) return false;
+    const raw = String(val).trim();
+    if (!raw) return false;
+    return !/^\d+(\.\d+)?$/.test(raw);
+  }
+
+  function isLikelyId_(val) {
+    if (val == null || val === '') return false;
+    const raw = String(val).trim();
+    if (!raw) return false;
+    return /^\d+$/.test(raw);
+  }
+
+  function isRowEmpty_(row) {
+    for (let i = 0; i < row.length; i++) {
+      if (String(row[i] == null ? '' : row[i]).trim() !== '') return false;
+    }
+    return true;
+  }
+
+  function indexOfHeader_(normalizedHeaders, candidates) {
+    for (let i = 0; i < candidates.length; i++) {
+      const candidate = normalizeHeaderCell_(candidates[i]);
+      const idx = normalizedHeaders.indexOf(candidate);
+      if (idx > -1) return idx;
+    }
+    return -1;
+  }
+
+  function getRateHistoryHeaderIndices_(headerRow, config) {
+    const normalized = headerRow.map(normalizeHeaderCell_);
+    return {
+      idIdx: indexOfHeader_(normalized, [config.idHeader, 'ID']),
+      nameIdx: indexOfHeader_(normalized, [config.nameHeader]),
+      dateIdx: indexOfHeader_(normalized, ['FECHA']),
+      rateIdx: indexOfHeader_(normalized, ['VALOR HORA', 'VALOR DE HORA', 'VALORHORA'])
+    };
+  }
+
+  function findFirstDataRow_(rows) {
+    for (let i = 0; i < rows.length; i++) {
+      if (!isRowEmpty_(rows[i])) return rows[i];
+    }
+    return null;
+  }
+
+  function isValidLayoutForRow_(row, layout) {
+    const nameVal = layout.nameIdx > -1 ? row[layout.nameIdx] : '';
+    const dateVal = layout.dateIdx > -1 ? row[layout.dateIdx] : '';
+    const rateVal = layout.rateIdx > -1 ? row[layout.rateIdx] : '';
+    if (!isLikelyName_(nameVal)) return false;
+    if (!isLikelyDate_(dateVal)) return false;
+    if (!isLikelyNumber_(rateVal)) return false;
+    if (layout.idIdx > -1) {
+      const idVal = row[layout.idIdx];
+      if (idVal !== '' && idVal != null && !isLikelyId_(idVal)) return false;
+    }
+    return true;
+  }
+
+  function detectRateHistoryLayoutForRow_(row) {
+    const candidates = [
+      { idIdx: 0, nameIdx: 1, dateIdx: 2, rateIdx: 3 },
+      { idIdx: -1, nameIdx: 0, dateIdx: 1, rateIdx: 2 },
+      { idIdx: -1, nameIdx: 1, dateIdx: 2, rateIdx: 3 },
+      { idIdx: -1, nameIdx: 0, dateIdx: 2, rateIdx: 3 }
+    ];
+    for (let i = 0; i < candidates.length; i++) {
+      if (isValidLayoutForRow_(row, candidates[i])) return candidates[i];
+    }
+    return null;
+  }
+
+  function detectRateHistoryLayout_(rows, headerIndices) {
+    const sample = findFirstDataRow_(rows);
+    const headerLayout = headerIndices && headerIndices.nameIdx > -1 && headerIndices.dateIdx > -1 && headerIndices.rateIdx > -1
+      ? {
+        idIdx: headerIndices.idIdx,
+        nameIdx: headerIndices.nameIdx,
+        dateIdx: headerIndices.dateIdx,
+        rateIdx: headerIndices.rateIdx
+      }
+      : null;
+    if (!sample) {
+      return headerLayout || { idIdx: 0, nameIdx: 1, dateIdx: 2, rateIdx: 3 };
+    }
+    if (headerLayout && isValidLayoutForRow_(sample, headerLayout)) return headerLayout;
+    const fallback = detectRateHistoryLayoutForRow_(sample);
+    return fallback || headerLayout || { idIdx: 0, nameIdx: 1, dateIdx: 2, rateIdx: 3 };
+  }
+
+  function extractRateHistoryRow_(row, layout) {
+    return {
+      id: layout.idIdx > -1 ? row[layout.idIdx] : '',
+      name: layout.nameIdx > -1 ? row[layout.nameIdx] : '',
+      date: layout.dateIdx > -1 ? row[layout.dateIdx] : '',
+      rate: layout.rateIdx > -1 ? row[layout.rateIdx] : ''
+    };
+  }
+
+  function isValidRateHistoryRow_(mapped) {
+    if (!mapped) return false;
+    if (!isLikelyName_(mapped.name)) return false;
+    if (!isLikelyDate_(mapped.date)) return false;
+    if (!isLikelyNumber_(mapped.rate)) return false;
+    return true;
+  }
+
+  function buildClientNameIdMap_() {
+    const map = {};
+    const sheet = getDbSheetForFormat('CLIENTES');
+    const data = sheet.getDataRange().getValues();
+    if (!data || data.length < 2) return map;
+    const headers = data[0].map(h => String(h || '').trim().toUpperCase());
+    const idxId = headers.indexOf('ID');
+    const idxNombre = headers.indexOf('NOMBRE');
+    let idxRazon = headers.indexOf('RAZON SOCIAL');
+    if (idxRazon === -1) idxRazon = headers.indexOf('RAZÓN SOCIAL');
+    if (idxId === -1 || (idxNombre === -1 && idxRazon === -1)) return map;
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      const idVal = row[idxId];
+      if (idVal == null || String(idVal).trim() === '') continue;
+      const nombre = idxNombre > -1 ? row[idxNombre] : '';
+      const razon = idxRazon > -1 ? row[idxRazon] : '';
+      const normNombre = normalizeClientName_(nombre);
+      const normRazon = normalizeClientName_(razon);
+      if (normNombre && map[normNombre] === undefined) map[normNombre] = idVal;
+      if (normRazon && map[normRazon] === undefined) map[normRazon] = idVal;
+    }
+    return map;
+  }
+
+  function buildEmployeeNameIdMap_() {
+    const map = {};
+    const sheet = getDbSheetForFormat('EMPLEADOS');
+    const data = sheet.getDataRange().getValues();
+    if (!data || data.length < 2) return map;
+    const headers = data[0].map(h => String(h || '').trim().toUpperCase());
+    const idxId = headers.indexOf('ID');
+    const idxNombre = headers.indexOf('EMPLEADO');
+    if (idxId === -1 || idxNombre === -1) return map;
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      const idVal = row[idxId];
+      if (idVal == null || String(idVal).trim() === '') continue;
+      const nombre = row[idxNombre];
+      const normNombre = normalizePersonName_(nombre);
+      if (normNombre && map[normNombre] === undefined) map[normNombre] = idVal;
+    }
+    return map;
+  }
+
+  function normalizeRateHistorySheet_(config) {
+    if (!config) return null;
     const ss = getDbSpreadsheet();
-    let sheet = ss.getSheetByName("CLIENTES_VHORA_DB");
+    let sheet = ss.getSheetByName(config.sheetName);
+    const expectedHeaders = [config.idHeader, config.nameHeader, 'FECHA', 'VALOR HORA'];
 
     if (!sheet) {
-      sheet = ss.insertSheet("CLIENTES_VHORA_DB");
-      sheet.appendRow(["CLIENTE", "FECHA", "VALOR HORA"]);
+      sheet = ss.insertSheet(config.sheetName);
+      sheet.getRange(1, 1, 1, expectedHeaders.length).setValues([expectedHeaders]);
+      RATE_HISTORY_CACHE_[config.sheetName] = true;
+      return sheet;
+    }
+
+    if (RATE_HISTORY_CACHE_[config.sheetName]) {
+      return sheet;
+    }
+
+    const lastRow = sheet.getLastRow();
+    const lastCol = sheet.getLastColumn();
+    if (lastRow < 1) {
+      sheet.getRange(1, 1, 1, expectedHeaders.length).setValues([expectedHeaders]);
+      RATE_HISTORY_CACHE_[config.sheetName] = true;
+      return sheet;
+    }
+
+    const headerRow = lastCol > 0 ? sheet.getRange(1, 1, 1, lastCol).getValues()[0] : [];
+    const headerOk = expectedHeaders.every((h, idx) => normalizeHeaderCell_(headerRow[idx]) === normalizeHeaderCell_(h));
+
+    if (lastRow < 2) {
+      if (!headerOk) {
+        sheet.getRange(1, 1, 1, expectedHeaders.length).setValues([expectedHeaders]);
+      }
+      RATE_HISTORY_CACHE_[config.sheetName] = true;
+      return sheet;
+    }
+
+    const data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+    const headerIndices = getRateHistoryHeaderIndices_(headerRow, config);
+    const layout = detectRateHistoryLayout_(data, headerIndices);
+    const sampleRow = findFirstDataRow_(data);
+    const layoutOk = headerOk && sampleRow && isValidLayoutForRow_(sampleRow, {
+      idIdx: 0,
+      nameIdx: 1,
+      dateIdx: 2,
+      rateIdx: 3
+    });
+
+    let needsIdBackfill = false;
+    if (layoutOk) {
+      for (let i = 0; i < data.length; i++) {
+        const row = data[i];
+        if (isRowEmpty_(row)) continue;
+        const nameVal = row[1];
+        const idVal = row[0];
+        if (nameVal && String(nameVal).trim() !== '' && (!idVal || String(idVal).trim() === '')) {
+          needsIdBackfill = true;
+          break;
+        }
+      }
+    }
+
+    if (layoutOk && !needsIdBackfill) {
+      RATE_HISTORY_CACHE_[config.sheetName] = true;
+      return sheet;
+    }
+
+    const nameIdMap = config.buildNameIdMap ? config.buildNameIdMap() : {};
+    const normalizedRows = [];
+
+    data.forEach(row => {
+      if (isRowEmpty_(row)) return;
+      let mapped = extractRateHistoryRow_(row, layout);
+      if (!isValidRateHistoryRow_(mapped)) {
+        const fallbackLayout = detectRateHistoryLayoutForRow_(row);
+        if (fallbackLayout) {
+          mapped = extractRateHistoryRow_(row, fallbackLayout);
+        }
+      }
+      if (!isValidRateHistoryRow_(mapped)) return;
+
+      const name = String(mapped.name || '').trim();
+      let idVal = mapped.id;
+      if (!idVal && name) {
+        const normName = config.normalizeName ? config.normalizeName(name) : String(name).trim().toLowerCase();
+        idVal = nameIdMap[normName] || '';
+      }
+      normalizedRows.push([idVal || '', name, mapped.date, mapped.rate]);
+    });
+
+    const clearWidth = Math.max(lastCol, expectedHeaders.length);
+    sheet.getRange(1, 1, 1, expectedHeaders.length).setValues([expectedHeaders]);
+    if (lastRow > 1) {
+      sheet.getRange(2, 1, lastRow - 1, clearWidth).clearContent();
+    }
+    if (normalizedRows.length) {
+      sheet.getRange(2, 1, normalizedRows.length, expectedHeaders.length).setValues(normalizedRows);
+    }
+
+    RATE_HISTORY_CACHE_[config.sheetName] = true;
+    return sheet;
+  }
+
+  function appendHoraLogCliente(clienteId, clienteNombre, valorHora) {
+    if (valorHora === undefined) {
+      valorHora = clienteNombre;
+      clienteNombre = clienteId;
+      clienteId = '';
+    }
+    if (valorHora === undefined || valorHora === null || valorHora === '') return;
+
+    const config = getRateHistoryConfig_('CLIENTES');
+    const sheet = normalizeRateHistorySheet_(config);
+    const idStr = normalizeIdString_(clienteId);
+
+    let name = clienteNombre || '';
+    if (!name && idStr && typeof findClienteById === 'function') {
+      const found = findClienteById(idStr);
+      name = found ? (found.razonSocial || found.nombre || '') : '';
+    }
+    if (!idStr && name && typeof findClienteByNombreORazon === 'function') {
+      const foundByName = findClienteByNombreORazon(name);
+      if (foundByName && foundByName.id) {
+        clienteId = foundByName.id;
+      }
     }
 
     sheet.appendRow([
-      clienteNombre,
+      normalizeIdString_(clienteId),
+      name,
       new Date(),
       valorHora
     ]);
   }
 
-  function appendHoraLogEmpleado(empleadoNombre, valorHora) {
-    const ss = getDbSpreadsheet();
-    let sheet = ss.getSheetByName("EMPLEADOS_VHORA_DB");
+  function appendHoraLogEmpleado(empleadoId, empleadoNombre, valorHora) {
+    if (valorHora === undefined) {
+      valorHora = empleadoNombre;
+      empleadoNombre = empleadoId;
+      empleadoId = '';
+    }
+    if (valorHora === undefined || valorHora === null || valorHora === '') return;
 
-    if (!sheet) {
-      sheet = ss.insertSheet("EMPLEADOS_VHORA_DB");
-      sheet.appendRow(["EMPLEADO", "FECHA", "VALOR HORA"]);
+    const config = getRateHistoryConfig_('EMPLEADOS');
+    const sheet = normalizeRateHistorySheet_(config);
+    const idStr = normalizeIdString_(empleadoId);
+
+    let name = empleadoNombre || '';
+    if (!name && idStr && typeof findEmpleadoById === 'function') {
+      const found = findEmpleadoById(idStr);
+      name = found ? (found.nombre || '') : '';
+    }
+    if (!idStr && name && typeof findEmpleadoByNombre === 'function') {
+      const foundByName = findEmpleadoByNombre(name);
+      if (foundByName && foundByName.id) {
+        empleadoId = foundByName.id;
+      }
     }
 
     sheet.appendRow([
-      empleadoNombre,
+      normalizeIdString_(empleadoId),
+      name,
       new Date(),
       valorHora
     ]);
@@ -283,8 +621,9 @@ var DatabaseService = (function () {
    * @param {string} clientName
    * @returns {number}
    */
-  function getClientHourlyRate(clientName) {
-    if (!clientName) return 0;
+  function getClientHourlyRate(clientName, idCliente) {
+    const idStr = normalizeIdString_(idCliente);
+    if (!clientName && !idStr) return 0;
     let sheet = null;
     try {
       sheet = getDbSheetForFormat('CLIENTES'); // CLIENTES_DB
@@ -302,10 +641,23 @@ var DatabaseService = (function () {
     if (lastRow < 2 || lastCol === 0) return 0;
 
     const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    const idxId = headers.indexOf('ID');
     const idxNombre = headers.indexOf('NOMBRE');
-    const idxRazon = headers.indexOf('RAZON SOCIAL');
+    let idxRazon = headers.indexOf('RAZON SOCIAL');
+    if (idxRazon === -1) idxRazon = headers.indexOf('RAZÓN SOCIAL');
     const idxValor = headers.indexOf('VALOR HORA');
-    if (idxValor === -1 || (idxNombre === -1 && idxRazon === -1)) return 0;
+    if (idxValor === -1) return 0;
+
+    if (idStr && idxId > -1) {
+      const rowNumber = findRowById(sheet, idStr);
+      if (rowNumber) {
+        const row = sheet.getRange(rowNumber, 1, 1, lastCol).getValues()[0];
+        const v = Number(row[idxValor]);
+        return isNaN(v) ? 0 : v;
+      }
+    }
+
+    if (!clientName || (idxNombre === -1 && idxRazon === -1)) return 0;
 
     const target = normalizeClientName_(clientName);
     const data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
@@ -330,11 +682,17 @@ var DatabaseService = (function () {
    * @param {Date} targetDate
    * @returns {number}
    */
-  function getClientRateAtDate(clientName, targetDate) {
-    if (!clientName) return 0;
-    const ss = getDbSpreadsheet();
-    const sheet = ss.getSheetByName('CLIENTES_VHORA_DB');
-    const target = normalizeClientName_((clientName || '').toString());
+  function getClientRateAtDate(clientName, targetDate, idCliente) {
+    const idStr = normalizeIdString_(idCliente);
+    if (!clientName && !idStr) return 0;
+    const config = getRateHistoryConfig_('CLIENTES');
+    const sheet = normalizeRateHistorySheet_(config);
+    let target = normalizeClientName_((clientName || '').toString());
+    if (!target && idStr && typeof findClienteById === 'function') {
+      const found = findClienteById(idStr);
+      const resolved = found ? (found.razonSocial || found.nombre || '') : '';
+      target = normalizeClientName_(resolved);
+    }
     const tDate = parseDateFlexible_(targetDate);
 
     let bestRate = null;
@@ -342,18 +700,26 @@ var DatabaseService = (function () {
 
     if (sheet) {
       const lastRow = sheet.getLastRow();
-      const lastCol = sheet.getLastColumn();
-      if (lastRow >= 2 && lastCol >= 3) {
-        const data = sheet.getRange(2, 1, lastRow - 1, 3).getValues();
+      if (lastRow >= 2) {
+        const data = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
         data.forEach(row => {
-          const cli = normalizeClientName_(row[0]);
-          const matchesClient = cli && target && (cli === target || cli.indexOf(target) !== -1 || target.indexOf(cli) !== -1);
+          const rowId = normalizeIdString_(row[0]);
+          const rowName = normalizeClientName_(row[1]);
+          let matchesClient = false;
+          if (idStr && rowId && rowId === idStr) {
+            matchesClient = true;
+          } else if (target && rowName) {
+            matchesClient = rowName === target || rowName.indexOf(target) !== -1 || target.indexOf(rowName) !== -1;
+          } else if (idStr && !rowId && target && rowName) {
+            matchesClient = rowName === target || rowName.indexOf(target) !== -1 || target.indexOf(rowName) !== -1;
+          }
           if (!matchesClient) return;
-          const fecha = parseDateFlexible_(row[1]);
+
+          const fecha = parseDateFlexible_(row[2]);
           if (!fecha || isNaN(fecha.getTime())) return;
           const ts = fecha.getTime();
           if (tDate && ts > tDate.getTime()) return; // solo valores anteriores o iguales
-          const rate = Number(row[2]);
+          const rate = Number(row[3]);
           if (isNaN(rate)) return;
           if (ts >= bestTime) {
             bestTime = ts;
@@ -364,7 +730,50 @@ var DatabaseService = (function () {
     }
 
     if (bestRate !== null) return bestRate;
-    return getClientHourlyRate(clientName);
+    return getClientHourlyRate(clientName, idStr);
+  }
+
+  function getClientRateHistoryEntries(clientName, idCliente) {
+    const idStr = normalizeIdString_(idCliente);
+    if (!clientName && !idStr) return [];
+    const config = getRateHistoryConfig_('CLIENTES');
+    const sheet = normalizeRateHistorySheet_(config);
+    if (!sheet) return [];
+
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return [];
+
+    const data = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
+    let target = normalizeClientName_((clientName || '').toString());
+    if (!target && idStr && typeof findClienteById === 'function') {
+      const found = findClienteById(idStr);
+      const resolved = found ? (found.razonSocial || found.nombre || '') : '';
+      target = normalizeClientName_(resolved);
+    }
+    const entries = [];
+
+    data.forEach(row => {
+      const rowId = normalizeIdString_(row[0]);
+      const rowName = normalizeClientName_(row[1]);
+      let matchesClient = false;
+      if (idStr && rowId && rowId === idStr) {
+        matchesClient = true;
+      } else if (target && rowName) {
+        matchesClient = rowName === target || rowName.indexOf(target) !== -1 || target.indexOf(rowName) !== -1;
+      } else if (idStr && !rowId && target && rowName) {
+        matchesClient = rowName === target || rowName.indexOf(target) !== -1 || target.indexOf(rowName) !== -1;
+      }
+      if (!matchesClient) return;
+
+      const fecha = parseDateFlexible_(row[2]);
+      if (!fecha || isNaN(fecha.getTime())) return;
+      const rate = Number(row[3]);
+      if (isNaN(rate)) return;
+      entries.push({ ts: fecha.getTime(), rate: rate });
+    });
+
+    entries.sort((a, b) => a.ts - b.ts);
+    return entries;
   }
 
   // ====== EMPLEADOS ACTIVOS (OBJETOS) ======
@@ -880,6 +1289,7 @@ var DatabaseService = (function () {
     getReferenceData: getReferenceData,
     getClientHourlyRate: getClientHourlyRate,
     getClientRateAtDate: getClientRateAtDate,
+    getClientRateHistoryEntries: getClientRateHistoryEntries,
     getClientesActivos: getClientesActivos,
     getEmpleadosActivos: getEmpleadosActivos,
     upsertConfig: upsertConfig,

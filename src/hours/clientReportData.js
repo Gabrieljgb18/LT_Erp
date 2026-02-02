@@ -46,7 +46,7 @@
 
   function generatePdf(filters) {
     if (!ensureApi()) return Promise.reject(new Error("ApiService no disponible"));
-    return global.ApiService.call("generateClientHoursPdf", filters.start, filters.end, "", filters.idCliente);
+    return global.ApiService.call("generateClientHoursPdf", filters.start, filters.end, filters.client, filters.idCliente);
   }
 
   global.ClientReportPanelData = {

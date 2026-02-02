@@ -6,6 +6,64 @@
     const state = global.WeeklyPlanPanelState;
     const Dom = state && state.Dom ? state.Dom : global.DomHelpers;
 
+    function buildPlanKey(desde, hasta) {
+        return String(desde || "") + "|" + String(hasta || "");
+    }
+
+    function buildPlanGroups(planRows) {
+        const grouped = {};
+        (planRows || []).forEach(function (row) {
+            const vigDesde = state.formatDateInput(row["VIGENTE DESDE"] || row.vigDesde);
+            const vigHasta = state.formatDateInput(row["VIGENTE HASTA"] || row.vigHasta);
+            const key = buildPlanKey(vigDesde, vigHasta);
+            if (!grouped[key]) {
+                grouped[key] = {
+                    key: key,
+                    vigDesde: vigDesde,
+                    vigHasta: vigHasta,
+                    rows: []
+                };
+            }
+            grouped[key].rows.push(row);
+        });
+
+        const today = new Date().toISOString().split('T')[0];
+        const list = Object.keys(grouped).map(function (key) {
+            const group = grouped[key];
+            group.isActive = (!group.vigDesde || group.vigDesde <= today) && (!group.vigHasta || group.vigHasta >= today);
+            return group;
+        });
+
+        list.sort(function (a, b) {
+            if (a.isActive !== b.isActive) {
+                return a.isActive ? -1 : 1;
+            }
+            const aDesde = a.vigDesde || "";
+            const bDesde = b.vigDesde || "";
+            if (aDesde === bDesde) {
+                return (a.vigHasta || "").localeCompare(b.vigHasta || "");
+            }
+            return bDesde.localeCompare(aDesde);
+        });
+
+        return list;
+    }
+
+    function findDefaultGroup(groups) {
+        if (!groups || !groups.length) return null;
+        const active = groups.find(function (g) { return g.isActive; });
+        return active || groups[0] || null;
+    }
+
+    function cloneRowForNewPlan(row) {
+        return Object.assign({}, row, {
+            ID: "",
+            id: "",
+            vigDesde: "",
+            vigHasta: ""
+        });
+    }
+
     function fetchWeeklyPlanForClient() {
         const container = document.getElementById("plan-semanal-cards-container");
         const clienteSelect = document.getElementById("field-CLIENTE");
@@ -43,27 +101,31 @@
                 const currentCliente = currentOption ? currentOption.textContent : '';
                 if (!selectedId || selectedId !== idCliente) return;
 
-                if (!planRows.length) {
-                    state.currentOriginalVigencia = null;
-                    state.forceNewPlan = true;
-                }
+                state.currentClientId = selectedId;
+                state.currentClientLabel = currentCliente;
 
-                let rowsToRender = planRows;
-                if (state.forceNewPlan && planRows.length) {
-                    rowsToRender = planRows.map(function (row) {
-                        return Object.assign({}, row, {
-                            ID: '',
-                            id: '',
-                            vigDesde: '',
-                            vigHasta: ''
-                        });
-                    });
+                const planGroups = buildPlanGroups(planRows);
+                state.currentPlanGroups = planGroups;
+
+                let rowsToRender = [];
+                if (!planGroups.length) {
                     state.currentOriginalVigencia = null;
-                } else if (planRows.length) {
-                    const first = planRows[0];
-                    const vigDesde = state.formatDateInput(first["VIGENTE DESDE"] || first.vigDesde);
-                    const vigHasta = state.formatDateInput(first["VIGENTE HASTA"] || first.vigHasta);
-                    state.currentOriginalVigencia = { desde: vigDesde, hasta: vigHasta };
+                    state.currentPlanKey = "";
+                    state.forceNewPlan = true;
+                } else if (state.forceNewPlan) {
+                    const baseGroup = findDefaultGroup(planGroups);
+                    rowsToRender = baseGroup ? baseGroup.rows.map(cloneRowForNewPlan) : [];
+                    state.currentOriginalVigencia = null;
+                    state.currentPlanKey = "";
+                } else {
+                    const keyFromState = state.currentPlanKey ||
+                        (state.currentOriginalVigencia ? buildPlanKey(state.currentOriginalVigencia.desde, state.currentOriginalVigencia.hasta) : "");
+                    const selectedGroup = planGroups.find(function (g) { return g.key === keyFromState; }) || findDefaultGroup(planGroups);
+                    if (selectedGroup) {
+                        state.currentPlanKey = selectedGroup.key;
+                        state.currentOriginalVigencia = { desde: selectedGroup.vigDesde, hasta: selectedGroup.vigHasta };
+                        rowsToRender = selectedGroup.rows;
+                    }
                 }
 
                 state.lastInfoHorasClientId = idCliente;

@@ -65,8 +65,32 @@
         if (!container) return;
 
         state.currentOriginalVigencia = originalVigencia || null;
+        if (originalVigencia) {
+            const desde = originalVigencia.desde || "";
+            const hasta = originalVigencia.hasta || "";
+            state.currentPlanKey = String(desde) + "|" + String(hasta);
+        } else {
+            state.currentPlanKey = "";
+        }
+        state.currentClientId = String(clienteId || "");
+        state.currentClientLabel = String(clienteLabel || "");
         state.forceNewPlan = false;
         state.openGroupKeys = new Set();
+        if (state.planGroupsCache && clienteId) {
+            const prefix = "id:" + String(clienteId).trim() + "|";
+            const cachedGroups = [];
+            Object.keys(state.planGroupsCache).forEach(function (key) {
+                if (key.indexOf(prefix) !== 0) return;
+                const parts = key.split("|");
+                cachedGroups.push({
+                    key: key,
+                    vigDesde: parts[1] || "",
+                    vigHasta: parts[2] || "",
+                    rows: state.planGroupsCache[key] || []
+                });
+            });
+            state.currentPlanGroups = cachedGroups;
+        }
 
         if (global.WeeklyPlanPanelRender && typeof global.WeeklyPlanPanelRender.render === "function") {
             global.WeeklyPlanPanelRender.render(container);
@@ -149,6 +173,7 @@
         const container = state.currentContainer;
         if (!container) return;
         state.currentOriginalVigencia = null;
+        state.currentPlanKey = "";
         state.forceNewPlan = true;
         state.openGroupKeys = new Set();
         if (global.WeeklyPlanPanelRender && typeof global.WeeklyPlanPanelRender.render === "function") {
@@ -156,6 +181,69 @@
         }
         const panel = document.getElementById("plan-semanal-panel");
         insertBackButton(panel);
+    }
+
+    function openNewPlanForClient() {
+        const clienteSelect = document.getElementById("field-CLIENTE");
+        if (!clienteSelect) return;
+
+        const clienteId = clienteSelect.value;
+        if (!clienteId) {
+            if (Alerts) Alerts.showAlert("Seleccioná un cliente primero.", "warning");
+            return;
+        }
+
+        const selectedOption = clienteSelect.selectedOptions ? clienteSelect.selectedOptions[0] : null;
+        const clienteLabel = selectedOption ? selectedOption.textContent : clienteId;
+        const defaultHoraEntrada = state.getClientDefaultHoraEntrada
+            ? state.getClientDefaultHoraEntrada(clienteId)
+            : "";
+
+        state.currentOriginalVigencia = null;
+        state.currentPlanKey = "";
+        state.currentClientId = String(clienteId || "");
+        state.currentClientLabel = String(clienteLabel || "");
+        state.forceNewPlan = true;
+        state.openGroupKeys = new Set();
+
+        const rows = [{
+            empleado: "",
+            diaSemana: "",
+            horaEntrada: defaultHoraEntrada || "",
+            horasPlan: "",
+            vigDesde: "",
+            vigHasta: "",
+            id: "",
+            observaciones: ""
+        }];
+
+        const infoHoras = getInfoHorasForClient(clienteId);
+        if (global.WeeklyPlanPanelRender && typeof global.WeeklyPlanPanelRender.buildWeeklyPlanPanel === "function") {
+            global.WeeklyPlanPanelRender.buildWeeklyPlanPanel(rows, clienteLabel, infoHoras);
+        }
+    }
+
+    function loadPlanByKey(planKey) {
+        if (!planKey) return;
+        const group = (state.currentPlanGroups || []).find(function (g) { return g && g.key === planKey; });
+        if (!group) return;
+
+        const clienteSelect = document.getElementById("field-CLIENTE");
+        const clienteId = clienteSelect ? clienteSelect.value : state.currentClientId;
+        const selectedOption = clienteSelect && clienteSelect.selectedOptions ? clienteSelect.selectedOptions[0] : null;
+        const clienteLabel = selectedOption ? selectedOption.textContent : (state.currentClientLabel || clienteId);
+
+        state.currentOriginalVigencia = { desde: group.vigDesde || "", hasta: group.vigHasta || "" };
+        state.currentPlanKey = planKey;
+        state.currentClientId = String(clienteId || "");
+        state.currentClientLabel = String(clienteLabel || "");
+        state.forceNewPlan = false;
+        state.openGroupKeys = new Set();
+
+        const infoHoras = getInfoHorasForClient(clienteId);
+        if (global.WeeklyPlanPanelRender && typeof global.WeeklyPlanPanelRender.buildWeeklyPlanPanel === "function") {
+            global.WeeklyPlanPanelRender.buildWeeklyPlanPanel(group.rows || [], clienteLabel, infoHoras);
+        }
     }
 
     function addEmptyPlanRow() {
@@ -457,8 +545,10 @@
         init: init,
         setup: setup,
         openNewPlan: openNewPlan,
+        openNewPlanForClient: openNewPlanForClient,
         switchToDetail: switchToDetail,
         captureOpenGroupKeys: captureOpenGroupKeys,
+        loadPlanByKey: loadPlanByKey,
         addEmptyPlanRow: addEmptyPlanRow,
         deletePlanRow: deletePlanRow,
         deleteWeeklyPlan: deleteWeeklyPlan,

@@ -3,6 +3,26 @@
  * Capa de datos para asistencia diaria.
  */
 (function (global) {
+  const PLAN_CACHE_TTL_MS = 5 * 60 * 1000;
+  const planCache = new Map();
+
+  function getCachedPlan(fecha) {
+    if (!fecha) return null;
+    const entry = planCache.get(fecha);
+    if (!entry) return null;
+    if ((Date.now() - entry.ts) > PLAN_CACHE_TTL_MS) {
+      planCache.delete(fecha);
+      return null;
+    }
+    return entry.rows || [];
+  }
+
+  function storeCachedPlan(fecha, rows) {
+    if (!fecha) return rows;
+    planCache.set(fecha, { ts: Date.now(), rows: Array.isArray(rows) ? rows : [] });
+    return rows;
+  }
+
   function ensureApi() {
     return global.ApiService && typeof global.ApiService.callLatest === "function";
   }
@@ -32,11 +52,13 @@
   }
 
   function loadDailyPlan(fecha) {
+    const cached = getCachedPlan(fecha);
+    if (cached) return Promise.resolve(cached);
     if (!ensureApi()) return Promise.resolve([]);
     return global.ApiService.callLatest("attendance-plan-" + fecha, "getDailyAttendancePlan", fecha)
       .then((rows) => {
         if (rows && rows.ignored) return rows;
-        if (Array.isArray(rows)) return rows;
+        if (Array.isArray(rows)) return storeCachedPlan(fecha, rows);
         return [];
       });
   }
@@ -59,6 +81,18 @@
     loadReference: loadReference,
     loadDailyPlan: loadDailyPlan,
     searchRecords: searchRecords,
-    saveDailyAttendance: saveDailyAttendance
+    saveDailyAttendance: saveDailyAttendance,
+    prefetch: function (fecha) {
+      const targetDate = fecha || (global.AttendanceDailyState && typeof global.AttendanceDailyState.getTodayIso === "function"
+        ? global.AttendanceDailyState.getTodayIso()
+        : "");
+      return loadReference()
+        .then(function () {
+          return loadDailyPlan(targetDate);
+        })
+        .catch(function () {
+          return null;
+        });
+    }
   };
 })(typeof window !== "undefined" ? window : this);

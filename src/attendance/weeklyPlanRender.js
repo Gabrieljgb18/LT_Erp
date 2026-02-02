@@ -9,6 +9,49 @@
     const formatClientLabel = state && state.formatClientLabel ? state.formatClientLabel : (v => v || '');
     const WEEK_DAYS = ["LUNES", "MARTES", "MIERCOLES", "JUEVES", "VIERNES", "SABADO", "DOMINGO"];
 
+    function buildPlanSelector() {
+        if (!Dom) return null;
+        const plans = state.currentPlanGroups || [];
+        if (!plans.length) return null;
+
+        const wrapper = Dom.el("div", { className: "lt-surface lt-surface--subtle p-3 mb-3" });
+        const header = Dom.el("div", { className: "d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2" });
+        header.appendChild(Dom.el("div", { className: "small text-muted fw-semibold", text: "Planes del cliente" }));
+
+        const newBtn = Dom.el("button", {
+            type: "button",
+            className: "btn btn-sm " + (state.forceNewPlan ? "btn-primary" : "btn-outline-primary"),
+            "data-action": "new-weekly-plan-client"
+        }, [
+            Dom.el("i", { className: "bi bi-plus-lg me-1" }),
+            Dom.text("Nuevo plan")
+        ]);
+        header.appendChild(newBtn);
+        wrapper.appendChild(header);
+
+        const list = Dom.el("div", { className: "d-flex flex-wrap gap-2" });
+        const today = new Date().toISOString().split('T')[0];
+
+        plans.forEach(plan => {
+            if (!plan) return;
+            const label = (plan.vigDesde || "Inicio") + " -> " + (plan.vigHasta || "Fin");
+            const isSelected = !state.forceNewPlan && plan.key === state.currentPlanKey;
+            const isActive = plan.isActive != null
+                ? plan.isActive
+                : ((!plan.vigDesde || plan.vigDesde <= today) && (!plan.vigHasta || plan.vigHasta >= today));
+            const btn = Dom.el("button", {
+                type: "button",
+                className: "btn btn-sm " + (isSelected ? "btn-primary" : "btn-outline-primary"),
+                title: isActive ? "Plan vigente" : "Plan inactivo",
+                dataset: { action: "select-weekly-plan", planKey: plan.key }
+            }, Dom.text(label));
+            list.appendChild(btn);
+        });
+
+        wrapper.appendChild(list);
+        return wrapper;
+    }
+
     function buildEmployeeOptions() {
         const opts = [];
         const empleados = state.referenceData && state.referenceData.empleados ? state.referenceData.empleados : [];
@@ -307,16 +350,25 @@
             ? state.getClientDefaultHoraEntrada(clienteId)
             : "";
 
+        const defaultVigDesde = state.forceNewPlan
+            ? ""
+            : (global.WeeklyPlanPanelHandlers && global.WeeklyPlanPanelHandlers.vigDesdeInputVal
+                ? global.WeeklyPlanPanelHandlers.vigDesdeInputVal()
+                : "");
+        const defaultVigHasta = state.forceNewPlan
+            ? ""
+            : (global.WeeklyPlanPanelHandlers && global.WeeklyPlanPanelHandlers.vigHastaInputVal
+                ? global.WeeklyPlanPanelHandlers.vigHastaInputVal()
+                : "");
+
         if (!rows.length) {
             rows = [{
                 empleado: "",
                 diaSemana: "",
                 horaEntrada: defaultHoraEntrada || "",
                 horasPlan: "",
-                vigDesde: global.WeeklyPlanPanelHandlers && global.WeeklyPlanPanelHandlers.vigDesdeInputVal
-                    ? global.WeeklyPlanPanelHandlers.vigDesdeInputVal() : "",
-                vigHasta: global.WeeklyPlanPanelHandlers && global.WeeklyPlanPanelHandlers.vigHastaInputVal
-                    ? global.WeeklyPlanPanelHandlers.vigHastaInputVal() : "",
+                vigDesde: defaultVigDesde,
+                vigHasta: defaultVigHasta,
                 id: "",
                 observaciones: ""
             }];
@@ -327,8 +379,12 @@
                 return Object.assign({}, r, { horaEntrada: defaultHoraEntrada });
             });
         }
-        const vigDesdeVal = state.formatDateInput(rows[0].vigDesde || (global.WeeklyPlanPanelHandlers && global.WeeklyPlanPanelHandlers.vigDesdeInputVal ? global.WeeklyPlanPanelHandlers.vigDesdeInputVal() : ''));
-        const vigHastaVal = state.formatDateInput(rows[0].vigHasta || (global.WeeklyPlanPanelHandlers && global.WeeklyPlanPanelHandlers.vigHastaInputVal ? global.WeeklyPlanPanelHandlers.vigHastaInputVal() : ''));
+        const vigDesdeVal = state.forceNewPlan
+            ? ""
+            : state.formatDateInput(rows[0].vigDesde || (global.WeeklyPlanPanelHandlers && global.WeeklyPlanPanelHandlers.vigDesdeInputVal ? global.WeeklyPlanPanelHandlers.vigDesdeInputVal() : ''));
+        const vigHastaVal = state.forceNewPlan
+            ? ""
+            : state.formatDateInput(rows[0].vigHasta || (global.WeeklyPlanPanelHandlers && global.WeeklyPlanPanelHandlers.vigHastaInputVal ? global.WeeklyPlanPanelHandlers.vigHastaInputVal() : ''));
 
         const groupedByEmpleado = {};
         rows.forEach((r, idx) => {
@@ -349,6 +405,11 @@
             : panel;
 
         const hoursBlock = buildHorasBlock(effectiveInfoHoras);
+        const planSelector = buildPlanSelector();
+        if (planSelector) {
+            container.appendChild(planSelector);
+        }
+
         const topSection = WeeklyPlanTemplates.buildEditorTopSection(hoursBlock);
         container.appendChild(topSection);
 
@@ -418,8 +479,12 @@
 
         const vigDesdeInput = document.getElementById('plan-vig-desde');
         const vigHastaInput = document.getElementById('plan-vig-hasta');
-        if (vigDesdeInput && rows[0]) vigDesdeInput.value = state.formatDateInput(rows[0].vigDesde || vigDesdeVal);
-        if (vigHastaInput && rows[0]) vigHastaInput.value = state.formatDateInput(rows[0].vigHasta || vigHastaVal);
+        if (vigDesdeInput && rows[0]) {
+            vigDesdeInput.value = state.forceNewPlan ? "" : state.formatDateInput(rows[0].vigDesde || vigDesdeVal);
+        }
+        if (vigHastaInput && rows[0]) {
+            vigHastaInput.value = state.forceNewPlan ? "" : state.formatDateInput(rows[0].vigHasta || vigHastaVal);
+        }
 
         bindWeeklyPlanCollapseArrows();
         if (global.WeeklyPlanPanelHandlers && typeof global.WeeklyPlanPanelHandlers.attachWeeklyPlanHandlers === 'function') {

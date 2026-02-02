@@ -51,8 +51,17 @@
       resetState();
 
       global.MapsPanelHandlers.attachEvents(container);
-      global.MapsPanelData.refreshReferenceData(container);
-      global.MapsPanelData.refreshPlanData(container);
+
+      const usedPrefetch = global.MapsPanelData && typeof global.MapsPanelData.applyPrefetch === "function"
+        ? global.MapsPanelData.applyPrefetch()
+        : false;
+
+      if (usedPrefetch && global.MapsPanelRender) {
+        global.MapsPanelRender.renderView(container);
+      } else {
+        global.MapsPanelData.refreshReferenceData(container);
+        global.MapsPanelData.refreshPlanData(container);
+      }
 
       if (state.unsubscribeRef) state.unsubscribeRef();
       if (global.MapsPanelData && typeof global.MapsPanelData.subscribeReferenceUpdates === "function") {

@@ -11,6 +11,11 @@
         let eventsController = null;
         const Dom = global.DomHelpers;
         const RecordsData = global.RecordsData || null;
+        const UiHelpers = global.UIHelpers || null;
+        let currentPage = 1;
+        let currentPageSize = 0;
+        let currentTotalPages = 1;
+        let currentRelevantFields = [];
 
         function formatDateForGrid(value) {
             if (!value) return '';
@@ -58,82 +63,132 @@
             return d.toLocaleDateString('es-ES');
         }
 
-        /**
-         * Renderiza la grilla con los registros del formato actual
-         */
-        function renderGrid(tipoFormato, records) {
-            currentFormat = tipoFormato;
+        function getPageSizeForFormat(tipoFormato) {
+            if (tipoFormato === "CLIENTES" || tipoFormato === "EMPLEADOS") {
+                return 15;
+            }
+            return 0;
+        }
 
-            // Vista resumida especial para asistencia diaria
-            if (tipoFormato === 'ASISTENCIA' && global.AttendanceDailyUI) {
-                global.AttendanceDailyUI.renderSummary(records || []);
+        function clampPage(page, totalPages) {
+            const total = Math.max(1, Number(totalPages || 1));
+            const value = Math.max(1, Number(page || 1));
+            return Math.min(value, total);
+        }
+
+        function getPaginationContainer() {
+            return document.getElementById("grid-pagination");
+        }
+
+        function clearPagination() {
+            const container = getPaginationContainer();
+            if (!container || !Dom) return;
+            container.classList.add("d-none");
+            Dom.clear(container);
+        }
+
+        function updatePaginationState(options) {
+            currentPageSize = getPageSizeForFormat(currentFormat);
+            currentTotalPages = currentPageSize
+                ? Math.max(1, Math.ceil(allRecords.length / currentPageSize))
+                : 1;
+
+            if (options && options.resetPage) {
+                currentPage = 1;
+            }
+
+            currentPage = clampPage(currentPage, currentTotalPages);
+        }
+
+        function getPageSlice() {
+            if (!currentPageSize) {
+                return { records: allRecords, offset: 0 };
+            }
+            const start = (currentPage - 1) * currentPageSize;
+            const end = start + currentPageSize;
+            return { records: allRecords.slice(start, end), offset: start };
+        }
+
+        function renderPaginationControls() {
+            const container = getPaginationContainer();
+            if (!container || !Dom) return;
+
+            if (!currentPageSize || allRecords.length <= currentPageSize) {
+                clearPagination();
                 return;
             }
 
-            // Los registros vienen en formato {id, rowNumber, record}
-            // Extraer solo los records y agregar el ID
-            allRecords = (records || []).map(item => {
-                if (item.record) {
-                    // Agregar el ID al record para poder usarlo después
-                    item.record.ID = item.id;
-                    item.record._rowNumber = item.rowNumber;
-                    return item.record;
-                }
-                return item;
+            container.classList.remove("d-none");
+            if (UiHelpers && typeof UiHelpers.renderPagination === "function") {
+                UiHelpers.renderPagination(container, {
+                    page: currentPage,
+                    totalPages: currentTotalPages,
+                    onPageChange: function (page) {
+                        setPage(page);
+                    }
+                });
+            }
+        }
+
+        function setPage(page) {
+            const nextPage = clampPage(page, currentTotalPages);
+            if (nextPage === currentPage) return;
+            currentPage = nextPage;
+            renderPage();
+        }
+
+        function getCurrentQuery() {
+            const input = document.getElementById("search-query");
+            return input ? input.value : "";
+        }
+
+        function getIncludeInactive() {
+            const toggle = document.getElementById("check-ver-inactivos");
+            return toggle ? toggle.checked : false;
+        }
+
+        function renderHeaders(relevantFields) {
+            const headersRow = document.getElementById('grid-headers');
+            if (!headersRow) return;
+
+            Dom.clear(headersRow);
+
+            relevantFields.forEach(field => {
+                headersRow.appendChild(Dom.el('th', { text: field.label }));
             });
 
-            const formDef = FORM_DEFINITIONS[tipoFormato];
-            if (!formDef) return;
+            headersRow.appendChild(Dom.el('th', {
+                text: 'Acciones',
+                style: 'width: 150px; text-align: center;'
+            }));
+        }
 
-            // Obtener los 5 campos más relevantes (sin secciones/ocultos)
-            const visibleFields = formDef.fields.filter(field => field.type !== 'section' && !field.hidden);
-            const relevantFields = visibleFields.slice(0, 5);
+        function renderEmptyState(relevantFields) {
+            const tbody = document.getElementById('grid-body');
+            if (!tbody) return;
+            const colSpan = (relevantFields.length || 1) + 1;
+            tbody.appendChild(Dom.el('tr', null, Dom.el('td', {
+                colSpan: colSpan,
+                className: 'text-center text-muted py-5',
+                text: 'No hay registros para mostrar'
+            })));
+        }
 
-            // Renderizar headers
-            const headersRow = document.getElementById('grid-headers');
-            if (headersRow) {
-                Dom.clear(headersRow);
-
-                relevantFields.forEach(field => {
-                    headersRow.appendChild(Dom.el('th', { text: field.label }));
-                });
-
-                // Columna de acciones
-                headersRow.appendChild(Dom.el('th', {
-                    text: 'Acciones',
-                    style: 'width: 150px; text-align: center;'
-                }));
-            }
-
-            // Renderizar body
+        function renderRows(records, offset, relevantFields) {
             const tbody = document.getElementById('grid-body');
             if (!tbody) return;
 
-            Dom.clear(tbody);
-
-            if (!allRecords.length) {
-                tbody.appendChild(Dom.el('tr', null, Dom.el('td', {
-                    colSpan: relevantFields.length + 1,
-                    className: 'text-center text-muted py-5',
-                    text: 'No hay registros para mostrar'
-                })));
-                return;
-            }
-
-            allRecords.forEach((record, idx) => {
+            records.forEach((record, idx) => {
                 const tr = document.createElement('tr');
 
                 relevantFields.forEach(field => {
                     const td = document.createElement('td');
-                    // Buscar el valor usando el ID del campo (puede estar en mayúsculas o minúsculas)
                     let value = record[field.id];
 
-                    // Si no encuentra, intentar con el label
                     if (value === undefined || value === null) {
                         value = record[field.label];
                     }
 
-                    // Si aún no encuentra, intentar buscar case-insensitive
                     if (value === undefined || value === null) {
                         const keys = Object.keys(record);
                         const matchingKey = keys.find(k => k.toUpperCase() === field.id.toUpperCase());
@@ -142,7 +197,6 @@
                         }
                     }
 
-                    // Formatear según el tipo
                     if (field.type === 'boolean') {
                         const isTrue = value === true ||
                             value === 'TRUE' ||
@@ -170,7 +224,6 @@
                     tr.appendChild(td);
                 });
 
-                // Botones de acción - inline y más pequeños
                 const tdActions = Dom.el('td', {
                     style: 'text-align: center; white-space: nowrap;'
                 });
@@ -178,13 +231,13 @@
                 const btnEdit = Dom.el('button', {
                     className: 'btn btn-sm btn-outline-primary lt-btn-icon me-1',
                     title: 'Editar',
-                    dataset: { gridAction: "edit", index: String(idx) }
+                    dataset: { gridAction: "edit", index: String(offset + idx) }
                 }, Dom.el('i', { className: 'bi bi-pencil-fill' }));
 
                 const btnDelete = Dom.el('button', {
                     className: 'btn btn-sm btn-outline-danger lt-btn-icon',
                     title: 'Eliminar',
-                    dataset: { gridAction: "delete", index: String(idx) }
+                    dataset: { gridAction: "delete", index: String(offset + idx) }
                 }, Dom.el('i', { className: 'bi bi-trash-fill' }));
 
                 tdActions.appendChild(btnEdit);
@@ -193,8 +246,59 @@
 
                 tbody.appendChild(tr);
             });
+        }
 
+        function renderPage() {
+            const tbody = document.getElementById('grid-body');
+            if (!tbody) return;
+
+            Dom.clear(tbody);
+
+            if (!allRecords.length) {
+                renderEmptyState(currentRelevantFields);
+                renderPaginationControls();
+                return;
+            }
+
+            const pageSlice = getPageSlice();
+            renderRows(pageSlice.records, pageSlice.offset, currentRelevantFields);
+            renderPaginationControls();
             bindTableEvents();
+        }
+
+        /**
+         * Renderiza la grilla con los registros del formato actual
+         */
+        function renderGrid(tipoFormato, records, options) {
+            currentFormat = tipoFormato;
+
+            if (tipoFormato === 'ASISTENCIA' && global.AttendanceDailyUI) {
+                clearPagination();
+                global.AttendanceDailyUI.renderSummary(records || []);
+                return;
+            }
+
+            allRecords = (records || []).map(item => {
+                if (item.record) {
+                    item.record.ID = item.id;
+                    item.record._rowNumber = item.rowNumber;
+                    return item.record;
+                }
+                return item;
+            });
+
+            const formDef = FORM_DEFINITIONS[tipoFormato];
+            if (!formDef) {
+                clearPagination();
+                return;
+            }
+
+            const visibleFields = formDef.fields.filter(field => field.type !== 'section' && !field.hidden);
+            currentRelevantFields = visibleFields.slice(0, 5);
+
+            renderHeaders(currentRelevantFields);
+            updatePaginationState(options);
+            renderPage();
         }
 
         function renderLoading(tipoFormato, message) {
@@ -208,6 +312,7 @@
             const tbody = document.getElementById('grid-body');
             if (!tbody) return;
             Dom.clear(tbody);
+            clearPagination();
             tbody.appendChild(
                 Dom.el('tr', null,
                     Dom.el('td', {
@@ -450,7 +555,9 @@
             // Aquí iría la lógica para recargar los datos desde el servidor
             if (RecordsData && typeof RecordsData.searchRecords === 'function') {
                 renderLoading(currentFormat, "Actualizando registros...");
-                RecordsData.searchRecords(currentFormat, '')
+                const query = getCurrentQuery();
+                const includeInactive = getIncludeInactive();
+                RecordsData.searchRecords(currentFormat, query, includeInactive)
                     .then(records => {
                         if (records && records.ignored) return;
                         renderGrid(currentFormat, records);

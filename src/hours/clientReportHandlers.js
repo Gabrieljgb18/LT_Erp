@@ -60,25 +60,35 @@
   function handleSearch() {
     if (!ensureDeps()) return;
     const filters = getFilters();
+    console.log("[ClientReport] handleSearch - filters:", filters);
+
     if (!filters.client) {
       Alerts && Alerts.showAlert("Seleccioná un cliente para consultar", "warning");
       return;
     }
 
     const idCliente = state.getClientIdFromLabel(filters.client);
+    console.log("[ClientReport] handleSearch - idCliente extracted:", idCliente);
+    console.log("[ClientReport] handleSearch - clientIdMap:", Array.from(state.clientIdMap.entries()));
+
     if (!idCliente) {
       Alerts && Alerts.showAlert("Seleccioná un cliente válido de la lista.", "warning");
       return;
     }
 
     global.ClientReportPanelRender.toggleLoading(true);
-    global.ClientReportPanelData.fetchReport({
+
+    const requestParams = {
       start: filters.start,
       end: filters.end,
       client: filters.client,
       idCliente: idCliente
-    })
+    };
+    console.log("[ClientReport] handleSearch - calling fetchReport with:", requestParams);
+
+    global.ClientReportPanelData.fetchReport(requestParams)
       .then((res) => {
+        console.log("[ClientReport] handleSearch - response:", res);
         const rows = res && res.rows ? res.rows : [];
         const summary = res && res.summary ? res.summary : {};
         state.lastRows = rows;
@@ -87,6 +97,7 @@
         global.ClientReportPanelRender.renderAggregate(rows);
       })
       .catch((err) => {
+        console.error("[ClientReport] handleSearch - error:", err);
         if (Alerts && typeof Alerts.showError === "function") {
           Alerts.showError("No se pudo cargar el reporte", err);
         } else {
@@ -100,6 +111,8 @@
   function handleExportPdf() {
     if (!ensureDeps()) return;
     const filters = getFilters();
+    console.log("[ClientReport] handleExportPdf - filters obtenidos:", filters);
+
     if (!filters.client) {
       Alerts && Alerts.showAlert("Seleccioná un cliente para exportar", "warning");
       return;
@@ -110,6 +123,9 @@
     }
 
     const idCliente = state.getClientIdFromLabel(filters.client);
+    console.log("[ClientReport] handleExportPdf - idCliente extraído:", idCliente);
+    console.log("[ClientReport] handleExportPdf - clientIdMap:", Array.from(state.clientIdMap.entries()));
+
     if (!idCliente) {
       Alerts && Alerts.showAlert("Seleccioná un cliente válido de la lista.", "warning");
       return;
@@ -117,16 +133,24 @@
 
     const btn = document.getElementById("client-report-pdf");
     const ui = global.UIHelpers;
-      if (btn && ui && typeof ui.withSpinner === "function") {
-        ui.withSpinner(btn, true, "Descargando...");
-      }
+    if (btn && ui && typeof ui.withSpinner === "function") {
+      ui.withSpinner(btn, true, "Descargando...");
+    }
 
-    UiState && UiState.setGlobalLoading(true, "Generando PDF...");
-    global.ClientReportPanelData.generatePdf({
+    // Extraer nombre limpio del cliente quitando metadatos (ID: XX, CUIT, etc)
+    const cleanClientName = filters.client.replace(/\s*\([^)]*\)\s*$/g, '').trim();
+    console.log("[ClientReport] handleExportPdf - nombre limpio extraído:", cleanClientName);
+
+    const pdfParams = {
       start: filters.start,
       end: filters.end,
+      client: cleanClientName,  // Usar el nombre limpio sin metadatos
       idCliente: idCliente
-    })
+    };
+    console.log("[ClientReport] handleExportPdf - llamando generatePdf con:", pdfParams);
+
+    UiState && UiState.setGlobalLoading(true, "Generando PDF...");
+    global.ClientReportPanelData.generatePdf(pdfParams)
       .then((res) => {
         if (!res || !res.base64) throw new Error("No se pudo generar PDF");
         const link = document.createElement("a");
@@ -145,9 +169,9 @@
       })
       .finally(() => {
         UiState && UiState.setGlobalLoading(false);
-      if (btn && ui && typeof ui.withSpinner === "function") {
-        ui.withSpinner(btn, false);
-      }
+        if (btn && ui && typeof ui.withSpinner === "function") {
+          ui.withSpinner(btn, false);
+        }
       });
   }
 

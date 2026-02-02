@@ -308,10 +308,11 @@ var RecordController = (function () {
 
         // Log value changes for CLIENTES
         if (tipoFormato === 'CLIENTES') {
+            const clienteId = record['ID'] || newId;
             const clienteNombre = record['NOMBRE'] || record['RAZON SOCIAL'] || '';
             const valorHora = record['VALOR HORA'];
-            if (clienteNombre && valorHora !== undefined && valorHora !== '') {
-                DatabaseService.appendHoraLogCliente(clienteNombre, valorHora);
+            if (valorHora !== undefined && valorHora !== '') {
+                DatabaseService.appendHoraLogCliente(clienteId, clienteNombre, valorHora);
             }
             if (DatabaseService && typeof DatabaseService.upsertClientTags === 'function') {
                 const tags = record['ETIQUETAS'];
@@ -321,10 +322,11 @@ var RecordController = (function () {
 
         // Log value changes for EMPLEADOS
         if (tipoFormato === 'EMPLEADOS') {
+            const empleadoId = record['ID'] || newId;
             const empleadoNombre = record['EMPLEADO'] || '';
             const valorHora = record['VALOR DE HORA'];
-            if (empleadoNombre && valorHora !== undefined && valorHora !== '') {
-                DatabaseService.appendHoraLogEmpleado(empleadoNombre, valorHora);
+            if (valorHora !== undefined && valorHora !== '') {
+                DatabaseService.appendHoraLogEmpleado(empleadoId, empleadoNombre, valorHora);
             }
         }
 
@@ -410,8 +412,8 @@ var RecordController = (function () {
             const oldValor = currentRecord['VALOR HORA'];
             const newValor = incoming['VALOR HORA'];
             const clienteNombre = incoming['NOMBRE'] || incoming['RAZON SOCIAL'] || '';
-            if (clienteNombre && newValor !== undefined && newValor !== '' && newValor !== oldValor) {
-                DatabaseService.appendHoraLogCliente(clienteNombre, newValor);
+            if (newValor !== undefined && newValor !== '' && newValor !== oldValor) {
+                DatabaseService.appendHoraLogCliente(id, clienteNombre, newValor);
             }
             if (DatabaseService && typeof DatabaseService.upsertClientTags === 'function') {
                 const tags = incoming['ETIQUETAS'];
@@ -424,8 +426,8 @@ var RecordController = (function () {
             const oldValor = currentRecord['VALOR DE HORA'];
             const newValor = incoming['VALOR DE HORA'];
             const empleadoNombre = incoming['EMPLEADO'] || '';
-            if (empleadoNombre && newValor !== undefined && newValor !== '' && newValor !== oldValor) {
-                DatabaseService.appendHoraLogEmpleado(empleadoNombre, newValor);
+            if (newValor !== undefined && newValor !== '' && newValor !== oldValor) {
+                DatabaseService.appendHoraLogEmpleado(id, empleadoNombre, newValor);
             }
         }
 

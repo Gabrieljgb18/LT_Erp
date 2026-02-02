@@ -139,6 +139,16 @@
         function removeRow(uid) {
             const idx = state.rows.findIndex(r => r.uid === uid);
             if (idx === -1) return;
+            const removed = state.rows[idx];
+            if (removed && (removed.idAsistencia || removed.asistenciaRowNumber || removed.idCliente || removed.idEmpleado)) {
+                if (!Array.isArray(state.removedRows)) state.removedRows = [];
+                state.removedRows.push({
+                    idAsistencia: removed.idAsistencia || null,
+                    asistenciaRowNumber: removed.asistenciaRowNumber || null,
+                    idCliente: removed.idCliente || "",
+                    idEmpleado: removed.idEmpleado || ""
+                });
+            }
             state.rows.splice(idx, 1);
             render.renderRows();
             handlers.bindRowEvents({
@@ -250,18 +260,22 @@
             if (saveBtn) saveBtn.disabled = true;
             UiState.setGlobalLoading(true, "Guardando asistencia...");
 
-            const payload = state.rows.map(r => ({
-                cliente: r.cliente,
-                idCliente: r.idCliente || "",
-                empleado: r.empleado,
-                idEmpleado: r.idEmpleado || "",
-                asistencia: !!r.asistencia,
-                horasReales: r.horasReales !== undefined && r.horasReales !== null ? r.horasReales : "",
-                horasPlan: r.horasPlan !== undefined && r.horasPlan !== null ? r.horasPlan : "",
-                observaciones: r.observaciones || "",
-                asistenciaRowNumber: r.asistenciaRowNumber || null,
-                idAsistencia: r.idAsistencia || null
-            }));
+            const payload = {
+                rows: state.rows.map(r => ({
+                    cliente: r.cliente,
+                    idCliente: r.idCliente || "",
+                    empleado: r.empleado,
+                    idEmpleado: r.idEmpleado || "",
+                    asistencia: !!r.asistencia,
+                    horasReales: r.horasReales !== undefined && r.horasReales !== null ? r.horasReales : "",
+                    horasPlan: r.horasPlan !== undefined && r.horasPlan !== null ? r.horasPlan : "",
+                    observaciones: r.observaciones || "",
+                    asistenciaRowNumber: r.asistenciaRowNumber || null,
+                    idAsistencia: r.idAsistencia || null
+                })),
+                removed: Array.isArray(state.removedRows) ? state.removedRows.slice() : [],
+                purgeMissing: true
+            };
 
             if (!data || typeof data.saveDailyAttendance !== "function") {
                 if (Alerts) Alerts.showAlert("No se puede guardar la asistencia en este momento.", "danger");
@@ -273,6 +287,9 @@
 
             data.saveDailyAttendance(fecha, payload)
                 .then(function (res) {
+                    const deletedCount = Array.isArray(res) && typeof res.deleted === "number"
+                        ? res.deleted
+                        : (res && typeof res.deleted === "number" ? res.deleted : 0);
                     if (Array.isArray(res) && res.length) {
                         const byKey = new Map();
                         res.forEach(function (item) {
@@ -290,7 +307,13 @@
                             });
                         }
                     }
-                    if (Alerts) Alerts.showAlert("Asistencia guardada correctamente.", "success");
+                    if (Alerts) {
+                        const msg = deletedCount > 0
+                            ? "Asistencia guardada correctamente. Se eliminaron " + deletedCount + " registros."
+                            : "Asistencia guardada correctamente.";
+                        Alerts.showAlert(msg, "success");
+                    }
+                    state.removedRows = [];
                     if (GridManager) GridManager.refreshGrid();
                 })
                 .catch(function (err) {

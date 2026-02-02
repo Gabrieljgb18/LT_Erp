@@ -11,6 +11,7 @@
     rootEl: null,
     pendingFecha: null,
     pendingFocus: null,
+    removedRows: [],
     eventsController: null,
     rowEventsController: null,
     summaryEventsController: null,
@@ -29,6 +30,7 @@
     AttendanceDailyState.fecha = fecha || AttendanceDailyState.getTodayIso();
     AttendanceDailyState.rows = [];
     AttendanceDailyState.loading = false;
+    AttendanceDailyState.removedRows = [];
   };
 
   AttendanceDailyState.setRoot = function (el) {

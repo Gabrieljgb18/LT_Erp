@@ -182,13 +182,11 @@
         dataset: { role: "observaciones", uid: row.uid }
       }, row.observaciones || "");
 
-      const removeCell = row.fueraDePlan
-        ? Dom.el("button", {
-          className: "btn btn-sm btn-outline-danger",
-          dataset: { role: "remove-row", uid: row.uid },
-          title: "Quitar fila"
-        }, "✕")
-        : Dom.el("span", { className: "text-muted small d-inline-block mt-3", text: "\u00a0" });
+      const removeCell = Dom.el("button", {
+        className: row.fueraDePlan ? "btn btn-sm btn-outline-danger" : "btn btn-sm btn-outline-secondary",
+        dataset: { role: "remove-row", uid: row.uid },
+        title: "Quitar fila"
+      }, "✕");
 
       const rowInputs = Dom.el("div", { className: "row g-3 align-items-center mt-1" }, [
         Dom.el("div", { className: "col-12 col-md-3" }, [
