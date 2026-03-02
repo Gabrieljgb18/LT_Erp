@@ -15002,6 +15002,36 @@ var InvoiceTemplates = (function () {
   }
   const Dom = state.Dom;
 
+  function toAmountNumber_(val) {
+    if (val == null || val === "") return 0;
+    if (typeof val === "number") return isNaN(val) ? 0 : val;
+    const n = Number(String(val).replace(/[^0-9.,-]/g, "").replace(",", "."));
+    return isNaN(n) ? 0 : n;
+  }
+
+  function normalizeText_(val) {
+    return String(val || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
+  }
+
+  function isReciboXInvoice_(inv) {
+    const comprobante = normalizeText_(inv && (inv["COMPROBANTE"] || inv.comprobante));
+    const tipoFacturacion = normalizeText_(inv && (inv["TIPO FACTURACION"] || inv["TIPO_FACTURACION"] || inv.tipoFacturacion));
+    return comprobante.indexOf("recibo x") !== -1 ||
+      comprobante.indexOf("recibox") !== -1 ||
+      tipoFacturacion.indexOf("recibo x") !== -1 ||
+      tipoFacturacion.indexOf("recibox") !== -1;
+  }
+
+  function getDisplayInvoiceTotal_(inv) {
+    const rawTotal = toAmountNumber_(inv && inv["TOTAL"]);
+    const subtotal = toAmountNumber_(inv && (inv["SUBTOTAL"] || inv["IMPORTE"] || rawTotal));
+    return isReciboXInvoice_(inv) ? subtotal : rawTotal;
+  }
+
   function buildBadge_(label, options) {
     const ui = global.UIHelpers;
     const text = label == null ? "" : String(label);
@@ -15261,7 +15291,9 @@ var InvoiceTemplates = (function () {
       const facturaTd = Dom.el("td");
       if (r.facturado) {
         const label = r.facturaNumero || ("#" + (r.facturaId || ""));
-        facturaTd.appendChild(buildBadge_(label, { className: "badge bg-light text-dark border" }));
+        const facturaBadge = buildBadge_(label, { className: "badge bg-light text-dark border lt-invoice-number-badge" });
+        facturaBadge.title = String(label || "");
+        facturaTd.appendChild(facturaBadge);
       } else {
         facturaTd.appendChild(Dom.el("span", { className: "text-muted", text: "—" }));
       }
@@ -15476,7 +15508,7 @@ var InvoiceTemplates = (function () {
       const periodo = periodLabel || "-";
       const numero = inv["NUMERO"] || "S/N";
       const razon = inv["RAZÓN SOCIAL"] || "-";
-      const total = Formatters.formatCurrency(inv["TOTAL"]);
+      const total = Formatters.formatCurrency(getDisplayInvoiceTotal_(inv));
 
       const selectTd = Dom.el("td", { className: "ps-3" });
       const checkbox = Dom.el("input", {

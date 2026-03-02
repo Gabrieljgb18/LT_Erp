@@ -98,6 +98,18 @@ var InvoiceController = (function () {
             });
             // Ensure ID is present
             record.ID = idxId > -1 ? row[idxId] : row[0];
+
+            // En Recibo X, el total mostrado debe ser neto (sin IVA)
+            const rawForTotal = {
+                'COMPROBANTE': row[getColIdx_(colMap, ['COMPROBANTE'])],
+                'TIPO FACTURACION': row[getColIdx_(colMap, ['TIPO FACTURACION'])],
+                'ID_CLIENTE': row[idxIdCliente],
+                'RAZÓN SOCIAL': row[idxCliente],
+                'TOTAL': row[getColIdx_(colMap, ['TOTAL'])],
+                'SUBTOTAL': row[getColIdx_(colMap, ['SUBTOTAL'])],
+                'IMPORTE': row[getColIdx_(colMap, ['IMPORTE'])]
+            };
+            record['TOTAL'] = getInvoiceDisplayTotal_(rawForTotal, row[idxIdCliente], row[idxCliente]);
             results.push(record);
         }
 
@@ -543,6 +555,20 @@ var InvoiceController = (function () {
         return isReciboXValue_(comprobante) ||
             isReciboXValue_(tipoFacturacion) ||
             isReciboXValue_(tipoFacturacionCliente);
+    }
+
+    function toAmountNumber_(val) {
+        if (val == null || val === '') return 0;
+        if (typeof val === 'number') return isNaN(val) ? 0 : val;
+        const n = Number(String(val).replace(/[^0-9.,-]/g, '').replace(',', '.'));
+        return isNaN(n) ? 0 : n;
+    }
+
+    function getInvoiceDisplayTotal_(record, fallbackClientId, fallbackClientName) {
+        const data = record || {};
+        const rawTotal = toAmountNumber_(data['TOTAL']);
+        const subtotal = toAmountNumber_(data['SUBTOTAL'] || data['IMPORTE'] || rawTotal);
+        return isReciboXInvoice_(data, fallbackClientId, fallbackClientName) ? subtotal : rawTotal;
     }
 
     /**
@@ -1242,13 +1268,17 @@ var InvoiceController = (function () {
         const result = new Map();
         if (lastRow < 2 || lastCol === 0) return result;
 
-        const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || '').toUpperCase());
+        const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => normalizeHeader_(h));
         const idxId = headers.indexOf('ID');
         const idxIdCliente = headers.indexOf('ID_CLIENTE');
-        const idxCliente = headers.indexOf('RAZÓN SOCIAL') > -1 ? headers.indexOf('RAZÓN SOCIAL') : headers.indexOf('RAZON SOCIAL');
+        const idxCliente = headers.indexOf('RAZON SOCIAL') > -1 ? headers.indexOf('RAZON SOCIAL') : headers.indexOf('CLIENTE');
         const idxPeriodo = headers.indexOf('PERIODO');
         const idxFecha = headers.indexOf('FECHA');
         const idxTotal = headers.indexOf('TOTAL');
+        const idxSubtotal = headers.indexOf('SUBTOTAL');
+        const idxImporte = headers.indexOf('IMPORTE');
+        const idxComprobante = headers.indexOf('COMPROBANTE');
+        const idxTipoFact = headers.indexOf('TIPO FACTURACION');
         const idxNumero = headers.indexOf('NUMERO');
         const idxEstado = headers.indexOf('ESTADO');
 
@@ -1266,8 +1296,15 @@ var InvoiceController = (function () {
             const numero = idxNumero > -1 ? String(row[idxNumero] || '').trim() : '';
             const estado = idxEstado > -1 ? String(row[idxEstado] || '').trim() : '';
             if (estado && String(estado).toLowerCase() === 'anulada') return;
-            const totalNum = idxTotal > -1 ? Number(row[idxTotal]) : 0;
-            const total = isNaN(totalNum) ? 0 : totalNum;
+            const total = getInvoiceDisplayTotal_({
+                'COMPROBANTE': idxComprobante > -1 ? row[idxComprobante] : '',
+                'TIPO FACTURACION': idxTipoFact > -1 ? row[idxTipoFact] : '',
+                'ID_CLIENTE': idxIdCliente > -1 ? row[idxIdCliente] : '',
+                'RAZÓN SOCIAL': idxCliente > -1 ? row[idxCliente] : '',
+                'TOTAL': idxTotal > -1 ? row[idxTotal] : '',
+                'SUBTOTAL': idxSubtotal > -1 ? row[idxSubtotal] : '',
+                'IMPORTE': idxImporte > -1 ? row[idxImporte] : ''
+            }, idCliente, clienteRaw);
 
             let entry = result.get(key);
             if (!entry) {

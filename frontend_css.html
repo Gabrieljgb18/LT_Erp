@@ -1414,9 +1414,25 @@ font-size: 0.9rem;
 .lt-table-wrap {
 border: 1px solid var(--border-color);
 border-radius: var(--radius-lg);
-overflow: hidden;
+overflow-x: auto;
+overflow-y: hidden;
 background: var(--surface);
 box-shadow: var(--shadow-sm);
+-webkit-overflow-scrolling: touch;
+}
+
+#invoice-results .lt-table-wrap table,
+#invoice-cov-results .lt-table-wrap table {
+min-width: 980px;
+}
+
+.lt-invoice-number-badge {
+max-width: 320px;
+display: inline-block;
+white-space: nowrap;
+overflow: hidden;
+text-overflow: ellipsis;
+vertical-align: middle;
 }
 
 .table thead th {
