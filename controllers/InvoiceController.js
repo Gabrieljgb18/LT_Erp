@@ -772,8 +772,9 @@ var InvoiceController = (function () {
             return n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         }
 
-        const total = toNum_(inv['TOTAL']);
-        const subtotal = toNum_(inv['SUBTOTAL'] || inv['IMPORTE'] || total);
+        const rawTotal = toNum_(inv['TOTAL']);
+        const subtotal = toNum_(inv['SUBTOTAL'] || inv['IMPORTE'] || rawTotal);
+        const total = isReciboX ? subtotal : rawTotal;
         const iva = Math.max(0, total - subtotal);
 
         const style = `
