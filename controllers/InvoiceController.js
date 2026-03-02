@@ -487,33 +487,59 @@ var InvoiceController = (function () {
         return norm.indexOf('recibo x') !== -1 || norm.indexOf('recibox') !== -1;
     }
 
-    function resolveClientBillingType_(clientId) {
-        const idStr = normalizeIdString_(clientId);
-        if (!idStr || !DatabaseService || !DatabaseService.getDbSheetForFormat || !DatabaseService.findRowById) {
+    function resolveClientBillingType_(clientId, clientName) {
+        if (!DatabaseService || !DatabaseService.getDbSheetForFormat) {
             return '';
         }
+        const idStr = normalizeIdString_(clientId);
+        const targetName = normalize_(clientName || '');
         try {
             const sheet = DatabaseService.getDbSheetForFormat('CLIENTES');
-            const rowNumber = DatabaseService.findRowById(sheet, idStr);
-            if (!rowNumber) return '';
             const lastCol = sheet.getLastColumn();
-            if (!lastCol) return '';
+            const lastRow = sheet.getLastRow();
+            if (!lastCol || lastRow < 1) return '';
+
             const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => normalizeHeader_(h));
             const idxTipoFact = headers.indexOf('TIPO FACTURACION');
             if (idxTipoFact === -1) return '';
-            const row = sheet.getRange(rowNumber, 1, 1, lastCol).getValues()[0];
-            return String(row[idxTipoFact] || '').trim();
+
+            if (idStr && DatabaseService.findRowById) {
+                const rowNumber = DatabaseService.findRowById(sheet, idStr);
+                if (rowNumber) {
+                    const row = sheet.getRange(rowNumber, 1, 1, lastCol).getValues()[0];
+                    return String(row[idxTipoFact] || '').trim();
+                }
+            }
+
+            if (!targetName || lastRow < 2) return '';
+
+            const idxNombre = headers.indexOf('NOMBRE');
+            const idxRazon = headers.indexOf('RAZON SOCIAL');
+            if (idxNombre === -1 && idxRazon === -1) return '';
+
+            const data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+            for (let i = 0; i < data.length; i++) {
+                const row = data[i];
+                const n1 = idxNombre > -1 ? normalize_(row[idxNombre] || '') : '';
+                const n2 = idxRazon > -1 ? normalize_(row[idxRazon] || '') : '';
+                if ((n1 && (n1 === targetName || n1.indexOf(targetName) !== -1 || targetName.indexOf(n1) !== -1)) ||
+                    (n2 && (n2 === targetName || n2.indexOf(targetName) !== -1 || targetName.indexOf(n2) !== -1))) {
+                    return String(row[idxTipoFact] || '').trim();
+                }
+            }
+            return '';
         } catch (e) {
             return '';
         }
     }
 
-    function isReciboXInvoice_(record, fallbackClientId) {
+    function isReciboXInvoice_(record, fallbackClientId, fallbackClientName) {
         const data = record || {};
         const comprobante = data['COMPROBANTE'] || data['comprobante'] || '';
         const tipoFacturacion = data['TIPO FACTURACION'] || data['TIPO_FACTURACION'] || data.tipoFacturacion || '';
+        const clientName = data['RAZÓN SOCIAL'] || data['RAZON SOCIAL'] || data['CLIENTE'] || data.cliente || fallbackClientName || '';
         const clientId = data['ID_CLIENTE'] || data['ID CLIENTE'] || data.idCliente || fallbackClientId || '';
-        const tipoFacturacionCliente = resolveClientBillingType_(clientId);
+        const tipoFacturacionCliente = resolveClientBillingType_(clientId, clientName);
         return isReciboXValue_(comprobante) ||
             isReciboXValue_(tipoFacturacion) ||
             isReciboXValue_(tipoFacturacionCliente);
@@ -759,7 +785,7 @@ var InvoiceController = (function () {
         const ivaPct = getIvaPct_();
         const ivaLabel = (ivaPct * 100).toFixed(2).replace(/\.00$/, '') + '%';
 
-        const isReciboX = isReciboXInvoice_(inv, idCliente);
+        const isReciboX = isReciboXInvoice_(inv, idCliente, clientName);
 
         function toNum_(val) {
             if (val == null || val === '') return 0;
