@@ -33,6 +33,12 @@
                                     <i class="bi bi-check2-circle me-1"></i>Guardar
                                 </button>
                             </div>
+                            <div class="form-check form-switch mb-0 d-flex align-items-center gap-2 flex-shrink-0">
+                                <input class="form-check-input m-0" type="checkbox" id="attendance-no-import-suggested">
+                                <label class="form-check-label small text-muted fw-semibold" for="attendance-no-import-suggested">
+                                    No importar sugeridos del plan
+                                </label>
+                            </div>
                             <div id="attendance-summary" class="d-flex flex-nowrap gap-2 flex-shrink-0"></div>
                         </div>
                     </div>

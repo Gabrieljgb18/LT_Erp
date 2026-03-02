@@ -4,6 +4,101 @@
  */
 
 const AttendanceDailyAttendance = (function () {
+    const DAILY_CONFIG_SHEET_NAME = 'ASISTENCIA_DIARIA_CONFIG_DB';
+
+    function buildDailyPlanResponse_(rows, noImportSuggested) {
+        return {
+            rows: Array.isArray(rows) ? rows : [],
+            noImportSuggested: !!noImportSuggested
+        };
+    }
+
+    function normalizeDateKey_(fechaStr) {
+        if (!fechaStr) return '';
+        if (DataUtils && typeof DataUtils.normalizeCellForSearch === 'function') {
+            return DataUtils.normalizeCellForSearch(fechaStr, 'FECHA');
+        }
+        return String(fechaStr || '').trim();
+    }
+
+    function getDailyConfigSheet_() {
+        const ss = DatabaseService.getDbSpreadsheet ? DatabaseService.getDbSpreadsheet() : null;
+        if (!ss) return null;
+        let sheet = ss.getSheetByName(DAILY_CONFIG_SHEET_NAME);
+        if (!sheet) {
+            sheet = ss.insertSheet(DAILY_CONFIG_SHEET_NAME);
+            sheet.getRange(1, 1, 1, 4).setValues([['FECHA', 'NO_IMPORTAR_SUGERIDOS', 'UPDATED_AT', 'UPDATED_BY']]);
+        } else if (sheet.getLastRow() < 1 || sheet.getLastColumn() < 1) {
+            sheet.clear();
+            sheet.getRange(1, 1, 1, 4).setValues([['FECHA', 'NO_IMPORTAR_SUGERIDOS', 'UPDATED_AT', 'UPDATED_BY']]);
+        }
+        return sheet;
+    }
+
+    function findDailyConfigRow_(sheet, fechaKey) {
+        if (!sheet || !fechaKey) return null;
+        const lastRow = sheet.getLastRow();
+        const lastCol = sheet.getLastColumn();
+        if (lastRow < 2 || lastCol < 1) return null;
+        const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+        const idxFecha = headers.indexOf('FECHA');
+        if (idxFecha === -1) return null;
+        const data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+        for (let i = 0; i < data.length; i++) {
+            const rowKey = normalizeDateKey_(data[i][idxFecha]);
+            if (rowKey === fechaKey) return i + 2;
+        }
+        return null;
+    }
+
+    function getNoImportSuggestedForDate_(fechaStr) {
+        const fechaKey = normalizeDateKey_(fechaStr);
+        if (!fechaKey) return false;
+        const sheet = getDailyConfigSheet_();
+        if (!sheet) return false;
+        const rowNumber = findDailyConfigRow_(sheet, fechaKey);
+        if (!rowNumber) return false;
+        const lastCol = sheet.getLastColumn();
+        const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+        const idxFlag = headers.indexOf('NO_IMPORTAR_SUGERIDOS');
+        if (idxFlag === -1) return false;
+        const row = sheet.getRange(rowNumber, 1, 1, lastCol).getValues()[0];
+        return DataUtils && typeof DataUtils.isTruthy === 'function'
+            ? DataUtils.isTruthy(row[idxFlag])
+            : !!row[idxFlag];
+    }
+
+    function setNoImportSuggestedForDate_(fechaStr, value) {
+        const fechaKey = normalizeDateKey_(fechaStr);
+        if (!fechaKey) return false;
+        const sheet = getDailyConfigSheet_();
+        if (!sheet) return false;
+        const lastCol = Math.max(4, sheet.getLastColumn());
+        const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+        const idxFecha = headers.indexOf('FECHA');
+        const idxFlag = headers.indexOf('NO_IMPORTAR_SUGERIDOS');
+        const idxUpdatedAt = headers.indexOf('UPDATED_AT');
+        const idxUpdatedBy = headers.indexOf('UPDATED_BY');
+        if (idxFecha === -1 || idxFlag === -1) return false;
+
+        const rowNumber = findDailyConfigRow_(sheet, fechaKey);
+        const now = new Date();
+        const userEmail = Session && Session.getActiveUser ? (Session.getActiveUser().getEmail() || '') : '';
+        if (rowNumber) {
+            sheet.getRange(rowNumber, idxFecha + 1).setValue(fechaKey);
+            sheet.getRange(rowNumber, idxFlag + 1).setValue(!!value);
+            if (idxUpdatedAt > -1) sheet.getRange(rowNumber, idxUpdatedAt + 1).setValue(now);
+            if (idxUpdatedBy > -1) sheet.getRange(rowNumber, idxUpdatedBy + 1).setValue(userEmail);
+            return true;
+        }
+        const newRow = new Array(lastCol).fill('');
+        newRow[idxFecha] = fechaKey;
+        newRow[idxFlag] = !!value;
+        if (idxUpdatedAt > -1) newRow[idxUpdatedAt] = now;
+        if (idxUpdatedBy > -1) newRow[idxUpdatedBy] = userEmail;
+        sheet.getRange(sheet.getLastRow() + 1, 1, 1, lastCol).setValues([newRow]);
+        return true;
+    }
 
     /**
      * Obtiene el plan de asistencia diaria para una fecha específica
@@ -12,10 +107,11 @@ const AttendanceDailyAttendance = (function () {
      */
     function getDailyAttendancePlan(fechaStr) {
         const fecha = (fechaStr || '').toString().trim();
-        if (!fecha) return [];
+        if (!fecha) return buildDailyPlanResponse_([], false);
+        const noImportSuggested = getNoImportSuggestedForDate_(fecha);
 
         const dayName = DateUtils.getDayNameFromDateString(fecha);
-        if (!dayName) return [];
+        if (!dayName) return buildDailyPlanResponse_([], noImportSuggested);
 
         const parseDateOnly = (value) => {
             if (!value) return null;
@@ -44,14 +140,14 @@ const AttendanceDailyAttendance = (function () {
         };
 
         const fechaDate = parseDateOnly(fecha);
-        if (!fechaDate) return [];
+        if (!fechaDate) return buildDailyPlanResponse_([], noImportSuggested);
 
         const planSheet = DatabaseService.getDbSheetForFormat('ASISTENCIA_PLAN');
         const lastRowPlan = planSheet.getLastRow();
         const lastColPlan = planSheet.getLastColumn();
 
         if (lastRowPlan < 2 || lastColPlan === 0) {
-            return [];
+            return buildDailyPlanResponse_([], noImportSuggested);
         }
 
         const headersPlan = planSheet.getRange(1, 1, 1, lastColPlan).getValues()[0];
@@ -68,10 +164,10 @@ const AttendanceDailyAttendance = (function () {
         const idxObsPlan = headersPlan.indexOf('OBSERVACIONES');
 
         if (idxClientePlan === -1 || idxEmpleadoPlan === -1 || idxDiaSemanaPlan === -1) {
-            return [];
+            return buildDailyPlanResponse_([], noImportSuggested);
         }
         if (idxIdClientePlan === -1 || idxIdEmpleadoPlan === -1) {
-            return [];
+            return buildDailyPlanResponse_([], noImportSuggested);
         }
 
         const dataPlan = planSheet
@@ -198,11 +294,11 @@ const AttendanceDailyAttendance = (function () {
 
         // Si no hay plan ni registros reales para la fecha, devolvemos vacío
         if (planMap.size === 0 && attendanceRows.length === 0 && noPlanForDay) {
-            return [];
+            return buildDailyPlanResponse_([], noImportSuggested);
         }
 
         // Lo que queda en planMap son filas de plan sin asistencia registrada
-        const planPendiente = Array.from(planMap.values()).map(function (p) {
+        const planPendiente = noImportSuggested ? [] : Array.from(planMap.values()).map(function (p) {
             return {
                 cliente: p.cliente,
                 empleado: p.empleado,
@@ -222,7 +318,7 @@ const AttendanceDailyAttendance = (function () {
         const combined = attendanceRows.concat(planPendiente);
 
         if (!combined.length) {
-            return [];
+            return buildDailyPlanResponse_([], noImportSuggested);
         }
 
         const result = combined.map(function (row) {
@@ -250,7 +346,7 @@ const AttendanceDailyAttendance = (function () {
             return 0;
         });
 
-        return result;
+        return buildDailyPlanResponse_(result, noImportSuggested);
     }
 
     /**
@@ -338,12 +434,16 @@ const AttendanceDailyAttendance = (function () {
         let rows = [];
         let removed = [];
         let purgeMissing = false;
+        let hasNoImportSuggested = false;
+        let noImportSuggested = false;
         if (Array.isArray(payload)) {
             rows = payload;
         } else if (payload && typeof payload === 'object') {
             rows = Array.isArray(payload.rows) ? payload.rows : [];
             removed = Array.isArray(payload.removed) ? payload.removed : [];
             purgeMissing = payload.purgeMissing === true || payload.purgeMissing === 'true';
+            hasNoImportSuggested = Object.prototype.hasOwnProperty.call(payload, 'noImportSuggested');
+            noImportSuggested = payload.noImportSuggested === true || payload.noImportSuggested === 'true';
         }
         if (!Array.isArray(rows)) return [];
 
@@ -451,8 +551,16 @@ const AttendanceDailyAttendance = (function () {
             });
         }
 
-        updates.deleted = deletedCount;
-        return updates;
+        if (hasNoImportSuggested) {
+            setNoImportSuggestedForDate_(fecha, noImportSuggested);
+        }
+
+        const effectiveNoImport = hasNoImportSuggested ? noImportSuggested : getNoImportSuggestedForDate_(fecha);
+        return {
+            updates: updates,
+            deleted: deletedCount,
+            noImportSuggested: !!effectiveNoImport
+        };
     }
 
     return {

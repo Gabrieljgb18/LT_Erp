@@ -14,13 +14,35 @@
       planCache.delete(fecha);
       return null;
     }
-    return entry.rows || [];
+    return entry.payload || null;
   }
 
-  function storeCachedPlan(fecha, rows) {
-    if (!fecha) return rows;
-    planCache.set(fecha, { ts: Date.now(), rows: Array.isArray(rows) ? rows : [] });
-    return rows;
+  function normalizePlanPayload_(payload) {
+    if (Array.isArray(payload)) {
+      return { rows: payload, noImportSuggested: false };
+    }
+    if (!payload || typeof payload !== "object") {
+      return { rows: [], noImportSuggested: false };
+    }
+    return {
+      rows: Array.isArray(payload.rows) ? payload.rows : [],
+      noImportSuggested: payload.noImportSuggested === true
+    };
+  }
+
+  function storeCachedPlan(fecha, payload) {
+    const normalized = normalizePlanPayload_(payload);
+    if (!fecha) return normalized;
+    planCache.set(fecha, { ts: Date.now(), payload: normalized });
+    return normalized;
+  }
+
+  function invalidateDailyPlan(fecha) {
+    if (!fecha) {
+      planCache.clear();
+      return;
+    }
+    planCache.delete(fecha);
   }
 
   function ensureApi() {
@@ -54,12 +76,11 @@
   function loadDailyPlan(fecha) {
     const cached = getCachedPlan(fecha);
     if (cached) return Promise.resolve(cached);
-    if (!ensureApi()) return Promise.resolve([]);
+    if (!ensureApi()) return Promise.resolve({ rows: [], noImportSuggested: false });
     return global.ApiService.callLatest("attendance-plan-" + fecha, "getDailyAttendancePlan", fecha)
-      .then((rows) => {
-        if (rows && rows.ignored) return rows;
-        if (Array.isArray(rows)) return storeCachedPlan(fecha, rows);
-        return [];
+      .then((payload) => {
+        if (payload && payload.ignored) return payload;
+        return storeCachedPlan(fecha, payload);
       });
   }
 
@@ -80,6 +101,7 @@
   global.AttendanceDailyData = {
     loadReference: loadReference,
     loadDailyPlan: loadDailyPlan,
+    invalidateDailyPlan: invalidateDailyPlan,
     searchRecords: searchRecords,
     saveDailyAttendance: saveDailyAttendance,
     prefetch: function (fecha) {

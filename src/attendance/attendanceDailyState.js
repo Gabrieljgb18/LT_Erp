@@ -12,6 +12,7 @@
     pendingFecha: null,
     pendingFocus: null,
     removedRows: [],
+    noImportSuggested: false,
     eventsController: null,
     rowEventsController: null,
     summaryEventsController: null,
@@ -26,12 +27,13 @@
     return `${yyyy}-${mm}-${dd}`;
   };
 
-  AttendanceDailyState.reset = function (fecha) {
-    AttendanceDailyState.fecha = fecha || AttendanceDailyState.getTodayIso();
-    AttendanceDailyState.rows = [];
-    AttendanceDailyState.loading = false;
-    AttendanceDailyState.removedRows = [];
-  };
+    AttendanceDailyState.reset = function (fecha) {
+      AttendanceDailyState.fecha = fecha || AttendanceDailyState.getTodayIso();
+      AttendanceDailyState.rows = [];
+      AttendanceDailyState.loading = false;
+      AttendanceDailyState.removedRows = [];
+      AttendanceDailyState.noImportSuggested = false;
+    };
 
   AttendanceDailyState.setRoot = function (el) {
     AttendanceDailyState.rootEl = el || null;
@@ -51,6 +53,10 @@
 
   AttendanceDailyState.setLoading = function (isLoading) {
     AttendanceDailyState.loading = !!isLoading;
+  };
+
+  AttendanceDailyState.setNoImportSuggested = function (value) {
+    AttendanceDailyState.noImportSuggested = !!value;
   };
 
   AttendanceDailyState.setPendingFecha = function (fecha) {

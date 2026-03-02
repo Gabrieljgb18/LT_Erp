@@ -18,6 +18,54 @@
             return true;
         }
 
+        function normalizePlanPayload_(payload) {
+            if (Array.isArray(payload)) {
+                return { rows: payload, noImportSuggested: false };
+            }
+            if (!payload || typeof payload !== "object") {
+                return { rows: [], noImportSuggested: false };
+            }
+            return {
+                rows: Array.isArray(payload.rows) ? payload.rows : [],
+                noImportSuggested: payload.noImportSuggested === true
+            };
+        }
+
+        function syncNoImportToggle_() {
+            const root = state.rootEl;
+            const noImportToggle = root ? root.querySelector("#attendance-no-import-suggested") : null;
+            if (noImportToggle) {
+                noImportToggle.checked = !!state.noImportSuggested;
+            }
+        }
+
+        function isSuggestedPendingRow_(row) {
+            if (!row) return false;
+            if (row.fueraDePlan) return false;
+            if (row.idAsistencia || row.asistenciaRowNumber) return false;
+            return true;
+        }
+
+        function applyNoImportSuggested_(flag) {
+            state.setNoImportSuggested(!!flag);
+            syncNoImportToggle_();
+            if (!flag) return;
+            const before = Array.isArray(state.rows) ? state.rows.length : 0;
+            state.rows = (state.rows || []).filter(function (row) {
+                return !isSuggestedPendingRow_(row);
+            });
+            if (before !== state.rows.length) {
+                if (!state.rows.length) addExtraRow(true);
+                render.renderRows();
+                handlers.bindRowEvents({
+                    onUpdateRow: updateRow,
+                    onRemoveRow: removeRow
+                });
+                handlers.bindCollapseArrows();
+                render.renderDailySummary();
+            }
+        }
+
         function renderPanel(container) {
             if (!ensureDeps()) return;
             state.setRoot(container);
@@ -26,6 +74,7 @@
 
             render.renderLayout(container, state.fecha);
             render.renderRows("Cargando...");
+            syncNoImportToggle_();
 
             handlers.bindBaseEvents({
                 onDateChange: function (fecha) {
@@ -40,6 +89,9 @@
                 },
                 onSave: function () {
                     save();
+                },
+                onToggleNoImportSuggested: function (enabled) {
+                    applyNoImportSuggested_(enabled);
                 }
             });
 
@@ -63,7 +115,7 @@
         function loadPlan(fecha) {
             if (!fecha) {
                 if (Alerts) Alerts.showAlert("Elegí una fecha para cargar asistencia.", "warning");
-                return Promise.resolve([]);
+                return Promise.resolve({ rows: [], noImportSuggested: false });
             }
 
             state.setRows([]);
@@ -74,13 +126,16 @@
             if (!data || typeof data.loadDailyPlan !== "function") {
                 render.renderRows("No pudimos cargar el plan diario. Intentá de nuevo.");
                 render.setLoading(false);
-                return Promise.resolve([]);
+                return Promise.resolve({ rows: [], noImportSuggested: false });
             }
 
             return data.loadDailyPlan(fecha)
-                .then(function (rows) {
-                    if (rows && rows.ignored) return;
-                    const list = Array.isArray(rows) ? rows : [];
+                .then(function (payload) {
+                    if (payload && payload.ignored) return;
+                    const planPayload = normalizePlanPayload_(payload);
+                    state.setNoImportSuggested(planPayload.noImportSuggested === true);
+                    syncNoImportToggle_();
+                    const list = planPayload.rows;
                     state.setRows(list.map((r, idx) => state.normalizeRow(r, false, idx)));
 
                     applyPendingFocus();
@@ -105,6 +160,8 @@
                         Alerts && Alerts.showAlert("Error al cargar plan diario", "danger");
                     }
                     state.setRows([]);
+                    state.setNoImportSuggested(false);
+                    syncNoImportToggle_();
                     render.renderRows("No pudimos cargar el plan diario. Intentá de nuevo.");
                 })
                 .finally(function () {
@@ -208,6 +265,7 @@
             if (dateInput) {
                 dateInput.value = fecha;
             }
+            syncNoImportToggle_();
             render.renderRows("Cargando...");
             render.renderDailySummary();
             loadPlan(fecha);
@@ -274,7 +332,8 @@
                     idAsistencia: r.idAsistencia || null
                 })),
                 removed: Array.isArray(state.removedRows) ? state.removedRows.slice() : [],
-                purgeMissing: true
+                purgeMissing: true,
+                noImportSuggested: !!state.noImportSuggested
             };
 
             if (!data || typeof data.saveDailyAttendance !== "function") {
@@ -287,12 +346,19 @@
 
             data.saveDailyAttendance(fecha, payload)
                 .then(function (res) {
+                    const updates = Array.isArray(res)
+                        ? res
+                        : (res && Array.isArray(res.updates) ? res.updates : []);
                     const deletedCount = Array.isArray(res) && typeof res.deleted === "number"
                         ? res.deleted
                         : (res && typeof res.deleted === "number" ? res.deleted : 0);
-                    if (Array.isArray(res) && res.length) {
+                    if (res && typeof res.noImportSuggested === "boolean") {
+                        state.setNoImportSuggested(res.noImportSuggested);
+                        syncNoImportToggle_();
+                    }
+                    if (updates.length) {
                         const byKey = new Map();
-                        res.forEach(function (item) {
+                        updates.forEach(function (item) {
                             if (!item) return;
                             const key = String(item.idCliente || '').trim() + '||' + String(item.idEmpleado || '').trim();
                             if (!key || !item.idAsistencia) return;
@@ -314,6 +380,9 @@
                         Alerts.showAlert(msg, "success");
                     }
                     state.removedRows = [];
+                    if (data && typeof data.invalidateDailyPlan === "function") {
+                        data.invalidateDailyPlan(fecha);
+                    }
                     if (GridManager) GridManager.refreshGrid({ force: "direct", resetPage: false, source: "attendance-save" });
                 })
                 .catch(function (err) {

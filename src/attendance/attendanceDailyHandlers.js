@@ -16,6 +16,7 @@
     const dateInput = state.rootEl.querySelector("#attendance-date");
     const addBtn = state.rootEl.querySelector("#attendance-add-extra");
     const saveBtn = state.rootEl.querySelector("#attendance-save");
+    const noImportToggle = state.rootEl.querySelector("#attendance-no-import-suggested");
 
     if (dateInput) {
       dateInput.addEventListener("change", function () {
@@ -37,6 +38,14 @@
       saveBtn.addEventListener("click", function () {
         if (callbacks && typeof callbacks.onSave === "function") {
           callbacks.onSave();
+        }
+      }, { signal });
+    }
+
+    if (noImportToggle) {
+      noImportToggle.addEventListener("change", function () {
+        if (callbacks && typeof callbacks.onToggleNoImportSuggested === "function") {
+          callbacks.onToggleNoImportSuggested(!!this.checked);
         }
       }, { signal });
     }

@@ -9235,6 +9235,12 @@ var WeeklyPlanTemplates = (function (global) {
                                     <i class="bi bi-check2-circle me-1"></i>Guardar
                                 </button>
                             </div>
+                            <div class="form-check form-switch mb-0 d-flex align-items-center gap-2 flex-shrink-0">
+                                <input class="form-check-input m-0" type="checkbox" id="attendance-no-import-suggested">
+                                <label class="form-check-label small text-muted fw-semibold" for="attendance-no-import-suggested">
+                                    No importar sugeridos del plan
+                                </label>
+                            </div>
                             <div id="attendance-summary" class="d-flex flex-nowrap gap-2 flex-shrink-0"></div>
                         </div>
                     </div>
@@ -9408,6 +9414,7 @@ var WeeklyPlanTemplates = (function (global) {
     pendingFecha: null,
     pendingFocus: null,
     removedRows: [],
+    noImportSuggested: false,
     eventsController: null,
     rowEventsController: null,
     summaryEventsController: null,
@@ -9422,12 +9429,13 @@ var WeeklyPlanTemplates = (function (global) {
     return `${yyyy}-${mm}-${dd}`;
   };
 
-  AttendanceDailyState.reset = function (fecha) {
-    AttendanceDailyState.fecha = fecha || AttendanceDailyState.getTodayIso();
-    AttendanceDailyState.rows = [];
-    AttendanceDailyState.loading = false;
-    AttendanceDailyState.removedRows = [];
-  };
+    AttendanceDailyState.reset = function (fecha) {
+      AttendanceDailyState.fecha = fecha || AttendanceDailyState.getTodayIso();
+      AttendanceDailyState.rows = [];
+      AttendanceDailyState.loading = false;
+      AttendanceDailyState.removedRows = [];
+      AttendanceDailyState.noImportSuggested = false;
+    };
 
   AttendanceDailyState.setRoot = function (el) {
     AttendanceDailyState.rootEl = el || null;
@@ -9447,6 +9455,10 @@ var WeeklyPlanTemplates = (function (global) {
 
   AttendanceDailyState.setLoading = function (isLoading) {
     AttendanceDailyState.loading = !!isLoading;
+  };
+
+  AttendanceDailyState.setNoImportSuggested = function (value) {
+    AttendanceDailyState.noImportSuggested = !!value;
   };
 
   AttendanceDailyState.setPendingFecha = function (fecha) {
@@ -9507,13 +9519,35 @@ var WeeklyPlanTemplates = (function (global) {
       planCache.delete(fecha);
       return null;
     }
-    return entry.rows || [];
+    return entry.payload || null;
   }
 
-  function storeCachedPlan(fecha, rows) {
-    if (!fecha) return rows;
-    planCache.set(fecha, { ts: Date.now(), rows: Array.isArray(rows) ? rows : [] });
-    return rows;
+  function normalizePlanPayload_(payload) {
+    if (Array.isArray(payload)) {
+      return { rows: payload, noImportSuggested: false };
+    }
+    if (!payload || typeof payload !== "object") {
+      return { rows: [], noImportSuggested: false };
+    }
+    return {
+      rows: Array.isArray(payload.rows) ? payload.rows : [],
+      noImportSuggested: payload.noImportSuggested === true
+    };
+  }
+
+  function storeCachedPlan(fecha, payload) {
+    const normalized = normalizePlanPayload_(payload);
+    if (!fecha) return normalized;
+    planCache.set(fecha, { ts: Date.now(), payload: normalized });
+    return normalized;
+  }
+
+  function invalidateDailyPlan(fecha) {
+    if (!fecha) {
+      planCache.clear();
+      return;
+    }
+    planCache.delete(fecha);
   }
 
   function ensureApi() {
@@ -9547,12 +9581,11 @@ var WeeklyPlanTemplates = (function (global) {
   function loadDailyPlan(fecha) {
     const cached = getCachedPlan(fecha);
     if (cached) return Promise.resolve(cached);
-    if (!ensureApi()) return Promise.resolve([]);
+    if (!ensureApi()) return Promise.resolve({ rows: [], noImportSuggested: false });
     return global.ApiService.callLatest("attendance-plan-" + fecha, "getDailyAttendancePlan", fecha)
-      .then((rows) => {
-        if (rows && rows.ignored) return rows;
-        if (Array.isArray(rows)) return storeCachedPlan(fecha, rows);
-        return [];
+      .then((payload) => {
+        if (payload && payload.ignored) return payload;
+        return storeCachedPlan(fecha, payload);
       });
   }
 
@@ -9573,6 +9606,7 @@ var WeeklyPlanTemplates = (function (global) {
   global.AttendanceDailyData = {
     loadReference: loadReference,
     loadDailyPlan: loadDailyPlan,
+    invalidateDailyPlan: invalidateDailyPlan,
     searchRecords: searchRecords,
     saveDailyAttendance: saveDailyAttendance,
     prefetch: function (fecha) {
@@ -10112,6 +10146,7 @@ var WeeklyPlanTemplates = (function (global) {
     const dateInput = state.rootEl.querySelector("#attendance-date");
     const addBtn = state.rootEl.querySelector("#attendance-add-extra");
     const saveBtn = state.rootEl.querySelector("#attendance-save");
+    const noImportToggle = state.rootEl.querySelector("#attendance-no-import-suggested");
 
     if (dateInput) {
       dateInput.addEventListener("change", function () {
@@ -10133,6 +10168,14 @@ var WeeklyPlanTemplates = (function (global) {
       saveBtn.addEventListener("click", function () {
         if (callbacks && typeof callbacks.onSave === "function") {
           callbacks.onSave();
+        }
+      }, { signal });
+    }
+
+    if (noImportToggle) {
+      noImportToggle.addEventListener("change", function () {
+        if (callbacks && typeof callbacks.onToggleNoImportSuggested === "function") {
+          callbacks.onToggleNoImportSuggested(!!this.checked);
         }
       }, { signal });
     }
@@ -10278,6 +10321,54 @@ var WeeklyPlanTemplates = (function (global) {
             return true;
         }
 
+        function normalizePlanPayload_(payload) {
+            if (Array.isArray(payload)) {
+                return { rows: payload, noImportSuggested: false };
+            }
+            if (!payload || typeof payload !== "object") {
+                return { rows: [], noImportSuggested: false };
+            }
+            return {
+                rows: Array.isArray(payload.rows) ? payload.rows : [],
+                noImportSuggested: payload.noImportSuggested === true
+            };
+        }
+
+        function syncNoImportToggle_() {
+            const root = state.rootEl;
+            const noImportToggle = root ? root.querySelector("#attendance-no-import-suggested") : null;
+            if (noImportToggle) {
+                noImportToggle.checked = !!state.noImportSuggested;
+            }
+        }
+
+        function isSuggestedPendingRow_(row) {
+            if (!row) return false;
+            if (row.fueraDePlan) return false;
+            if (row.idAsistencia || row.asistenciaRowNumber) return false;
+            return true;
+        }
+
+        function applyNoImportSuggested_(flag) {
+            state.setNoImportSuggested(!!flag);
+            syncNoImportToggle_();
+            if (!flag) return;
+            const before = Array.isArray(state.rows) ? state.rows.length : 0;
+            state.rows = (state.rows || []).filter(function (row) {
+                return !isSuggestedPendingRow_(row);
+            });
+            if (before !== state.rows.length) {
+                if (!state.rows.length) addExtraRow(true);
+                render.renderRows();
+                handlers.bindRowEvents({
+                    onUpdateRow: updateRow,
+                    onRemoveRow: removeRow
+                });
+                handlers.bindCollapseArrows();
+                render.renderDailySummary();
+            }
+        }
+
         function renderPanel(container) {
             if (!ensureDeps()) return;
             state.setRoot(container);
@@ -10286,6 +10377,7 @@ var WeeklyPlanTemplates = (function (global) {
 
             render.renderLayout(container, state.fecha);
             render.renderRows("Cargando...");
+            syncNoImportToggle_();
 
             handlers.bindBaseEvents({
                 onDateChange: function (fecha) {
@@ -10300,6 +10392,9 @@ var WeeklyPlanTemplates = (function (global) {
                 },
                 onSave: function () {
                     save();
+                },
+                onToggleNoImportSuggested: function (enabled) {
+                    applyNoImportSuggested_(enabled);
                 }
             });
 
@@ -10323,7 +10418,7 @@ var WeeklyPlanTemplates = (function (global) {
         function loadPlan(fecha) {
             if (!fecha) {
                 if (Alerts) Alerts.showAlert("Elegí una fecha para cargar asistencia.", "warning");
-                return Promise.resolve([]);
+                return Promise.resolve({ rows: [], noImportSuggested: false });
             }
 
             state.setRows([]);
@@ -10334,13 +10429,16 @@ var WeeklyPlanTemplates = (function (global) {
             if (!data || typeof data.loadDailyPlan !== "function") {
                 render.renderRows("No pudimos cargar el plan diario. Intentá de nuevo.");
                 render.setLoading(false);
-                return Promise.resolve([]);
+                return Promise.resolve({ rows: [], noImportSuggested: false });
             }
 
             return data.loadDailyPlan(fecha)
-                .then(function (rows) {
-                    if (rows && rows.ignored) return;
-                    const list = Array.isArray(rows) ? rows : [];
+                .then(function (payload) {
+                    if (payload && payload.ignored) return;
+                    const planPayload = normalizePlanPayload_(payload);
+                    state.setNoImportSuggested(planPayload.noImportSuggested === true);
+                    syncNoImportToggle_();
+                    const list = planPayload.rows;
                     state.setRows(list.map((r, idx) => state.normalizeRow(r, false, idx)));
 
                     applyPendingFocus();
@@ -10365,6 +10463,8 @@ var WeeklyPlanTemplates = (function (global) {
                         Alerts && Alerts.showAlert("Error al cargar plan diario", "danger");
                     }
                     state.setRows([]);
+                    state.setNoImportSuggested(false);
+                    syncNoImportToggle_();
                     render.renderRows("No pudimos cargar el plan diario. Intentá de nuevo.");
                 })
                 .finally(function () {
@@ -10468,6 +10568,7 @@ var WeeklyPlanTemplates = (function (global) {
             if (dateInput) {
                 dateInput.value = fecha;
             }
+            syncNoImportToggle_();
             render.renderRows("Cargando...");
             render.renderDailySummary();
             loadPlan(fecha);
@@ -10534,7 +10635,8 @@ var WeeklyPlanTemplates = (function (global) {
                     idAsistencia: r.idAsistencia || null
                 })),
                 removed: Array.isArray(state.removedRows) ? state.removedRows.slice() : [],
-                purgeMissing: true
+                purgeMissing: true,
+                noImportSuggested: !!state.noImportSuggested
             };
 
             if (!data || typeof data.saveDailyAttendance !== "function") {
@@ -10547,12 +10649,19 @@ var WeeklyPlanTemplates = (function (global) {
 
             data.saveDailyAttendance(fecha, payload)
                 .then(function (res) {
+                    const updates = Array.isArray(res)
+                        ? res
+                        : (res && Array.isArray(res.updates) ? res.updates : []);
                     const deletedCount = Array.isArray(res) && typeof res.deleted === "number"
                         ? res.deleted
                         : (res && typeof res.deleted === "number" ? res.deleted : 0);
-                    if (Array.isArray(res) && res.length) {
+                    if (res && typeof res.noImportSuggested === "boolean") {
+                        state.setNoImportSuggested(res.noImportSuggested);
+                        syncNoImportToggle_();
+                    }
+                    if (updates.length) {
                         const byKey = new Map();
-                        res.forEach(function (item) {
+                        updates.forEach(function (item) {
                             if (!item) return;
                             const key = String(item.idCliente || '').trim() + '||' + String(item.idEmpleado || '').trim();
                             if (!key || !item.idAsistencia) return;
@@ -10574,6 +10683,9 @@ var WeeklyPlanTemplates = (function (global) {
                         Alerts.showAlert(msg, "success");
                     }
                     state.removedRows = [];
+                    if (data && typeof data.invalidateDailyPlan === "function") {
+                        data.invalidateDailyPlan(fecha);
+                    }
                     if (GridManager) GridManager.refreshGrid({ force: "direct", resetPage: false, source: "attendance-save" });
                 })
                 .catch(function (err) {
