@@ -195,8 +195,9 @@
       return;
     }
     const includeInactive = checkVerInactivos ? checkVerInactivos.checked : false;
-    RecordsData.searchRecords(tipoFormato, "", includeInactive)
+    RecordsData.searchRecords(tipoFormato, "", includeInactive, { force: true, resetPage: true })
       .then(function (records) {
+        if (records && records.ignored) return;
         if (GridManager) {
           GridManager.renderGrid(tipoFormato, records || [], { resetPage: true });
         }
@@ -236,16 +237,16 @@
     if (handlersBound) return;
     handlersBound = true;
     registerReferenceHandler("clientes", () => {
-      if (GridManager) GridManager.refreshGrid();
+      if (GridManager) GridManager.refreshGrid({ force: "direct", resetPage: false, source: "ref-update:clientes" });
     });
     registerReferenceHandler("empleados", () => {
-      if (GridManager) GridManager.refreshGrid();
+      if (GridManager) GridManager.refreshGrid({ force: "direct", resetPage: false, source: "ref-update:empleados" });
     });
     registerReferenceHandler("adelantos", () => {
-      if (GridManager) GridManager.refreshGrid();
+      if (GridManager) GridManager.refreshGrid({ force: "direct", resetPage: false, source: "ref-update:adelantos" });
     });
     registerReferenceHandler("gastos", () => {
-      if (GridManager) GridManager.refreshGrid();
+      if (GridManager) GridManager.refreshGrid({ force: "direct", resetPage: false, source: "ref-update:gastos" });
     });
     registerReferenceHandler("pagos", (detail) => {
       if (PaymentsPanelHandlers && typeof PaymentsPanelHandlers.handleReferenceUpdate === "function") {
@@ -285,8 +286,9 @@
         // Actually searchRecords is async, so better show strict loading if it's a new search
       }
 
-      RecordsData.searchRecords(tipoFormato, query, includeInactive)
+      RecordsData.searchRecords(tipoFormato, query, includeInactive, { force: true, resetPage: true })
         .then(function (records) {
+          if (records && records.ignored) return;
           if (GridManager) {
             GridManager.renderGrid(tipoFormato, records || [], { resetPage: true });
           }
@@ -335,11 +337,32 @@
 
     // Botón Refresh
     const btnRefresh = document.getElementById("btn-refresh");
+    function triggerRegistroRefresh(source) {
+      if (GridManager) {
+        const includeInactive = checkVerInactivos ? checkVerInactivos.checked : false;
+        const query = searchInput ? searchInput.value : "";
+        GridManager.refreshGrid({
+          force: "direct",
+          resetPage: true,
+          format: currentRegistroFormat,
+          includeInactive: includeInactive,
+          query: query,
+          source: source || "btn-refresh"
+        });
+      }
+    }
     if (btnRefresh) {
       btnRefresh.addEventListener("click", function () {
-        if (GridManager) {
-          GridManager.refreshGrid();
-        }
+        triggerRegistroRefresh("btn-refresh");
+      });
+      btnRefresh.dataset.refreshBound = "1";
+    }
+    if (typeof document !== "undefined") {
+      document.addEventListener("click", function (e) {
+        const btn = e.target && e.target.closest ? e.target.closest("#btn-refresh") : null;
+        if (!btn) return;
+        if (btn.dataset && btn.dataset.refreshBound === "1") return;
+        triggerRegistroRefresh("btn-refresh-delegated");
       });
     }
 
@@ -377,7 +400,7 @@
                 const currentFormat = FormManager && typeof FormManager.getCurrentFormat === "function"
                   ? FormManager.getCurrentFormat()
                   : null;
-                GridManager.refreshGrid();
+                GridManager.refreshGrid({ force: "direct", resetPage: true, source: "modal-save" });
               }
             }, 500);
           };
@@ -403,7 +426,7 @@
               const currentFormat = FormManager && typeof FormManager.getCurrentFormat === "function"
                 ? FormManager.getCurrentFormat()
                 : null;
-              GridManager.refreshGrid();
+              GridManager.refreshGrid({ force: "direct", resetPage: true, source: "modal-delete" });
             }
           };
           if (result && typeof result.then === "function") {

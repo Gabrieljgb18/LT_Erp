@@ -141,7 +141,7 @@ var InvoiceController = (function () {
 
         if (periodo && (clienteData.id || clienteData.razonSocial)) {
             if (existsInvoiceForPeriod_(clienteData, periodo)) {
-                throw new Error('Ya existe una factura para este cliente en el período ' + periodo);
+                throw new Error('Ya existe una factura para ' + clienteData.razonSocial + ' en el período ' + periodo);
             }
         }
 
@@ -149,11 +149,22 @@ var InvoiceController = (function () {
         return RecordController.saveRecord(FORMAT_ID, data);
     }
 
-    /**
-     * Actualiza una factura
-     */
     function updateInvoice(id, data) {
         data = data || {};
+
+        // Validar duplicado de periodo para el cliente (excluyendo la actual)
+        const clienteData = {
+            id: data.ID_CLIENTE || data.id_cliente || '',
+            razonSocial: data['RAZÓN SOCIAL'] || data.razonSocial || data.cliente || ''
+        };
+        const periodo = data.PERIODO || data.periodo || '';
+
+        if (id && periodo && (clienteData.id || clienteData.razonSocial)) {
+            if (existsInvoiceForPeriod_(clienteData, periodo, id)) {
+                throw new Error('Ya existe otra factura para ' + clienteData.razonSocial + ' en el período ' + periodo);
+            }
+        }
+
         applyTotals_(data);
         return RecordController.updateRecord(FORMAT_ID, id, data);
     }
@@ -217,7 +228,7 @@ var InvoiceController = (function () {
 
         applyTotals_(record);
         const id = RecordController.saveRecord(FORMAT_ID, record);
-        return { id: id, record: record };
+        return { id: id };
     }
 
     function parseDateSafe_(val) {
@@ -471,6 +482,43 @@ var InvoiceController = (function () {
         return n > 1 ? n / 100 : n;
     }
 
+    function isReciboXValue_(val) {
+        const norm = normalize_(val || '');
+        return norm.indexOf('recibo x') !== -1 || norm.indexOf('recibox') !== -1;
+    }
+
+    function resolveClientBillingType_(clientId) {
+        const idStr = normalizeIdString_(clientId);
+        if (!idStr || !DatabaseService || !DatabaseService.getDbSheetForFormat || !DatabaseService.findRowById) {
+            return '';
+        }
+        try {
+            const sheet = DatabaseService.getDbSheetForFormat('CLIENTES');
+            const rowNumber = DatabaseService.findRowById(sheet, idStr);
+            if (!rowNumber) return '';
+            const lastCol = sheet.getLastColumn();
+            if (!lastCol) return '';
+            const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => normalizeHeader_(h));
+            const idxTipoFact = headers.indexOf('TIPO FACTURACION');
+            if (idxTipoFact === -1) return '';
+            const row = sheet.getRange(rowNumber, 1, 1, lastCol).getValues()[0];
+            return String(row[idxTipoFact] || '').trim();
+        } catch (e) {
+            return '';
+        }
+    }
+
+    function isReciboXInvoice_(record, fallbackClientId) {
+        const data = record || {};
+        const comprobante = data['COMPROBANTE'] || data['comprobante'] || '';
+        const tipoFacturacion = data['TIPO FACTURACION'] || data['TIPO_FACTURACION'] || data.tipoFacturacion || '';
+        const clientId = data['ID_CLIENTE'] || data['ID CLIENTE'] || data.idCliente || fallbackClientId || '';
+        const tipoFacturacionCliente = resolveClientBillingType_(clientId);
+        return isReciboXValue_(comprobante) ||
+            isReciboXValue_(tipoFacturacion) ||
+            isReciboXValue_(tipoFacturacionCliente);
+    }
+
     /**
      * Calcula IMPORTE, SUBTOTAL y TOTAL según HORAS, VALOR HORA e IVA.
      */
@@ -497,7 +545,7 @@ var InvoiceController = (function () {
 
         if (subtotal == null) return;
         subtotal = round2_(subtotal);
-        const ivaPct = getIvaPct_();
+        const ivaPct = isReciboXInvoice_(record) ? 0 : getIvaPct_();
         const total = round2_(subtotal * (1 + ivaPct));
 
         record['IMPORTE'] = subtotal;
@@ -539,12 +587,23 @@ var InvoiceController = (function () {
         const lastCol = sheet.getLastColumn();
         if (lastRow < 2 || lastCol === 0) return false;
 
-        const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || '').toUpperCase());
+        const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => normalizeHeader_(h));
         const idxId = headers.indexOf('ID');
         const idxIdCliente = headers.indexOf('ID_CLIENTE');
-        const idxCliente = headers.indexOf('RAZÓN SOCIAL');
-        const idxPeriodo = headers.indexOf('PERIODO');
-        const idxEstado = headers.indexOf('ESTADO');
+        const idxCliente = headers.indexOf('RAZON SOCIAL'); // Normalized: 'RAZON SOCIAL' vs 'RAZÓN SOCIAL' -> NFD removes accent?
+        // normalizeHeader_ uses normalize_().toUpperCase(). normalize_ removes accents.
+        // So 'RAZÓN SOCIAL' becomes 'RAZON SOCIAL'. 'PERIODO ' becomes 'PERIODO'.
+
+        let idxPeriodo = headers.indexOf('PERIODO');
+        let idxEstado = headers.indexOf('ESTADO');
+
+        // Fallback checks just in case
+        if (idxPeriodo === -1) idxPeriodo = headers.indexOf('PERIODO');
+        if (idxCliente === -1) {
+            // Maybe 'CLIENTE'
+            const idxCliAlt = headers.indexOf('CLIENTE');
+            if (idxCliAlt > -1) headers[idxCliAlt] = 'RAZON SOCIAL'; // treat as such
+        }
 
         if (idxPeriodo === -1) return false;
 
@@ -568,8 +627,9 @@ var InvoiceController = (function () {
 
             if (targetId && idxIdCliente > -1 && String(row[idxIdCliente]) === targetId) return true;
 
-            if (idxCliente > -1) {
-                const cliNorm = normalize_(row[idxCliente]);
+            const idxCli = idxCliente > -1 ? idxCliente : headers.indexOf('CLIENTE');
+            if (idxCli > -1) {
+                const cliNorm = normalize_(row[idxCli]);
                 if (cliNorm === targetNorm) return true;
             }
             return false;
@@ -698,6 +758,8 @@ var InvoiceController = (function () {
 
         const ivaPct = getIvaPct_();
         const ivaLabel = (ivaPct * 100).toFixed(2).replace(/\.00$/, '') + '%';
+
+        const isReciboX = isReciboXInvoice_(inv, idCliente);
 
         function toNum_(val) {
             if (val == null || val === '') return 0;
@@ -900,10 +962,12 @@ var InvoiceController = (function () {
                             <div class="info-label">CUIT</div>
                             <div class="info-value">${escapeHtml_(inv['CUIT'] || '-')}</div>
                         </div>
+                        ${isReciboX ? '' : `
                         <div class="info-row">
                             <div class="info-label">IVA</div>
-                            <div class="info-value">Responsable Inscripto (21%)</div>
+                            <div class="info-value">Responsable Inscripto (${escapeHtml_(ivaLabel)})</div>
                         </div>
+                        `}
                     </div>
                     <div class="info-card">
                         <div class="section-title">Resumen Período</div>
@@ -949,10 +1013,12 @@ var InvoiceController = (function () {
                             <span style="color: #64748b;">Subtotal</span>
                             <span>$ ${escapeHtml_(money_(subtotal))}</span>
                         </div>
+                        ${isReciboX ? '' : `
                         <div class="total-row">
-                            <span style="color: #64748b;">IVA (21%)</span>
+                            <span style="color: #64748b;">IVA (${escapeHtml_(ivaLabel)})</span>
                             <span>$ ${escapeHtml_(money_(iva))}</span>
                         </div>
+                        `}
                         <div class="total-row grand-total">
                             <span>Total</span>
                             <span>$ ${escapeHtml_(money_(total))}</span>
@@ -1022,6 +1088,8 @@ var InvoiceController = (function () {
             rows.push({
                 idCliente: group.idCliente || '',
                 cliente: group.cliente || '',
+                razonSocial: group.razonSocial || group.cliente || '',
+                cuit: group.cuit || '',
                 horas: round2_(group.horas || 0),
                 dias: group.dias || 0,
                 facturado: !!inv,
@@ -1030,7 +1098,8 @@ var InvoiceController = (function () {
                 facturaNumero: inv ? inv.lastNumero : '',
                 facturaEstado: inv ? inv.lastEstado : '',
                 facturaTotal: inv ? round2_(inv.lastTotal) : 0,
-                totalFacturado: inv ? round2_(inv.totalSum) : 0
+                totalFacturado: inv ? round2_(inv.totalSum) : 0,
+                importe: round2_(group.totalImporte || 0)
             });
         });
 
@@ -1088,18 +1157,34 @@ var InvoiceController = (function () {
             let group = result.get(key);
             if (!group) {
                 let clienteLabel = clienteRaw;
+                let razonSocial = clienteRaw;
+                let cuit = '';
+                let cli = null;
                 if (idCliente && DatabaseService.findClienteById) {
-                    const cli = DatabaseService.findClienteById(idCliente);
-                    if (cli && (cli.razonSocial || cli.nombre)) {
-                        clienteLabel = cli.razonSocial || cli.nombre;
-                    }
+                    cli = DatabaseService.findClienteById(idCliente);
+                }
+                if (!cli && clienteRaw && DatabaseService.findClienteByNombreORazon) {
+                    cli = DatabaseService.findClienteByNombreORazon(clienteRaw);
+                }
+                if (cli && (cli.razonSocial || cli.nombre)) {
+                    clienteLabel = cli.razonSocial || cli.nombre;
+                    razonSocial = cli.razonSocial || cli.nombre;
+                } else if (clienteRaw) {
+                    razonSocial = clienteRaw;
+                }
+                if (cli) {
+                    cuit = resolveCuitFromClient_(cli);
                 }
                 group = {
                     key: key,
                     idCliente: idCliente,
                     cliente: clienteLabel,
+                    razonSocial: razonSocial || clienteLabel || clienteRaw || '',
+                    cuit: cuit || '',
                     horas: 0,
-                    diasSet: {}
+                    diasSet: {},
+                    totalImporte: 0,
+                    _rateResolver: buildClientRateResolver_(razonSocial || clienteLabel || clienteRaw || '', idCliente)
                 };
                 result.set(key, group);
             }
@@ -1107,12 +1192,17 @@ var InvoiceController = (function () {
             group.horas += horas;
             const d = Utilities.formatDate(fecha, tz, 'yyyy-MM-dd');
             group.diasSet[d] = true;
+
+            const rate = group._rateResolver ? group._rateResolver(fecha) : 0;
+            const rateNum = isNaN(rate) ? 0 : Number(rate);
+            group.totalImporte += horas * rateNum;
         });
 
         // compactar diasSet
         result.forEach(group => {
             group.dias = Object.keys(group.diasSet || {}).length;
             delete group.diasSet;
+            delete group._rateResolver;
         });
 
         return result;

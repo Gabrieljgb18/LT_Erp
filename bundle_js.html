@@ -393,8 +393,15 @@ var NumberUtils = (function () {
       const nombre = toStr(emp.nombre || emp.displayName || emp.empleado || emp.label || "").trim();
       const id = emp.id || emp.ID || emp.ID_EMPLEADO;
       const idStr = id != null ? toStr(id).trim() : "";
-      if (nombre && idStr) return `${nombre} (#${idStr})`;
-      return nombre || idStr;
+      if (nombre) {
+        const cleaned = nombre
+          .replace(/\s*\(#\s*[A-Za-z0-9_-]+\)\s*/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+        if (idStr) return cleaned ? `${cleaned} (#${idStr})` : `#${idStr}`;
+        return cleaned;
+      }
+      return idStr;
     }
 
     function extractIdFromLabel(label) {
@@ -2728,15 +2735,32 @@ var NumberUtils = (function () {
 
   function getEmployeeOptions(referenceData) {
     const employees = (referenceData && referenceData.empleados) || [];
+    const stripId = (value) => {
+      if (!value) return "";
+      return String(value)
+        .replace(/\s*\(#\s*[A-Za-z0-9_-]+\)\s*/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    };
     return employees.map((emp) => {
-      const label = typeof emp === "string"
+      const rawName = typeof emp === "string"
         ? emp
         : (emp.nombre || emp.empleado || emp.label || "");
+      const cleanName = stripId(rawName);
+      const idStr = emp && typeof emp === "object" && emp.id != null ? String(emp.id) : "";
+      let label = cleanName;
+      if (global.DomainHelpers && typeof global.DomainHelpers.getEmployeeLabel === "function") {
+        label = global.DomainHelpers.getEmployeeLabel(emp);
+      } else if (cleanName && idStr) {
+        label = `${cleanName} (#${idStr})`;
+      } else if (!cleanName && idStr) {
+        label = `#${idStr}`;
+      }
       return {
-        value: label,
+        value: cleanName || label,
         label: label,
         dataset: {
-          id: emp && typeof emp === "object" && emp.id != null ? String(emp.id) : ""
+          id: idStr
         }
       };
     });
@@ -5269,6 +5293,7 @@ var NumberUtils = (function () {
 (function (global) {
     const GridManager = (() => {
         let currentFormat = null;
+        let refreshToken = 0;
         let allRecords = [];
         let currentEditingRecord = null;
         let eventsController = null;
@@ -5695,7 +5720,8 @@ var NumberUtils = (function () {
         function deleteRecord(record) {
             if (!record) return;
             const id = record.ID || record.Id || record.id;
-            if (!id) {
+            const rowNumber = record._rowNumber ? Number(record._rowNumber) || null : null;
+            if (!id && !rowNumber) {
                 Alerts && Alerts.showAlert('ID no encontrado para eliminar.', 'warning');
                 return;
             }
@@ -5724,8 +5750,8 @@ var NumberUtils = (function () {
                 return;
             }
 
-            const payload = record._rowNumber
-                ? { id: id, rowNumber: record._rowNumber }
+            const payload = rowNumber
+                ? { id: id || "", rowNumber: rowNumber }
                 : id;
 
             RecordsData.deleteRecord(currentFormat, payload)
@@ -5740,7 +5766,7 @@ var NumberUtils = (function () {
                     if (refData && FormManager) {
                         FormManager.updateReferenceData(refData);
                     }
-                    refreshGrid();
+                    refreshGrid(true);
                     if (global.location && typeof global.location.reload === "function") {
                         setTimeout(function () {
                             global.location.reload();
@@ -5812,18 +5838,52 @@ var NumberUtils = (function () {
         /**
          * Recarga los datos de la grilla
          */
-        function refreshGrid() {
-            if (!currentFormat) return;
+        function refreshGrid(force) {
+            let options = {};
+            if (force && typeof force === "object") {
+                options = force;
+            } else if (force === true) {
+                options = { force: "direct" };
+            } else {
+                options = { force: !!force };
+            }
+
+            const formatOverride = options.format || currentFormat;
+            if (!formatOverride) return;
+            const format = formatOverride;
 
             // Aquí iría la lógica para recargar los datos desde el servidor
             if (RecordsData && typeof RecordsData.searchRecords === 'function') {
-                renderLoading(currentFormat, "Actualizando registros...");
-                const query = getCurrentQuery();
-                const includeInactive = getIncludeInactive();
-                RecordsData.searchRecords(currentFormat, query, includeInactive)
+                const token = ++refreshToken;
+                renderLoading(format, "Actualizando registros...");
+                const query = options.query != null ? options.query : getCurrentQuery();
+                const includeInactive = options.includeInactive != null ? options.includeInactive : getIncludeInactive();
+                if (format === "EMPLEADOS") {
+                    try {
+                        console.log("[DEBUG] refreshGrid", {
+                            source: options.source || "",
+                            query: query,
+                            includeInactive: includeInactive,
+                            force: options.force
+                        });
+                    } catch (e) {
+                        // ignore
+                    }
+                }
+                RecordsData.searchRecords(format, query, includeInactive, options)
                     .then(records => {
                         if (records && records.ignored) return;
-                        renderGrid(currentFormat, records);
+                        if (token !== refreshToken) return;
+                        if (format === "EMPLEADOS" && Array.isArray(records)) {
+                            const target = records.find(r => String(r.id) === "9") || null;
+                            const estado = target && target.record ? target.record.ESTADO : (target ? target.ESTADO : undefined);
+                            console.log("[DEBUG] refreshGrid result", {
+                                count: records.length,
+                                targetId: target ? target.id : null,
+                                targetEstado: estado
+                            });
+                        }
+                        renderGrid(format, records, options);
                     })
                     .catch(err => {
                         console.error('Error al recargar la grilla:', err);
@@ -10515,7 +10575,7 @@ var WeeklyPlanTemplates = (function (global) {
                         Alerts.showAlert(msg, "success");
                     }
                     state.removedRows = [];
-                    if (GridManager) GridManager.refreshGrid();
+                    if (GridManager) GridManager.refreshGrid({ force: "direct", resetPage: false, source: "attendance-save" });
                 })
                 .catch(function (err) {
                     if (Alerts && typeof Alerts.showError === "function") {
@@ -14712,7 +14772,12 @@ var InvoiceTemplates = (function () {
                                     
                                     <div class="col-md-8">
                                         <label class="form-label">Razón Social <span class="text-danger">*</span></label>
-                                        <input list="invoice-modal-client-list" class="form-control" id="invoice-razon-social" required>
+                                        <div class="input-group">
+                                            <input list="invoice-modal-client-list" class="form-control" id="invoice-razon-social" required>
+                                            <button class="btn btn-outline-secondary d-none" type="button" id="invoice-add-client-btn" title="Nuevo Cliente">
+                                                <i class="bi bi-plus-lg"></i>
+                                            </button>
+                                        </div>
                                         <datalist id="invoice-modal-client-list"></datalist>
                                     </div>
                                     <div class="col-md-4">
@@ -14755,10 +14820,15 @@ var InvoiceTemplates = (function () {
                             </form>
                         </div>
                         <div class="modal-footer">
-                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                            <button type="button" class="btn btn-primary" id="invoice-save-btn">
-                                <i class="bi bi-save me-1"></i>Guardar
+                            <button type="button" class="btn btn-outline-danger d-none" id="invoice-download-btn">
+                                <i class="bi bi-file-earmark-pdf-fill me-1"></i>Descargar PDF
                             </button>
+                            <div class="ms-auto d-flex gap-2">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                                <button type="button" class="btn btn-primary" id="invoice-save-btn">
+                                    <i class="bi bi-save me-1"></i>Guardar
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -14812,6 +14882,58 @@ var InvoiceTemplates = (function () {
                     </div>
                 </div>
             </div>
+            <!-- Popover compacto de factura rápida -->
+            <div id="invoice-quick-popover" class="lt-quick-popover d-none" role="dialog" aria-hidden="true">
+                <div class="lt-quick-popover__arrow"></div>
+                <div class="lt-quick-popover__panel">
+                    <div class="lt-quick-popover__header lt-quick-popover__header--clean">
+                        <button type="button" class="btn btn-sm btn-light lt-quick-popover__close" id="quick-close-btn" aria-label="Cerrar">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </div>
+
+                    <input type="hidden" id="quick-client-id">
+                    <input type="hidden" id="quick-period">
+                    <input type="hidden" id="quick-range-start">
+                    <input type="hidden" id="quick-range-end">
+
+                    <div class="lt-quick-popover__meta">
+                        <button type="button" class="lt-quick-copy lt-quick-copy--title" id="quick-razon-copy" data-copy="" title="Copiar razón social">
+                            <span id="quick-client-label"></span>
+                            <i class="bi bi-copy"></i>
+                        </button>
+                        <div class="lt-quick-popover__meta-row">
+                            <button type="button" class="lt-quick-chip lt-quick-copy" id="quick-cuit-copy" data-copy="" title="Copiar CUIT">
+                                <span class="lt-quick-chip__label">CUIT</span>
+                                <strong id="quick-cuit">—</strong>
+                                <i class="bi bi-copy"></i>
+                            </button>
+                            <button type="button" class="lt-quick-chip lt-quick-chip--amount lt-quick-copy" id="quick-importe-copy" data-copy="" title="Copiar monto">
+                                <span class="lt-quick-chip__label">Monto</span>
+                                <strong id="quick-importe">—</strong>
+                                <i class="bi bi-copy"></i>
+                            </button>
+                        </div>
+                    <div class="small text-muted d-none" id="quick-period-label"></div>
+                </div>
+
+                    <div class="lt-quick-popover__divider"></div>
+
+                    <label class="form-label small fw-semibold mb-1" for="quick-invoice-number">Número de factura</label>
+                    <input type="text" class="form-control form-control-sm text-center lt-quick-popover__input" id="quick-invoice-number" placeholder="0000-00000000" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="numeric">
+
+                    <div id="quick-status-msg" class="lt-quick-popover__status d-none">
+                        <i class="bi bi-check-circle-fill me-1"></i>Factura guardada. Podés descargar el PDF.
+                    </div>
+
+                    <div class="lt-quick-popover__actions">
+                        <button type="button" class="btn btn-primary btn-sm lt-quick-popover__btn" id="quick-save-btn">Guardar</button>
+                        <button type="button" class="btn btn-outline-danger btn-sm lt-quick-popover__btn" id="quick-download-btn" disabled>
+                            <i class="bi bi-file-earmark-pdf-fill me-1"></i>Descargar PDF
+                        </button>
+                    </div>
+                </div>
+            </div>
         `;
     }
 
@@ -14840,6 +14962,8 @@ var InvoiceTemplates = (function () {
     invoicePage: 1,
     generatorPage: 1,
     coverageRows: [],
+    quickPopoverOpen: false,
+    quickPopoverAnchor: null,
     eventsController: null,
     Dom: (typeof DomHelpers !== "undefined" && DomHelpers) ? DomHelpers : null,
     escapeHtml: (typeof HtmlHelpers !== "undefined" && HtmlHelpers && typeof HtmlHelpers.escapeHtml === "function")
@@ -15175,6 +15299,9 @@ var InvoiceTemplates = (function () {
           dataset: {
             idCliente: String(r.idCliente || ""),
             cliente: String(r.cliente || ""),
+            razonSocial: String(r.razonSocial || r.cliente || ""),
+            cuit: String(r.cuit || ""),
+            importe: r.importe != null ? String(r.importe) : "",
             period: String(period || "")
           }
         }, [
@@ -15972,9 +16099,27 @@ var InvoiceTemplates = (function () {
     const saveBtn = document.getElementById("invoice-save-btn");
     on(saveBtn, "click", handleSave);
 
+    const dlBtn = document.getElementById("invoice-download-btn");
+    on(dlBtn, "click", () => {
+      const id = document.getElementById("invoice-id")?.value;
+      if (id) downloadPdf(id, dlBtn);
+    });
+
+    /*
+    const addClientBtn = document.getElementById("invoice-add-client-btn");
+    on(addClientBtn, "click", () => {
+      if (typeof RecordManager !== "undefined" && RecordManager && typeof RecordManager.openNewModal === "function") {
+        RecordManager.openNewModal("CLIENTES");
+        // Escuchar cierre de modal para refrescar ddl si fuera necesario
+      } else {
+        Alerts && Alerts.showAlert("Módulo de Clientes no disponible", "warning");
+      }
+    });
+    */
+
     const dlLastBtn = document.getElementById("invoice-download-last-btn");
     on(dlLastBtn, "click", () => {
-      if (state.lastSavedInvoiceId) downloadPdf(state.lastSavedInvoiceId);
+      if (state.lastSavedInvoiceId) downloadPdf(state.lastSavedInvoiceId, dlLastBtn);
     });
     const dlSelectedBtn = document.getElementById("invoice-download-selected");
     on(dlSelectedBtn, "click", downloadSelectedPdfs);
@@ -16031,9 +16176,113 @@ var InvoiceTemplates = (function () {
         const idCliente = btn.dataset ? btn.dataset.idCliente || "" : "";
         const cliente = btn.dataset ? btn.dataset.cliente || "" : "";
         const period = btn.dataset ? btn.dataset.period || "" : "";
-        generateCoverageInvoice(idCliente, cliente, period);
+        generateCoverageInvoice(idCliente, cliente, period, btn);
       });
     }
+    const quickSaveBtn = document.getElementById("quick-save-btn");
+    on(quickSaveBtn, "click", handleQuickSave);
+
+    const quickDlBtn = document.getElementById("quick-download-btn");
+    on(quickDlBtn, "click", () => {
+      const id = quickDlBtn && quickDlBtn.dataset ? quickDlBtn.dataset.invoiceId : "";
+      const useId = id || state.lastSavedInvoiceId;
+      if (useId) downloadPdf(useId, quickDlBtn);
+    });
+
+    const quickCloseBtn = document.getElementById("quick-close-btn");
+    on(quickCloseBtn, "click", closeQuickPopover);
+
+    const quickPopover = document.getElementById("invoice-quick-popover");
+    on(quickPopover, "click", (e) => {
+      const btn = e.target && e.target.closest ? e.target.closest("[data-copy]") : null;
+      if (!btn || btn.disabled) return;
+      const value = btn.dataset ? (btn.dataset.copy || "") : "";
+      if (!value) return;
+      copyToClipboard(value).then((ok) => {
+        if (ok) flashCopied(btn);
+      });
+    });
+    on(document, "mousedown", (e) => {
+      if (!state.quickPopoverOpen) return;
+      if (quickPopover && quickPopover.contains(e.target)) return;
+      if (state.quickPopoverAnchor && state.quickPopoverAnchor.contains && state.quickPopoverAnchor.contains(e.target)) return;
+      closeQuickPopover();
+    });
+    on(document, "keydown", (e) => {
+      if (!state.quickPopoverOpen) return;
+      if (e.key === "Escape") closeQuickPopover();
+    });
+    on(window, "resize", () => {
+      if (state.quickPopoverOpen) positionQuickPopover(state.quickPopoverAnchor);
+    });
+  }
+
+  // Nuevo: Manejador para el guardado desde el modal rápido
+  function handleQuickSave() {
+    const idCliente = document.getElementById("quick-client-id").value;
+    const numFactura = document.getElementById("quick-invoice-number").value;
+    const dateStart = document.getElementById("quick-range-start").value;
+    const dateEnd = document.getElementById("quick-range-end").value;
+    const cliLabel = document.getElementById("quick-client-label").textContent;
+
+    if (!numFactura) {
+      Alerts && Alerts.showAlert("Ingresá el número de factura", "warning");
+      return;
+    }
+
+    const saveBtn = document.getElementById("quick-save-btn");
+    const dlBtn = document.getElementById("quick-download-btn");
+    const statusMsg = document.getElementById("quick-status-msg");
+    const ui = global.UIHelpers;
+
+    if (ui && typeof ui.withSpinner === "function") ui.withSpinner(saveBtn, true, "Guardando...");
+
+    InvoiceService.createInvoiceFromAttendance(
+      { cliente: cliLabel, idCliente: idCliente },
+      dateStart,
+      dateEnd,
+      {
+        numero: numFactura,
+        observaciones: `Período: ${dateStart} a ${dateEnd}`
+      },
+      idCliente
+    ).then((res) => {
+        let newId = "";
+        if (res && (typeof res === "string" || typeof res === "number")) {
+          newId = res;
+        } else if (res && typeof res === "object") {
+          newId = res.id || res.ID;
+        }
+        if (!newId) throw new Error("No se pudo obtener ID");
+
+        state.lastSavedInvoiceId = String(newId);
+
+        // Update UI: Success state
+        if (statusMsg) statusMsg.classList.remove("d-none");
+        if (saveBtn) {
+          saveBtn.classList.add("d-none"); // Ocultamos guardar
+        }
+        if (dlBtn) {
+          dlBtn.disabled = false; // Habilitamos descargar
+          dlBtn.removeAttribute("disabled");
+          dlBtn.removeAttribute("aria-disabled");
+          dlBtn.classList.remove("disabled");
+          dlBtn.style.pointerEvents = "auto";
+          dlBtn.style.opacity = "1";
+          if (dlBtn.dataset) dlBtn.dataset.invoiceId = String(newId);
+          dlBtn.focus();
+        }
+
+        // Refresh background data
+        if (global.InvoicePanelData) {
+          try { global.InvoicePanelData.handleCoverageSearch(); } catch (e) { }
+        }
+
+      }).catch((err) => {
+      console.error(err);
+      Alerts && Alerts.showAlert("Error al guardar: " + err.message, "danger");
+      if (ui && typeof ui.withSpinner === "function") ui.withSpinner(saveBtn, false);
+    });
   }
 
   function getFilters() {
@@ -16106,6 +16355,9 @@ var InvoiceTemplates = (function () {
     if (!invoiceData || !invoiceData.ID) {
       recalculateTotals();
     }
+    const dlBtn = document.getElementById("invoice-download-btn");
+    if (dlBtn) dlBtn.classList.toggle("d-none", !invoiceData || !invoiceData.ID);
+
     modal.show();
   }
 
@@ -16181,43 +16433,29 @@ var InvoiceTemplates = (function () {
         const newId = res && (res.id || res);
         const isUpdate = !!id;
 
-        bootstrap.Modal.getInstance(document.getElementById("invoice-modal")).hide();
-        state.invoicePage = 1;
-
-        if (global.InvoicePanelData) {
-          global.InvoicePanelData.refreshGeneratorList();
-        }
-
+        // No cerramos el modal. Actualizamos estado para permitir descarga.
         if (newId) {
+          document.getElementById("invoice-id").value = newId;
           state.lastSavedInvoiceId = String(newId);
+
+          const dlBtn = document.getElementById("invoice-download-btn");
+          if (dlBtn) dlBtn.classList.remove("d-none");
+
+          const title = document.getElementById("invoice-modal-title");
+          if (title) title.textContent = "Editar Factura";
+
           if (global.InvoicePanelRender) {
             global.InvoicePanelRender.updateSelectionUi();
           }
         }
 
-        // Si es creación, ofrecer descarga
-        if (!isUpdate && newId) {
-          const confirmMsg = `Factura guardada correctamente.\n\n¿Querés descargar el PDF ahora?`;
-          const confirmDownload = (window.UiDialogs && typeof window.UiDialogs.confirm === "function")
-            ? window.UiDialogs.confirm({
-              title: "Factura Guardada",
-              message: confirmMsg,
-              confirmText: "Descargar",
-              cancelText: "Cerrar",
-              confirmVariant: "success",
-              icon: "bi-check-circle-fill",
-              iconClass: "text-success"
-            })
-            : Promise.resolve(confirm(confirmMsg));
-
-          confirmDownload.then((confirmed) => {
-            if (confirmed) {
-              downloadPdf(String(newId));
-            }
-          });
-        } else {
-          Alerts && Alerts.showAlert("Factura actualizada exitosamente", "success");
+        state.invoicePage = 1;
+        if (global.InvoicePanelData) {
+          global.InvoicePanelData.refreshGeneratorList();
         }
+
+        Alerts && Alerts.showAlert(isUpdate ? "Factura actualizada." : "Factura guardada.", "success");
+        // showDownloadConfirm_ ya no es necesario porque el botón está visible en el modal
       })
       .catch((err) => {
         if (Alerts && typeof Alerts.showError === "function") {
@@ -16258,8 +16496,6 @@ var InvoiceTemplates = (function () {
         } else {
           cuitInput.value = docNumber;
         }
-      } else {
-        cuitInput.value = "";
       }
       if (cliente.id && idClienteInput) {
         idClienteInput.value = cliente.id;
@@ -16398,7 +16634,8 @@ var InvoiceTemplates = (function () {
       numero: numInput ? numInput.value : "",
       observaciones: obsInput ? obsInput.value : ""
     }, idCliente)
-      .then(() => {
+      .then((res) => {
+        const newId = res && (res.id || (res.record && res.record.ID) || (typeof res === 'string' || typeof res === 'number' ? res : null));
         Alerts && Alerts.showAlert("Factura generada desde asistencia.", "success");
         const modalEl = document.getElementById("invoice-att-modal");
         if (modalEl) {
@@ -16406,6 +16643,7 @@ var InvoiceTemplates = (function () {
           if (modal) modal.hide();
         }
         handleSearch();
+        if (newId) showDownloadConfirm_(newId, false);
       })
       .catch((err) => {
         if (Alerts && typeof Alerts.showError === "function") {
@@ -16444,9 +16682,11 @@ var InvoiceTemplates = (function () {
 
     UiState && UiState.setGlobalLoading(true, "Generando factura con filtros...");
     InvoiceService.createInvoiceFromAttendance(clienteRaw, fechaDesde, fechaHasta, {}, idCliente)
-      .then(() => {
+      .then((res) => {
+        const newId = res && (res.id || (res.record && res.record.ID) || (typeof res === 'string' || typeof res === 'number' ? res : null));
         Alerts && Alerts.showAlert("Factura generada.", "success");
         handleSearch();
+        if (newId) showDownloadConfirm_(newId, false);
       })
       .catch((err) => {
         if (Alerts && typeof Alerts.showError === "function") {
@@ -16515,79 +16755,191 @@ var InvoiceTemplates = (function () {
     });
   }
 
-  function generateCoverageInvoice(idCliente, cliente, period) {
+  function openQuickPopover(anchorBtn) {
+    const popover = document.getElementById("invoice-quick-popover");
+    if (!popover) return;
+    popover.classList.remove("d-none");
+    popover.setAttribute("aria-hidden", "false");
+    state.quickPopoverOpen = true;
+    state.quickPopoverAnchor = anchorBtn || null;
+    positionQuickPopover(anchorBtn);
+  }
+
+  function copyToClipboard(text) {
+    if (!text) return Promise.resolve(false);
+    if (navigator && navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      return navigator.clipboard.writeText(text).then(() => true).catch(() => fallbackCopy_(text));
+    }
+    return fallbackCopy_(text);
+  }
+
+  function fallbackCopy_(text) {
+    try {
+      const el = document.createElement("textarea");
+      el.value = text;
+      el.setAttribute("readonly", "");
+      el.style.position = "fixed";
+      el.style.opacity = "0";
+      document.body.appendChild(el);
+      el.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(el);
+      return Promise.resolve(!!ok);
+    } catch (e) {
+      return Promise.resolve(false);
+    }
+  }
+
+  function flashCopied(el) {
+    if (!el) return;
+    el.classList.add("is-copied");
+    if (el._copyTimer) clearTimeout(el._copyTimer);
+    el._copyTimer = setTimeout(() => {
+      el.classList.remove("is-copied");
+    }, 900);
+  }
+
+  function closeQuickPopover() {
+    const popover = document.getElementById("invoice-quick-popover");
+    if (!popover) return;
+    popover.classList.add("d-none");
+    popover.setAttribute("aria-hidden", "true");
+    popover.style.visibility = "";
+    state.quickPopoverOpen = false;
+    state.quickPopoverAnchor = null;
+  }
+
+  function positionQuickPopover(anchorBtn) {
+    const popover = document.getElementById("invoice-quick-popover");
+    if (!popover) return;
+
+    const spacing = 8;
+    const viewportW = window.innerWidth || document.documentElement.clientWidth || 0;
+    const viewportH = window.innerHeight || document.documentElement.clientHeight || 0;
+    const anchorRect = anchorBtn && anchorBtn.getBoundingClientRect
+      ? anchorBtn.getBoundingClientRect()
+      : {
+        top: viewportH / 2,
+        bottom: viewportH / 2,
+        left: viewportW / 2,
+        width: 0,
+        height: 0
+      };
+
+    popover.style.visibility = "hidden";
+    popover.classList.remove("d-none");
+    popover.classList.remove("lt-quick-popover--below");
+
+    const popRect = popover.getBoundingClientRect();
+
+    let top = anchorRect.top - popRect.height - spacing;
+    if (top < 12) {
+      top = anchorRect.bottom + spacing;
+      popover.classList.add("lt-quick-popover--below");
+    }
+
+    let left = anchorRect.left + anchorRect.width / 2 - popRect.width / 2;
+    const minLeft = 12;
+    const maxLeft = Math.max(minLeft, viewportW - popRect.width - 12);
+    left = Math.min(Math.max(left, minLeft), maxLeft);
+
+    const arrowLeft = Math.min(
+      Math.max(anchorRect.left + anchorRect.width / 2 - left, 16),
+      popRect.width - 16
+    );
+
+    popover.style.setProperty("--lt-popover-arrow-left", `${Math.round(arrowLeft)}px`);
+    const maxTop = Math.max(12, viewportH - popRect.height - 12);
+    top = Math.min(Math.max(top, 12), maxTop);
+    popover.style.top = `${Math.round(top)}px`;
+    popover.style.left = `${Math.round(left)}px`;
+    popover.style.visibility = "visible";
+  }
+
+  // Abre el popover compacto para facturación rápida
+  function generateCoverageInvoice(idCliente, cliente, period, anchorBtn) {
     const p = String(period || "").trim();
     const range = global.InvoicePanelData ? global.InvoicePanelData.monthRangeFromPeriod(p) : { start: "", end: "" };
-    if (!range.start || !range.end) {
-      Alerts && Alerts.showAlert("Período inválido para generar.", "warning");
-      return;
+
+    document.getElementById("quick-client-id").value = idCliente || "";
+    document.getElementById("quick-period").value = p;
+    document.getElementById("quick-range-start").value = range.start || "";
+    document.getElementById("quick-range-end").value = range.end || "";
+
+    const razonSocial = anchorBtn && anchorBtn.dataset ? (anchorBtn.dataset.razonSocial || "") : "";
+    const cuit = anchorBtn && anchorBtn.dataset ? (anchorBtn.dataset.cuit || "") : "";
+    const importeRaw = anchorBtn && anchorBtn.dataset ? anchorBtn.dataset.importe : "";
+
+    const labelEl = document.getElementById("quick-client-label");
+    const razonLabel = razonSocial || cliente || "Cliente";
+    if (labelEl) labelEl.textContent = razonLabel;
+
+    const razonCopy = document.getElementById("quick-razon-copy");
+    if (razonCopy) {
+      razonCopy.dataset.copy = razonLabel || "";
+      razonCopy.disabled = !razonLabel;
+      razonCopy.classList.toggle("is-empty", !razonLabel);
     }
-    const cli = String(cliente || "").trim();
-    const id = String(idCliente || "").trim();
 
-    const Dom = global.DomHelpers;
+    const cuitEl = document.getElementById("quick-cuit");
+    const cuitCopy = document.getElementById("quick-cuit-copy");
+    if (cuitEl) cuitEl.textContent = cuit || "—";
+    if (cuitCopy) {
+      cuitCopy.dataset.copy = cuit || "";
+      cuitCopy.disabled = !cuit;
+      cuitCopy.classList.toggle("is-empty", !cuit);
+    }
 
-    (window.UiDialogs && typeof window.UiDialogs.prompt === "function")
-      ? window.UiDialogs.prompt({
-        title: "Número de Factura",
-        message: `Ingresá el número para la factura de ${cli}:`,
-        placeholder: "0000-00000000",
-        onAction: async (numFactura) => {
-          if (!numFactura) throw new Error("Debes ingresar un número de factura.");
+    const importeNum = importeRaw !== "" && importeRaw != null ? Number(importeRaw) : NaN;
+    const hasImporte = !isNaN(importeNum);
+    const importeLabel = hasImporte && typeof Formatters !== "undefined" && Formatters && typeof Formatters.formatCurrency === "function"
+      ? Formatters.formatCurrency(importeNum)
+      : (hasImporte ? String(importeNum) : "—");
+    const importeEl = document.getElementById("quick-importe");
+    const importeCopy = document.getElementById("quick-importe-copy");
+    if (importeEl) importeEl.textContent = importeLabel || "—";
+    if (importeCopy) {
+      importeCopy.dataset.copy = hasImporte ? String(importeNum) : "";
+      importeCopy.disabled = !hasImporte;
+      importeCopy.classList.toggle("is-empty", !hasImporte);
+    }
 
-          UiState && UiState.setGlobalLoading(true, "Generando factura y preparando PDF...");
-          try {
-            const res = await InvoiceService.createInvoiceFromAttendance(
-              cli || { cliente: cli, idCliente: id },
-              range.start,
-              range.end,
-              {
-                numero: numFactura,
-                observaciones: `Período: ${range.start} a ${range.end}`
-              },
-              id || ""
-            );
+    const periodLabel = document.getElementById("quick-period-label");
+    if (periodLabel) {
+      periodLabel.textContent = `Período: ${range.start} - ${range.end}`;
+      periodLabel.classList.add("d-none");
+    }
 
-            const newId = res && (res.id || (res.record && res.record.ID));
-            if (!newId) throw new Error("No se pudo obtener el ID de la factura.");
+    document.getElementById("quick-invoice-number").value = "";
 
-            state.lastSavedInvoiceId = String(newId);
-            if (global.InvoicePanelData) {
-              global.InvoicePanelData.handleCoverageSearch();
-            }
+    // Reset states
+    const saveBtn = document.getElementById("quick-save-btn");
+    const dlBtn = document.getElementById("quick-download-btn");
+    const statusMsg = document.getElementById("quick-status-msg");
 
-            return {
-              success: true,
-              render: (container) => {
-                container.appendChild(Dom.el("div", { className: "text-center py-2" }, [
-                  Dom.el("div", { className: "text-success mb-2" }, [
-                    Dom.el("i", { className: "bi bi-check-circle-fill fs-2" })
-                  ]),
-                  Dom.el("div", { className: "fw-bold mb-3", text: "¡Factura generada!" }),
-                  Dom.el("button", {
-                    className: "btn btn-primary w-100 d-flex align-items-center justify-content-center gap-2",
-                    onClick: () => downloadPdf(String(newId))
-                  }, [
-                    Dom.el("i", { className: "bi bi-file-earmark-pdf-fill" }),
-                    Dom.text("Descargar PDF")
-                  ])
-                ]));
-              }
-            };
-          } catch (err) {
-            if (Alerts && typeof Alerts.showError === "function") {
-              Alerts.showError("Error generando factura", err);
-            } else {
-              console.error("Error generando factura (cobertura):", err);
-              Alerts && Alerts.showAlert("Error generando factura", "danger");
-            }
-            throw err; // Re-throw to indicate failure to the dialog
-          } finally {
-            UiState && UiState.setGlobalLoading(false);
-          }
-        }
-      })
-      : Promise.resolve(null);
+    if (saveBtn) {
+      saveBtn.classList.remove("d-none");
+      saveBtn.disabled = false;
+      // Fix: Reset content explicitly instead of using withSpinner(false) which might wipe it if no originalContent exists
+      saveBtn.innerHTML = "Guardar";
+      delete saveBtn.dataset.originalContent;
+    }
+    if (dlBtn) {
+      dlBtn.disabled = true;
+      dlBtn.setAttribute("aria-disabled", "true");
+      dlBtn.style.pointerEvents = "none";
+      dlBtn.removeAttribute("data-invoice-id");
+    }
+    if (statusMsg) statusMsg.classList.add("d-none");
+
+    openQuickPopover(anchorBtn);
+
+    // Focus input
+    setTimeout(() => {
+      const input = document.getElementById("quick-invoice-number");
+      if (input) input.focus();
+      if (state.quickPopoverOpen) positionQuickPopover(state.quickPopoverAnchor);
+    }, 50);
   }
 
   function editAttendance(id) {
@@ -16666,9 +17018,55 @@ var InvoiceTemplates = (function () {
     });
   }
 
-  function downloadPdf(id) {
+  function showDownloadConfirm_(id, isUpdate) {
     if (!id) return;
-    UiState && UiState.setGlobalLoading(true, "Generando PDF...");
+    state.lastSavedInvoiceId = String(id);
+    if (global.InvoicePanelRender) global.InvoicePanelRender.updateSelectionUi();
+
+    const isMsg = isUpdate ? "Factura actualizada correctamente" : "Factura guardada correctamente";
+    const confirmMsg = `${isMsg}.\n\n¿Querés descargar el PDF ahora?`;
+
+    const confirmDownload = (window.UiDialogs && typeof window.UiDialogs.confirm === "function")
+      ? window.UiDialogs.confirm({
+        title: isUpdate ? "Factura Actualizada" : "Factura Guardada",
+        message: confirmMsg,
+        confirmText: "Descargar PDF",
+        cancelText: "Cerrar",
+        confirmVariant: "success",
+        icon: "bi-check-circle-fill",
+        iconClass: "text-success"
+      })
+      : Promise.resolve(confirm(confirmMsg));
+
+    confirmDownload.then((confirmed) => {
+      if (confirmed) downloadPdf(String(id));
+    });
+  }
+
+  function downloadPdf(id, sourceBtn) {
+    if (!id) return;
+
+    const ui = global.UIHelpers;
+    let activeBtn = sourceBtn;
+    const modalBtn = document.getElementById("invoice-download-btn");
+    const lastBtn = document.getElementById("invoice-download-last-btn");
+
+    // Fallback
+    if (!activeBtn) {
+      const isModalOpen = modalBtn && modalBtn.offsetParent !== null;
+      if (isModalOpen) {
+        activeBtn = modalBtn;
+      } else if (lastBtn && !lastBtn.disabled) {
+        activeBtn = lastBtn;
+      }
+    }
+
+    if (activeBtn && ui && typeof ui.withSpinner === "function") {
+      ui.withSpinner(activeBtn, true, "Generando...");
+    } else {
+      UiState && UiState.setGlobalLoading(true, "Generando PDF...");
+    }
+
     InvoiceService.generateInvoicePdf(id)
       .then((res) => {
         if (!res || !res.base64) {
@@ -16688,7 +17086,17 @@ var InvoiceTemplates = (function () {
           Alerts && Alerts.showAlert("Error al generar PDF", "danger");
         }
       })
-      .finally(() => UiState && UiState.setGlobalLoading(false));
+      .finally(() => {
+        if (activeBtn && ui && typeof ui.withSpinner === "function") {
+          // Restaurar etiqueta original con icono
+          // withSpinner(btn, false) restaura el originalContent
+          ui.withSpinner(activeBtn, false);
+          // Aseguramos que el botón del modal siga visible
+          if (activeBtn === modalBtn) activeBtn.classList.remove("d-none");
+        } else {
+          UiState && UiState.setGlobalLoading(false);
+        }
+      });
   }
 
   function setInvoicePage(page) {
@@ -16860,6 +17268,37 @@ var InvoicePanel = (function () {
  * Estado y helpers del panel de detalle de horas.
  */
 (function (global) {
+  function escapeRegExp(value) {
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  function sanitizeLabelName(label, idStr) {
+    if (!label) return "";
+    let text = String(label);
+    if (idStr) {
+      const esc = escapeRegExp(idStr);
+      text = text.replace(new RegExp(`\\s*\\(#\\s*${esc}\\s*\\)\\s*`, "g"), " ");
+      text = text.replace(new RegExp(`\\s*#\\s*${esc}\\b`, "g"), " ");
+    }
+    return text.replace(/\s+/g, " ").trim();
+  }
+
+  function extractId(label) {
+    if (!label) return "";
+    if (typeof DomainHelpers !== "undefined" && DomainHelpers && typeof DomainHelpers.extractIdFromLabel === "function") {
+      const extracted = DomainHelpers.extractIdFromLabel(label);
+      if (extracted) return extracted;
+    }
+    const str = String(label);
+    const hashMatch = str.match(/#\s*([A-Za-z0-9_-]+)/);
+    if (hashMatch) return hashMatch[1].trim();
+    const idMatch = str.match(/ID\s*:\s*([^|)]+)/i);
+    if (idMatch) return idMatch[1].trim();
+    const plain = str.trim();
+    if (/^\d+$/.test(plain)) return plain;
+    return "";
+  }
+
   const state = {
     containerId: "hours-detail-panel",
     employeeIdMap: new Map(),
@@ -16889,12 +17328,8 @@ var InvoicePanel = (function () {
         if (!idStr) return "";
         let label = state.formatEmployeeLabel(emp);
         label = label != null ? String(label).trim() : "";
-        if (!label) label = `#${idStr}`;
-        if (typeof DomainHelpers !== "undefined" && DomainHelpers && typeof DomainHelpers.extractIdFromLabel === "function") {
-          if (!DomainHelpers.extractIdFromLabel(label)) {
-            label = `${label} (#${idStr})`;
-          }
-        }
+        const base = sanitizeLabelName(label, idStr);
+        label = base ? `${base} (#${idStr})` : `#${idStr}`;
         state.employeeIdMap.set(label, idStr);
         return label;
       })
@@ -16905,13 +17340,11 @@ var InvoicePanel = (function () {
 
   state.getEmployeeIdFromLabel = function (label) {
     if (!label) return "";
-    if (typeof DomainHelpers !== "undefined" && DomainHelpers && typeof DomainHelpers.extractIdFromLabel === "function") {
-      const extracted = DomainHelpers.extractIdFromLabel(label);
-      if (extracted) return extracted;
+    const labelStr = String(label).trim();
+    if (state.employeeIdMap && state.employeeIdMap.has(labelStr)) {
+      return state.employeeIdMap.get(labelStr);
     }
-    const plain = String(label).trim();
-    if (/^\\d+$/.test(plain)) return plain;
-    return "";
+    return extractId(labelStr);
   };
 
   global.HoursDetailPanelState = state;
@@ -16983,7 +17416,7 @@ var InvoicePanel = (function () {
 
   function deleteRecord(id) {
     if (!ensureApi()) return Promise.reject(new Error("ApiService no disponible"));
-    return global.ApiService.call("deleteRecord", ["ASISTENCIA", id]);
+    return global.ApiService.call("deleteRecord", "ASISTENCIA", id);
   }
 
   function updateRecord(id, payload) {
@@ -17220,12 +17653,12 @@ var InvoicePanel = (function () {
 
       const editBtn = Dom.el("button", {
         className: "btn btn-sm btn-outline-primary lt-btn-icon btn-edit-hour",
-        dataset: { id: row.id },
+        dataset: { id: row.id, rowNumber: row.rowNumber },
         title: "Editar"
       }, Dom.el("i", { className: "bi bi-pencil-fill" }));
       const deleteBtn = Dom.el("button", {
         className: "btn btn-sm btn-outline-danger lt-btn-icon btn-delete-hour",
-        dataset: { id: row.id },
+        dataset: { id: row.id, rowNumber: row.rowNumber },
         title: "Eliminar"
       }, Dom.el("i", { className: "bi bi-trash-fill" }));
       const actions = Dom.el("div", { className: "d-flex gap-2 justify-content-end" }, [editBtn, deleteBtn]);
@@ -17452,18 +17885,28 @@ var InvoicePanel = (function () {
     const editBtn = event.target.closest(".btn-edit-hour");
     if (editBtn) {
       const id = editBtn.dataset.id;
-      const record = state.lastResults.find((r) => String(r.id) === String(id));
+      const rowNumber = editBtn.dataset.rowNumber;
+      let record = null;
+      if (id) {
+        record = state.lastResults.find((r) => String(r.id) === String(id));
+      }
+      if (!record && rowNumber) {
+        record = state.lastResults.find((r) => String(r.rowNumber) === String(rowNumber));
+      }
       if (record) openInlineEditModal(record);
       return;
     }
     const deleteBtn = event.target.closest(".btn-delete-hour");
     if (deleteBtn) {
       const id = deleteBtn.dataset.id;
-      if (id) deleteRecord(id);
+      const rowNumber = deleteBtn.dataset.rowNumber;
+      if (id || rowNumber) {
+        deleteRecord({ id: id || "", rowNumber: rowNumber ? Number(rowNumber) : null });
+      }
     }
   }
 
-  function deleteRecord(id) {
+  function deleteRecord(idPayload) {
     const confirmPromise =
       typeof window !== "undefined" &&
       window.UiDialogs &&
@@ -17483,7 +17926,8 @@ var InvoicePanel = (function () {
       if (!confirmed) return;
 
       UiState && UiState.setGlobalLoading(true, "Eliminando...");
-      global.HoursDetailPanelData.deleteRecord(id)
+      const payload = (idPayload && typeof idPayload === "object") ? idPayload : idPayload;
+      global.HoursDetailPanelData.deleteRecord(payload)
         .then(() => {
           Alerts && Alerts.showAlert("Registro eliminado correctamente", "success");
           if (state.lastFilters) {
@@ -19847,6 +20291,37 @@ var InvoicePanel = (function () {
  * AccountStatementPanelState
  */
 (function (global) {
+  function escapeRegExp(value) {
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  function sanitizeLabelName(label, idStr) {
+    if (!label) return "";
+    let text = String(label);
+    if (idStr) {
+      const esc = escapeRegExp(idStr);
+      text = text.replace(new RegExp(`\\s*\\(#\\s*${esc}\\s*\\)\\s*`, "g"), " ");
+      text = text.replace(new RegExp(`\\s*#\\s*${esc}\\b`, "g"), " ");
+    }
+    return text.replace(/\s+/g, " ").trim();
+  }
+
+  function extractId(label) {
+    if (!label) return "";
+    if (typeof DomainHelpers !== "undefined" && DomainHelpers && typeof DomainHelpers.extractIdFromLabel === "function") {
+      const extracted = DomainHelpers.extractIdFromLabel(label);
+      if (extracted) return extracted;
+    }
+    const str = String(label);
+    const hashMatch = str.match(/#\s*([A-Za-z0-9_-]+)/);
+    if (hashMatch) return hashMatch[1].trim();
+    const idMatch = str.match(/ID\s*:\s*([^|)]+)/i);
+    if (idMatch) return idMatch[1].trim();
+    const plain = str.trim();
+    if (/^\d+$/.test(plain)) return plain;
+    return "";
+  }
+
   const state = {
     containerId: "account-statement-panel",
     defaultPaymentMethods: ["Uala", "Mercado Pago", "Efectivo", "Santander"],
@@ -19876,12 +20351,8 @@ var InvoicePanel = (function () {
           ? DomainHelpers.getEmployeeLabel(emp)
           : (emp.nombre || emp.empleado || "");
         label = label != null ? String(label).trim() : "";
-        if (!label) label = `#${idStr}`;
-        if (typeof DomainHelpers !== "undefined" && DomainHelpers && typeof DomainHelpers.extractIdFromLabel === "function") {
-          if (!DomainHelpers.extractIdFromLabel(label)) {
-            label = `${label} (#${idStr})`;
-          }
-        }
+        const base = sanitizeLabelName(label, idStr);
+        label = base ? `${base} (#${idStr})` : `#${idStr}`;
         state.employeeIdMap.set(label, idStr);
         return label;
       })
@@ -19892,13 +20363,11 @@ var InvoicePanel = (function () {
 
   state.getEmployeeIdFromLabel = function (label) {
     if (!label) return "";
-    if (typeof DomainHelpers !== "undefined" && DomainHelpers && typeof DomainHelpers.extractIdFromLabel === "function") {
-      const extracted = DomainHelpers.extractIdFromLabel(label);
-      if (extracted) return extracted;
+    const labelStr = String(label).trim();
+    if (state.employeeIdMap && state.employeeIdMap.has(labelStr)) {
+      return state.employeeIdMap.get(labelStr);
     }
-    const plain = String(label).trim();
-    if (/^\\d+$/.test(plain)) return plain;
-    return "";
+    return extractId(labelStr);
   };
 
   global.AccountStatementPanelState = state;
@@ -20992,10 +21461,17 @@ var BulkValuesPanel = (function () {
     return global.ApiService.call("getAvailableFormats");
   }
 
-  function searchRecords(tipoFormato, query, includeInactive) {
+  function searchRecords(tipoFormato, query, includeInactive, options) {
     if (!ensureApi()) return Promise.resolve([]);
+    const opts = options || {};
+    const key = "search-" + String(tipoFormato || "") + "|" + String(query || "") + "|" + String(includeInactive || "");
+    if ((opts.force === true || opts.force === "direct") && global.ApiService.dataCache && global.ApiService.dataCache.search) {
+      global.ApiService.dataCache.search.delete(key);
+    }
+    if (opts.force === "direct") {
+      return global.ApiService.call("searchRecords", tipoFormato, query || "", includeInactive);
+    }
     if (typeof global.ApiService.callLatest === "function") {
-      const key = "search-" + String(tipoFormato || "") + "|" + String(query || "") + "|" + String(includeInactive || "");
       return global.ApiService.callLatest(
         key,
         "searchRecords",
@@ -21072,6 +21548,21 @@ var BulkValuesPanel = (function () {
         let selectedRowNumber = null;
         let selectedRowIndex = null;
         const RecordsData = global.RecordsData || null;
+        const isTruthyValue = (value) => {
+            if (typeof DataUtils !== "undefined" && DataUtils && typeof DataUtils.isTruthy === "function") {
+                return DataUtils.isTruthy(value);
+            }
+            const str = value == null ? "" : String(value).trim().toLowerCase();
+            return (
+                value === true ||
+                value === 1 ||
+                value === "1" ||
+                str === "true" ||
+                str === "activo" ||
+                str === "si" ||
+                str === "sí"
+            );
+        };
 
         function refreshReferencesIfNeeded(tipoFormato) {
             if (!RecordsData || typeof RecordsData.refreshReferenceDataIfNeeded !== "function") return;
@@ -21128,12 +21619,7 @@ var BulkValuesPanel = (function () {
 
                 if (input.type === "checkbox") {
                     // Recognize various truthy values including normalized strings
-                    input.checked = value === true ||
-                        value === "TRUE" ||
-                        value === "true" ||  // Added for normalized boolean
-                        value === "Activo" ||
-                        value === 1 ||
-                        value === "1";
+                    input.checked = isTruthyValue(value);
                     input.dispatchEvent(new Event("change"));
                 } else {
                     // For text inputs, use the value as-is (even if empty string)
@@ -21171,7 +21657,49 @@ var BulkValuesPanel = (function () {
             const record = {};
             let hasErrors = false;
             const errorFields = [];
+            const errorDetails = [];
             const inputUtils = global.InputUtils || {};
+            const originalRecord = (currentMode === "edit" && global.GridManager && typeof global.GridManager.getCurrentEditingRecord === "function")
+                ? global.GridManager.getCurrentEditingRecord()
+                : null;
+
+            function normalizeBool(value) {
+                return isTruthyValue(value);
+            }
+
+            function normalizeNumber(value) {
+                if (value === null || value === undefined || value === "") return null;
+                if (NumberUtils && typeof NumberUtils.parseLocalizedNumber === "function") {
+                    return NumberUtils.parseLocalizedNumber(value);
+                }
+                const n = Number(value);
+                return isNaN(n) ? null : n;
+            }
+
+            function normalizeString(value) {
+                if (value === null || value === undefined) return "";
+                return String(value).trim();
+            }
+
+            function isSameValue(field, currentValue, previousValue) {
+                if (!field) return normalizeString(currentValue) === normalizeString(previousValue);
+                if (field.type === "boolean") {
+                    return normalizeBool(currentValue) === normalizeBool(previousValue);
+                }
+                if (field.type === "number") {
+                    const n1 = normalizeNumber(currentValue);
+                    const n2 = normalizeNumber(previousValue);
+                    if (n1 === null && n2 === null) {
+                        return normalizeString(currentValue) === normalizeString(previousValue);
+                    }
+                    if (n1 !== null && n2 !== null) return n1 === n2;
+                    return normalizeString(currentValue) === normalizeString(previousValue);
+                }
+                if (field.type === "date" || field.type === "time") {
+                    return normalizeString(currentValue) === normalizeString(previousValue);
+                }
+                return normalizeString(currentValue) === normalizeString(previousValue);
+            }
 
             function shouldSkipValidation(field, input) {
                 if (!field || !input) return true;
@@ -21180,10 +21708,18 @@ var BulkValuesPanel = (function () {
                 return false;
             }
 
-            function registerError(field, input) {
+            function registerError(field, input, reason) {
                 if (!field || !input) return;
                 input.classList.add("is-invalid");
                 errorFields.push(field.label || field.id);
+                if (reason) {
+                    const label = field.label || field.id;
+                    const value = record[field.id];
+                    const valueLabel = value !== undefined && value !== null && String(value).trim() !== ""
+                        ? `: "${value}"`
+                        : "";
+                    errorDetails.push(label + " (" + reason + valueLabel + ")");
+                }
                 hasErrors = true;
             }
 
@@ -21203,6 +21739,38 @@ var BulkValuesPanel = (function () {
                 record[field.id] = value;
             });
 
+            const sanitizeCoord = (value, min, max) => {
+                if (value == null || String(value).trim() === "") return "";
+                let num = null;
+                if (NumberUtils && typeof NumberUtils.parseLocalizedNumber === "function") {
+                    num = NumberUtils.parseLocalizedNumber(value);
+                } else {
+                    num = Number(value);
+                }
+                if (num == null || isNaN(num)) return "";
+                if (num < min || num > max) return "";
+                return String(num);
+            };
+
+            if (record["MAPS LAT"] !== undefined) {
+                record["MAPS LAT"] = sanitizeCoord(record["MAPS LAT"], -90, 90);
+            }
+            if (record["MAPS LNG"] !== undefined) {
+                record["MAPS LNG"] = sanitizeCoord(record["MAPS LNG"], -180, 180);
+            }
+
+            if (originalRecord) {
+                formDef.fields.forEach(function (field) {
+                    if (!field || !field.id) return;
+                    if (!Object.prototype.hasOwnProperty.call(record, field.id)) return;
+                    const currentValue = record[field.id];
+                    const previousValue = originalRecord[field.id];
+                    if (isSameValue(field, currentValue, previousValue)) {
+                        delete record[field.id];
+                    }
+                });
+            }
+
             formDef.fields.forEach(function (field) {
                 const input = document.getElementById("field-" + field.id);
                 if (!input) return;
@@ -21213,7 +21781,7 @@ var BulkValuesPanel = (function () {
                 if (field.type === "phone" && hasValue) {
                     if (typeof inputUtils.isValidPhone === "function") {
                         if (!inputUtils.isValidPhone(value)) {
-                            registerError(field, input);
+                            registerError(field, input, "teléfono inválido");
                         }
                     }
                 }
@@ -21221,7 +21789,7 @@ var BulkValuesPanel = (function () {
                 if (field.type === "email" && hasValue) {
                     if (typeof inputUtils.isValidEmail === "function") {
                         if (!inputUtils.isValidEmail(value)) {
-                            registerError(field, input);
+                            registerError(field, input, "email inválido");
                         }
                     }
                 }
@@ -21231,7 +21799,10 @@ var BulkValuesPanel = (function () {
                     const docType = field.docTypeValue || record[docTypeField] || "";
                     if (typeof inputUtils.isValidDocNumber === "function") {
                         if (!inputUtils.isValidDocNumber(value, docType)) {
-                            registerError(field, input);
+                            const reason = docType
+                                ? "documento inválido para " + docType
+                                : "tipo de documento inválido";
+                            registerError(field, input, reason);
                         }
                     }
                 }
@@ -21241,12 +21812,12 @@ var BulkValuesPanel = (function () {
                         ? NumberUtils.parseLocalizedNumber(value)
                         : Number(value);
                     if (parsedNumber === null || isNaN(parsedNumber)) {
-                        registerError(field, input);
+                        registerError(field, input, "número inválido");
                     }
                 }
 
                 if (typeof input.checkValidity === "function" && !input.checkValidity()) {
-                    registerError(field, input);
+                    registerError(field, input, "valor inválido");
                 }
             });
 
@@ -21268,20 +21839,28 @@ var BulkValuesPanel = (function () {
                         input.classList.add("is-invalid");
                     }
                     errorFields.push(rule.label || rule.labelField);
+                    errorDetails.push((rule.label || rule.labelField) + " (falta ID asociado)");
                     hasErrors = true;
                 }
             });
 
             if (hasErrors) {
                 const unique = Array.from(new Set(errorFields)).filter(Boolean);
-                const msg = unique.length
-                    ? "Revisá los campos: " + unique.join(", ")
+                const details = Array.from(new Set(errorDetails)).filter(Boolean);
+                const msg = (details.length || unique.length)
+                    ? "Revisá los campos: " + (details.length ? details.join(", ") : unique.join(", "))
                     : "Por favor completá los campos requeridos.";
                 if (Alerts) Alerts.showAlert(msg, "warning");
                 return Promise.resolve(false);
             }
 
             UiState.setGlobalLoading(true, "Guardando...");
+
+            if (currentMode === "edit" && !selectedRowNumber) {
+                if (Alerts) Alerts.showAlert("No se pudo resolver el ID del registro a actualizar.", "danger");
+                UiState.setGlobalLoading(false);
+                return Promise.resolve(false);
+            }
 
             if (currentMode === "edit" && selectedRowNumber) {
                 // Update existing (selectedRowNumber now contains ID)
@@ -21290,15 +21869,47 @@ var BulkValuesPanel = (function () {
                     UiState.setGlobalLoading(false);
                     return Promise.resolve(false);
                 }
-                return RecordsData.updateRecord(tipoFormato, selectedRowNumber, record)
+                const payload = selectedRowIndex
+                    ? { id: selectedRowNumber, rowNumber: selectedRowIndex }
+                    : selectedRowNumber;
+                if (tipoFormato === "EMPLEADOS") {
+                    try {
+                        console.log("[DEBUG] update EMPLEADOS payload:", payload, "record:", record);
+                    } catch (e) {
+                        // ignore
+                    }
+                }
+                return RecordsData.updateRecord(tipoFormato, payload, record)
                     .then(function () {
                         if (Alerts) Alerts.showAlert("✅ Registro actualizado correctamente.", "success");
                         enterCreateMode(true);
-                        refreshReferencesIfNeeded(tipoFormato);
-                        return true;
+
+                        // Invalidar caché de referencias para CLIENTES y EMPLEADOS
+                        if ((tipoFormato === "CLIENTES" || tipoFormato === "EMPLEADOS") && global.ApiService && global.ApiService.dataCache) {
+                            global.ApiService.dataCache.reference = null;
+                            global.ApiService.dataCache.referenceTs = 0;
+                        }
+
+                        // Forzar recarga de referencias
+                        const refreshPromise = (tipoFormato === "CLIENTES" || tipoFormato === "EMPLEADOS")
+                            ? (RecordsData && typeof RecordsData.refreshReferenceData === "function"
+                                ? RecordsData.refreshReferenceData()
+                                : Promise.resolve(null))
+                            : refreshReferencesIfNeeded(tipoFormato);
+
+                        return refreshPromise.then(function (refData) {
+                            if (refData && global.FormManager && typeof global.FormManager.updateReferenceData === "function") {
+                                global.FormManager.updateReferenceData(refData);
+                            }
+                            if (global.GridManager && typeof global.GridManager.refreshGrid === "function") {
+                                global.GridManager.refreshGrid({ force: "direct", resetPage: true, source: "recordManager:update" });
+                            }
+                            return true;
+                        });
                     })
                     .catch(function (err) {
-                        if (Alerts) Alerts.showAlert("Error al actualizar: " + err.message, "danger");
+                        const msg = (err && (err.message || err.toString())) || "Error desconocido";
+                        if (Alerts) Alerts.showAlert("Error al actualizar: " + msg, "danger");
                         return false;
                     })
                     .finally(function () {
@@ -21315,11 +21926,33 @@ var BulkValuesPanel = (function () {
                     .then(function () {
                         if (Alerts) Alerts.showAlert("✅ Registro guardado correctamente.", "success");
                         enterCreateMode(true);
-                        refreshReferencesIfNeeded(tipoFormato);
-                        return true;
+
+                        // Invalidar caché de referencias para CLIENTES y EMPLEADOS
+                        if ((tipoFormato === "CLIENTES" || tipoFormato === "EMPLEADOS") && global.ApiService && global.ApiService.dataCache) {
+                            global.ApiService.dataCache.reference = null;
+                            global.ApiService.dataCache.referenceTs = 0;
+                        }
+
+                        // Forzar recarga de referencias
+                        const refreshPromise = (tipoFormato === "CLIENTES" || tipoFormato === "EMPLEADOS")
+                            ? (RecordsData && typeof RecordsData.refreshReferenceData === "function"
+                                ? RecordsData.refreshReferenceData()
+                                : Promise.resolve(null))
+                            : refreshReferencesIfNeeded(tipoFormato);
+
+                        return refreshPromise.then(function (refData) {
+                            if (refData && global.FormManager && typeof global.FormManager.updateReferenceData === "function") {
+                                global.FormManager.updateReferenceData(refData);
+                            }
+                            if (global.GridManager && typeof global.GridManager.refreshGrid === "function") {
+                                global.GridManager.refreshGrid({ force: "direct", resetPage: true, source: "recordManager:create" });
+                            }
+                            return true;
+                        });
                     })
                     .catch(function (err) {
-                        if (Alerts) Alerts.showAlert("Error al guardar: " + err.message, "danger");
+                        const msg = (err && (err.message || err.toString())) || "Error desconocido";
+                        if (Alerts) Alerts.showAlert("Error al guardar: " + msg, "danger");
                         return false;
                     })
                     .finally(function () {
@@ -21329,7 +21962,7 @@ var BulkValuesPanel = (function () {
         }
 
         function deleteRecord() {
-            if (currentMode !== "edit" || !selectedRowNumber) {
+            if (currentMode !== "edit" || (!selectedRowNumber && !selectedRowIndex)) {
                 if (Alerts) Alerts.showAlert("No hay registro seleccionado para eliminar.", "warning");
                 return Promise.resolve(false);
             }
@@ -21353,37 +21986,55 @@ var BulkValuesPanel = (function () {
             return confirmPromise.then(function (confirmed) {
                 if (!confirmed) return;
 
-            UiState.setGlobalLoading(true, "Eliminando...");
+                UiState.setGlobalLoading(true, "Eliminando...");
 
-            if (!RecordsData || typeof RecordsData.deleteRecord !== "function") {
-                if (Alerts) Alerts.showAlert("No se pudo eliminar el registro.", "danger");
-                UiState.setGlobalLoading(false);
-                return false;
-            }
-
-            const payload = selectedRowIndex
-                ? { id: selectedRowNumber, rowNumber: selectedRowIndex }
-                : selectedRowNumber;
-
-            return RecordsData.deleteRecord(tipoFormato, payload)
-                .then(function () {
-                    if (Alerts) Alerts.showAlert("✅ Registro eliminado correctamente.", "success");
-                    enterCreateMode(true);
-                    refreshReferencesIfNeeded(tipoFormato);
-                    if (global.location && typeof global.location.reload === "function") {
-                        setTimeout(function () {
-                            global.location.reload();
-                        }, 300);
-                    }
-                    return true;
-                })
-                .catch(function (err) {
-                    if (Alerts) Alerts.showAlert("Error al eliminar: " + err.message, "danger");
-                    return false;
-                })
-                .finally(function () {
+                if (!RecordsData || typeof RecordsData.deleteRecord !== "function") {
+                    if (Alerts) Alerts.showAlert("No se pudo eliminar el registro.", "danger");
                     UiState.setGlobalLoading(false);
-                });
+                    return false;
+                }
+
+                const payload = selectedRowIndex
+                    ? { id: selectedRowNumber || "", rowNumber: selectedRowIndex }
+                    : selectedRowNumber;
+
+                return RecordsData.deleteRecord(tipoFormato, payload)
+                    .then(function () {
+                        if (Alerts) Alerts.showAlert("✅ Registro eliminado correctamente.", "success");
+                        enterCreateMode(true);
+
+                        // Invalidar caché de referencias para CLIENTES y EMPLEADOS
+                        if ((tipoFormato === "CLIENTES" || tipoFormato === "EMPLEADOS") && global.ApiService && global.ApiService.dataCache) {
+                            global.ApiService.dataCache.reference = null;
+                            global.ApiService.dataCache.referenceTs = 0;
+                        }
+
+                        // Forzar recarga de referencias
+                        const refreshPromise = (tipoFormato === "CLIENTES" || tipoFormato === "EMPLEADOS")
+                            ? (RecordsData && typeof RecordsData.refreshReferenceData === "function"
+                                ? RecordsData.refreshReferenceData()
+                                : Promise.resolve(null))
+                            : refreshReferencesIfNeeded(tipoFormato);
+
+                        return refreshPromise.then(function (refData) {
+                            if (refData && global.FormManager && typeof global.FormManager.updateReferenceData === "function") {
+                                global.FormManager.updateReferenceData(refData);
+                            }
+                            if (global.location && typeof global.location.reload === "function") {
+                                setTimeout(function () {
+                                    global.location.reload();
+                                }, 300);
+                            }
+                            return true;
+                        });
+                    })
+                    .catch(function (err) {
+                        if (Alerts) Alerts.showAlert("Error al eliminar: " + err.message, "danger");
+                        return false;
+                    })
+                    .finally(function () {
+                        UiState.setGlobalLoading(false);
+                    });
             });
         }
 
@@ -21606,8 +22257,9 @@ var BulkValuesPanel = (function () {
       return;
     }
     const includeInactive = checkVerInactivos ? checkVerInactivos.checked : false;
-    RecordsData.searchRecords(tipoFormato, "", includeInactive)
+    RecordsData.searchRecords(tipoFormato, "", includeInactive, { force: true, resetPage: true })
       .then(function (records) {
+        if (records && records.ignored) return;
         if (GridManager) {
           GridManager.renderGrid(tipoFormato, records || [], { resetPage: true });
         }
@@ -21647,16 +22299,16 @@ var BulkValuesPanel = (function () {
     if (handlersBound) return;
     handlersBound = true;
     registerReferenceHandler("clientes", () => {
-      if (GridManager) GridManager.refreshGrid();
+      if (GridManager) GridManager.refreshGrid({ force: "direct", resetPage: false, source: "ref-update:clientes" });
     });
     registerReferenceHandler("empleados", () => {
-      if (GridManager) GridManager.refreshGrid();
+      if (GridManager) GridManager.refreshGrid({ force: "direct", resetPage: false, source: "ref-update:empleados" });
     });
     registerReferenceHandler("adelantos", () => {
-      if (GridManager) GridManager.refreshGrid();
+      if (GridManager) GridManager.refreshGrid({ force: "direct", resetPage: false, source: "ref-update:adelantos" });
     });
     registerReferenceHandler("gastos", () => {
-      if (GridManager) GridManager.refreshGrid();
+      if (GridManager) GridManager.refreshGrid({ force: "direct", resetPage: false, source: "ref-update:gastos" });
     });
     registerReferenceHandler("pagos", (detail) => {
       if (PaymentsPanelHandlers && typeof PaymentsPanelHandlers.handleReferenceUpdate === "function") {
@@ -21696,8 +22348,9 @@ var BulkValuesPanel = (function () {
         // Actually searchRecords is async, so better show strict loading if it's a new search
       }
 
-      RecordsData.searchRecords(tipoFormato, query, includeInactive)
+      RecordsData.searchRecords(tipoFormato, query, includeInactive, { force: true, resetPage: true })
         .then(function (records) {
+          if (records && records.ignored) return;
           if (GridManager) {
             GridManager.renderGrid(tipoFormato, records || [], { resetPage: true });
           }
@@ -21746,11 +22399,32 @@ var BulkValuesPanel = (function () {
 
     // Botón Refresh
     const btnRefresh = document.getElementById("btn-refresh");
+    function triggerRegistroRefresh(source) {
+      if (GridManager) {
+        const includeInactive = checkVerInactivos ? checkVerInactivos.checked : false;
+        const query = searchInput ? searchInput.value : "";
+        GridManager.refreshGrid({
+          force: "direct",
+          resetPage: true,
+          format: currentRegistroFormat,
+          includeInactive: includeInactive,
+          query: query,
+          source: source || "btn-refresh"
+        });
+      }
+    }
     if (btnRefresh) {
       btnRefresh.addEventListener("click", function () {
-        if (GridManager) {
-          GridManager.refreshGrid();
-        }
+        triggerRegistroRefresh("btn-refresh");
+      });
+      btnRefresh.dataset.refreshBound = "1";
+    }
+    if (typeof document !== "undefined") {
+      document.addEventListener("click", function (e) {
+        const btn = e.target && e.target.closest ? e.target.closest("#btn-refresh") : null;
+        if (!btn) return;
+        if (btn.dataset && btn.dataset.refreshBound === "1") return;
+        triggerRegistroRefresh("btn-refresh-delegated");
       });
     }
 
@@ -21788,7 +22462,7 @@ var BulkValuesPanel = (function () {
                 const currentFormat = FormManager && typeof FormManager.getCurrentFormat === "function"
                   ? FormManager.getCurrentFormat()
                   : null;
-                GridManager.refreshGrid();
+                GridManager.refreshGrid({ force: "direct", resetPage: true, source: "modal-save" });
               }
             }, 500);
           };
@@ -21814,7 +22488,7 @@ var BulkValuesPanel = (function () {
               const currentFormat = FormManager && typeof FormManager.getCurrentFormat === "function"
                 ? FormManager.getCurrentFormat()
                 : null;
-              GridManager.refreshGrid();
+              GridManager.refreshGrid({ force: "direct", resetPage: true, source: "modal-delete" });
             }
           };
           if (result && typeof result.then === "function") {

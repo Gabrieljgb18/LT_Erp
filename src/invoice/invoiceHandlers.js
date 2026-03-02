@@ -34,9 +34,27 @@
     const saveBtn = document.getElementById("invoice-save-btn");
     on(saveBtn, "click", handleSave);
 
+    const dlBtn = document.getElementById("invoice-download-btn");
+    on(dlBtn, "click", () => {
+      const id = document.getElementById("invoice-id")?.value;
+      if (id) downloadPdf(id, dlBtn);
+    });
+
+    /*
+    const addClientBtn = document.getElementById("invoice-add-client-btn");
+    on(addClientBtn, "click", () => {
+      if (typeof RecordManager !== "undefined" && RecordManager && typeof RecordManager.openNewModal === "function") {
+        RecordManager.openNewModal("CLIENTES");
+        // Escuchar cierre de modal para refrescar ddl si fuera necesario
+      } else {
+        Alerts && Alerts.showAlert("Módulo de Clientes no disponible", "warning");
+      }
+    });
+    */
+
     const dlLastBtn = document.getElementById("invoice-download-last-btn");
     on(dlLastBtn, "click", () => {
-      if (state.lastSavedInvoiceId) downloadPdf(state.lastSavedInvoiceId);
+      if (state.lastSavedInvoiceId) downloadPdf(state.lastSavedInvoiceId, dlLastBtn);
     });
     const dlSelectedBtn = document.getElementById("invoice-download-selected");
     on(dlSelectedBtn, "click", downloadSelectedPdfs);
@@ -93,9 +111,113 @@
         const idCliente = btn.dataset ? btn.dataset.idCliente || "" : "";
         const cliente = btn.dataset ? btn.dataset.cliente || "" : "";
         const period = btn.dataset ? btn.dataset.period || "" : "";
-        generateCoverageInvoice(idCliente, cliente, period);
+        generateCoverageInvoice(idCliente, cliente, period, btn);
       });
     }
+    const quickSaveBtn = document.getElementById("quick-save-btn");
+    on(quickSaveBtn, "click", handleQuickSave);
+
+    const quickDlBtn = document.getElementById("quick-download-btn");
+    on(quickDlBtn, "click", () => {
+      const id = quickDlBtn && quickDlBtn.dataset ? quickDlBtn.dataset.invoiceId : "";
+      const useId = id || state.lastSavedInvoiceId;
+      if (useId) downloadPdf(useId, quickDlBtn);
+    });
+
+    const quickCloseBtn = document.getElementById("quick-close-btn");
+    on(quickCloseBtn, "click", closeQuickPopover);
+
+    const quickPopover = document.getElementById("invoice-quick-popover");
+    on(quickPopover, "click", (e) => {
+      const btn = e.target && e.target.closest ? e.target.closest("[data-copy]") : null;
+      if (!btn || btn.disabled) return;
+      const value = btn.dataset ? (btn.dataset.copy || "") : "";
+      if (!value) return;
+      copyToClipboard(value).then((ok) => {
+        if (ok) flashCopied(btn);
+      });
+    });
+    on(document, "mousedown", (e) => {
+      if (!state.quickPopoverOpen) return;
+      if (quickPopover && quickPopover.contains(e.target)) return;
+      if (state.quickPopoverAnchor && state.quickPopoverAnchor.contains && state.quickPopoverAnchor.contains(e.target)) return;
+      closeQuickPopover();
+    });
+    on(document, "keydown", (e) => {
+      if (!state.quickPopoverOpen) return;
+      if (e.key === "Escape") closeQuickPopover();
+    });
+    on(window, "resize", () => {
+      if (state.quickPopoverOpen) positionQuickPopover(state.quickPopoverAnchor);
+    });
+  }
+
+  // Nuevo: Manejador para el guardado desde el modal rápido
+  function handleQuickSave() {
+    const idCliente = document.getElementById("quick-client-id").value;
+    const numFactura = document.getElementById("quick-invoice-number").value;
+    const dateStart = document.getElementById("quick-range-start").value;
+    const dateEnd = document.getElementById("quick-range-end").value;
+    const cliLabel = document.getElementById("quick-client-label").textContent;
+
+    if (!numFactura) {
+      Alerts && Alerts.showAlert("Ingresá el número de factura", "warning");
+      return;
+    }
+
+    const saveBtn = document.getElementById("quick-save-btn");
+    const dlBtn = document.getElementById("quick-download-btn");
+    const statusMsg = document.getElementById("quick-status-msg");
+    const ui = global.UIHelpers;
+
+    if (ui && typeof ui.withSpinner === "function") ui.withSpinner(saveBtn, true, "Guardando...");
+
+    InvoiceService.createInvoiceFromAttendance(
+      { cliente: cliLabel, idCliente: idCliente },
+      dateStart,
+      dateEnd,
+      {
+        numero: numFactura,
+        observaciones: `Período: ${dateStart} a ${dateEnd}`
+      },
+      idCliente
+    ).then((res) => {
+        let newId = "";
+        if (res && (typeof res === "string" || typeof res === "number")) {
+          newId = res;
+        } else if (res && typeof res === "object") {
+          newId = res.id || res.ID;
+        }
+        if (!newId) throw new Error("No se pudo obtener ID");
+
+        state.lastSavedInvoiceId = String(newId);
+
+        // Update UI: Success state
+        if (statusMsg) statusMsg.classList.remove("d-none");
+        if (saveBtn) {
+          saveBtn.classList.add("d-none"); // Ocultamos guardar
+        }
+        if (dlBtn) {
+          dlBtn.disabled = false; // Habilitamos descargar
+          dlBtn.removeAttribute("disabled");
+          dlBtn.removeAttribute("aria-disabled");
+          dlBtn.classList.remove("disabled");
+          dlBtn.style.pointerEvents = "auto";
+          dlBtn.style.opacity = "1";
+          if (dlBtn.dataset) dlBtn.dataset.invoiceId = String(newId);
+          dlBtn.focus();
+        }
+
+        // Refresh background data
+        if (global.InvoicePanelData) {
+          try { global.InvoicePanelData.handleCoverageSearch(); } catch (e) { }
+        }
+
+      }).catch((err) => {
+      console.error(err);
+      Alerts && Alerts.showAlert("Error al guardar: " + err.message, "danger");
+      if (ui && typeof ui.withSpinner === "function") ui.withSpinner(saveBtn, false);
+    });
   }
 
   function getFilters() {
@@ -168,6 +290,9 @@
     if (!invoiceData || !invoiceData.ID) {
       recalculateTotals();
     }
+    const dlBtn = document.getElementById("invoice-download-btn");
+    if (dlBtn) dlBtn.classList.toggle("d-none", !invoiceData || !invoiceData.ID);
+
     modal.show();
   }
 
@@ -243,43 +368,29 @@
         const newId = res && (res.id || res);
         const isUpdate = !!id;
 
-        bootstrap.Modal.getInstance(document.getElementById("invoice-modal")).hide();
-        state.invoicePage = 1;
-
-        if (global.InvoicePanelData) {
-          global.InvoicePanelData.refreshGeneratorList();
-        }
-
+        // No cerramos el modal. Actualizamos estado para permitir descarga.
         if (newId) {
+          document.getElementById("invoice-id").value = newId;
           state.lastSavedInvoiceId = String(newId);
+
+          const dlBtn = document.getElementById("invoice-download-btn");
+          if (dlBtn) dlBtn.classList.remove("d-none");
+
+          const title = document.getElementById("invoice-modal-title");
+          if (title) title.textContent = "Editar Factura";
+
           if (global.InvoicePanelRender) {
             global.InvoicePanelRender.updateSelectionUi();
           }
         }
 
-        // Si es creación, ofrecer descarga
-        if (!isUpdate && newId) {
-          const confirmMsg = `Factura guardada correctamente.\n\n¿Querés descargar el PDF ahora?`;
-          const confirmDownload = (window.UiDialogs && typeof window.UiDialogs.confirm === "function")
-            ? window.UiDialogs.confirm({
-              title: "Factura Guardada",
-              message: confirmMsg,
-              confirmText: "Descargar",
-              cancelText: "Cerrar",
-              confirmVariant: "success",
-              icon: "bi-check-circle-fill",
-              iconClass: "text-success"
-            })
-            : Promise.resolve(confirm(confirmMsg));
-
-          confirmDownload.then((confirmed) => {
-            if (confirmed) {
-              downloadPdf(String(newId));
-            }
-          });
-        } else {
-          Alerts && Alerts.showAlert("Factura actualizada exitosamente", "success");
+        state.invoicePage = 1;
+        if (global.InvoicePanelData) {
+          global.InvoicePanelData.refreshGeneratorList();
         }
+
+        Alerts && Alerts.showAlert(isUpdate ? "Factura actualizada." : "Factura guardada.", "success");
+        // showDownloadConfirm_ ya no es necesario porque el botón está visible en el modal
       })
       .catch((err) => {
         if (Alerts && typeof Alerts.showError === "function") {
@@ -320,8 +431,6 @@
         } else {
           cuitInput.value = docNumber;
         }
-      } else {
-        cuitInput.value = "";
       }
       if (cliente.id && idClienteInput) {
         idClienteInput.value = cliente.id;
@@ -460,7 +569,8 @@
       numero: numInput ? numInput.value : "",
       observaciones: obsInput ? obsInput.value : ""
     }, idCliente)
-      .then(() => {
+      .then((res) => {
+        const newId = res && (res.id || (res.record && res.record.ID) || (typeof res === 'string' || typeof res === 'number' ? res : null));
         Alerts && Alerts.showAlert("Factura generada desde asistencia.", "success");
         const modalEl = document.getElementById("invoice-att-modal");
         if (modalEl) {
@@ -468,6 +578,7 @@
           if (modal) modal.hide();
         }
         handleSearch();
+        if (newId) showDownloadConfirm_(newId, false);
       })
       .catch((err) => {
         if (Alerts && typeof Alerts.showError === "function") {
@@ -506,9 +617,11 @@
 
     UiState && UiState.setGlobalLoading(true, "Generando factura con filtros...");
     InvoiceService.createInvoiceFromAttendance(clienteRaw, fechaDesde, fechaHasta, {}, idCliente)
-      .then(() => {
+      .then((res) => {
+        const newId = res && (res.id || (res.record && res.record.ID) || (typeof res === 'string' || typeof res === 'number' ? res : null));
         Alerts && Alerts.showAlert("Factura generada.", "success");
         handleSearch();
+        if (newId) showDownloadConfirm_(newId, false);
       })
       .catch((err) => {
         if (Alerts && typeof Alerts.showError === "function") {
@@ -577,79 +690,191 @@
     });
   }
 
-  function generateCoverageInvoice(idCliente, cliente, period) {
+  function openQuickPopover(anchorBtn) {
+    const popover = document.getElementById("invoice-quick-popover");
+    if (!popover) return;
+    popover.classList.remove("d-none");
+    popover.setAttribute("aria-hidden", "false");
+    state.quickPopoverOpen = true;
+    state.quickPopoverAnchor = anchorBtn || null;
+    positionQuickPopover(anchorBtn);
+  }
+
+  function copyToClipboard(text) {
+    if (!text) return Promise.resolve(false);
+    if (navigator && navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      return navigator.clipboard.writeText(text).then(() => true).catch(() => fallbackCopy_(text));
+    }
+    return fallbackCopy_(text);
+  }
+
+  function fallbackCopy_(text) {
+    try {
+      const el = document.createElement("textarea");
+      el.value = text;
+      el.setAttribute("readonly", "");
+      el.style.position = "fixed";
+      el.style.opacity = "0";
+      document.body.appendChild(el);
+      el.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(el);
+      return Promise.resolve(!!ok);
+    } catch (e) {
+      return Promise.resolve(false);
+    }
+  }
+
+  function flashCopied(el) {
+    if (!el) return;
+    el.classList.add("is-copied");
+    if (el._copyTimer) clearTimeout(el._copyTimer);
+    el._copyTimer = setTimeout(() => {
+      el.classList.remove("is-copied");
+    }, 900);
+  }
+
+  function closeQuickPopover() {
+    const popover = document.getElementById("invoice-quick-popover");
+    if (!popover) return;
+    popover.classList.add("d-none");
+    popover.setAttribute("aria-hidden", "true");
+    popover.style.visibility = "";
+    state.quickPopoverOpen = false;
+    state.quickPopoverAnchor = null;
+  }
+
+  function positionQuickPopover(anchorBtn) {
+    const popover = document.getElementById("invoice-quick-popover");
+    if (!popover) return;
+
+    const spacing = 8;
+    const viewportW = window.innerWidth || document.documentElement.clientWidth || 0;
+    const viewportH = window.innerHeight || document.documentElement.clientHeight || 0;
+    const anchorRect = anchorBtn && anchorBtn.getBoundingClientRect
+      ? anchorBtn.getBoundingClientRect()
+      : {
+        top: viewportH / 2,
+        bottom: viewportH / 2,
+        left: viewportW / 2,
+        width: 0,
+        height: 0
+      };
+
+    popover.style.visibility = "hidden";
+    popover.classList.remove("d-none");
+    popover.classList.remove("lt-quick-popover--below");
+
+    const popRect = popover.getBoundingClientRect();
+
+    let top = anchorRect.top - popRect.height - spacing;
+    if (top < 12) {
+      top = anchorRect.bottom + spacing;
+      popover.classList.add("lt-quick-popover--below");
+    }
+
+    let left = anchorRect.left + anchorRect.width / 2 - popRect.width / 2;
+    const minLeft = 12;
+    const maxLeft = Math.max(minLeft, viewportW - popRect.width - 12);
+    left = Math.min(Math.max(left, minLeft), maxLeft);
+
+    const arrowLeft = Math.min(
+      Math.max(anchorRect.left + anchorRect.width / 2 - left, 16),
+      popRect.width - 16
+    );
+
+    popover.style.setProperty("--lt-popover-arrow-left", `${Math.round(arrowLeft)}px`);
+    const maxTop = Math.max(12, viewportH - popRect.height - 12);
+    top = Math.min(Math.max(top, 12), maxTop);
+    popover.style.top = `${Math.round(top)}px`;
+    popover.style.left = `${Math.round(left)}px`;
+    popover.style.visibility = "visible";
+  }
+
+  // Abre el popover compacto para facturación rápida
+  function generateCoverageInvoice(idCliente, cliente, period, anchorBtn) {
     const p = String(period || "").trim();
     const range = global.InvoicePanelData ? global.InvoicePanelData.monthRangeFromPeriod(p) : { start: "", end: "" };
-    if (!range.start || !range.end) {
-      Alerts && Alerts.showAlert("Período inválido para generar.", "warning");
-      return;
+
+    document.getElementById("quick-client-id").value = idCliente || "";
+    document.getElementById("quick-period").value = p;
+    document.getElementById("quick-range-start").value = range.start || "";
+    document.getElementById("quick-range-end").value = range.end || "";
+
+    const razonSocial = anchorBtn && anchorBtn.dataset ? (anchorBtn.dataset.razonSocial || "") : "";
+    const cuit = anchorBtn && anchorBtn.dataset ? (anchorBtn.dataset.cuit || "") : "";
+    const importeRaw = anchorBtn && anchorBtn.dataset ? anchorBtn.dataset.importe : "";
+
+    const labelEl = document.getElementById("quick-client-label");
+    const razonLabel = razonSocial || cliente || "Cliente";
+    if (labelEl) labelEl.textContent = razonLabel;
+
+    const razonCopy = document.getElementById("quick-razon-copy");
+    if (razonCopy) {
+      razonCopy.dataset.copy = razonLabel || "";
+      razonCopy.disabled = !razonLabel;
+      razonCopy.classList.toggle("is-empty", !razonLabel);
     }
-    const cli = String(cliente || "").trim();
-    const id = String(idCliente || "").trim();
 
-    const Dom = global.DomHelpers;
+    const cuitEl = document.getElementById("quick-cuit");
+    const cuitCopy = document.getElementById("quick-cuit-copy");
+    if (cuitEl) cuitEl.textContent = cuit || "—";
+    if (cuitCopy) {
+      cuitCopy.dataset.copy = cuit || "";
+      cuitCopy.disabled = !cuit;
+      cuitCopy.classList.toggle("is-empty", !cuit);
+    }
 
-    (window.UiDialogs && typeof window.UiDialogs.prompt === "function")
-      ? window.UiDialogs.prompt({
-        title: "Número de Factura",
-        message: `Ingresá el número para la factura de ${cli}:`,
-        placeholder: "0000-00000000",
-        onAction: async (numFactura) => {
-          if (!numFactura) throw new Error("Debes ingresar un número de factura.");
+    const importeNum = importeRaw !== "" && importeRaw != null ? Number(importeRaw) : NaN;
+    const hasImporte = !isNaN(importeNum);
+    const importeLabel = hasImporte && typeof Formatters !== "undefined" && Formatters && typeof Formatters.formatCurrency === "function"
+      ? Formatters.formatCurrency(importeNum)
+      : (hasImporte ? String(importeNum) : "—");
+    const importeEl = document.getElementById("quick-importe");
+    const importeCopy = document.getElementById("quick-importe-copy");
+    if (importeEl) importeEl.textContent = importeLabel || "—";
+    if (importeCopy) {
+      importeCopy.dataset.copy = hasImporte ? String(importeNum) : "";
+      importeCopy.disabled = !hasImporte;
+      importeCopy.classList.toggle("is-empty", !hasImporte);
+    }
 
-          UiState && UiState.setGlobalLoading(true, "Generando factura y preparando PDF...");
-          try {
-            const res = await InvoiceService.createInvoiceFromAttendance(
-              cli || { cliente: cli, idCliente: id },
-              range.start,
-              range.end,
-              {
-                numero: numFactura,
-                observaciones: `Período: ${range.start} a ${range.end}`
-              },
-              id || ""
-            );
+    const periodLabel = document.getElementById("quick-period-label");
+    if (periodLabel) {
+      periodLabel.textContent = `Período: ${range.start} - ${range.end}`;
+      periodLabel.classList.add("d-none");
+    }
 
-            const newId = res && (res.id || (res.record && res.record.ID));
-            if (!newId) throw new Error("No se pudo obtener el ID de la factura.");
+    document.getElementById("quick-invoice-number").value = "";
 
-            state.lastSavedInvoiceId = String(newId);
-            if (global.InvoicePanelData) {
-              global.InvoicePanelData.handleCoverageSearch();
-            }
+    // Reset states
+    const saveBtn = document.getElementById("quick-save-btn");
+    const dlBtn = document.getElementById("quick-download-btn");
+    const statusMsg = document.getElementById("quick-status-msg");
 
-            return {
-              success: true,
-              render: (container) => {
-                container.appendChild(Dom.el("div", { className: "text-center py-2" }, [
-                  Dom.el("div", { className: "text-success mb-2" }, [
-                    Dom.el("i", { className: "bi bi-check-circle-fill fs-2" })
-                  ]),
-                  Dom.el("div", { className: "fw-bold mb-3", text: "¡Factura generada!" }),
-                  Dom.el("button", {
-                    className: "btn btn-primary w-100 d-flex align-items-center justify-content-center gap-2",
-                    onClick: () => downloadPdf(String(newId))
-                  }, [
-                    Dom.el("i", { className: "bi bi-file-earmark-pdf-fill" }),
-                    Dom.text("Descargar PDF")
-                  ])
-                ]));
-              }
-            };
-          } catch (err) {
-            if (Alerts && typeof Alerts.showError === "function") {
-              Alerts.showError("Error generando factura", err);
-            } else {
-              console.error("Error generando factura (cobertura):", err);
-              Alerts && Alerts.showAlert("Error generando factura", "danger");
-            }
-            throw err; // Re-throw to indicate failure to the dialog
-          } finally {
-            UiState && UiState.setGlobalLoading(false);
-          }
-        }
-      })
-      : Promise.resolve(null);
+    if (saveBtn) {
+      saveBtn.classList.remove("d-none");
+      saveBtn.disabled = false;
+      // Fix: Reset content explicitly instead of using withSpinner(false) which might wipe it if no originalContent exists
+      saveBtn.innerHTML = "Guardar";
+      delete saveBtn.dataset.originalContent;
+    }
+    if (dlBtn) {
+      dlBtn.disabled = true;
+      dlBtn.setAttribute("aria-disabled", "true");
+      dlBtn.style.pointerEvents = "none";
+      dlBtn.removeAttribute("data-invoice-id");
+    }
+    if (statusMsg) statusMsg.classList.add("d-none");
+
+    openQuickPopover(anchorBtn);
+
+    // Focus input
+    setTimeout(() => {
+      const input = document.getElementById("quick-invoice-number");
+      if (input) input.focus();
+      if (state.quickPopoverOpen) positionQuickPopover(state.quickPopoverAnchor);
+    }, 50);
   }
 
   function editAttendance(id) {
@@ -728,9 +953,55 @@
     });
   }
 
-  function downloadPdf(id) {
+  function showDownloadConfirm_(id, isUpdate) {
     if (!id) return;
-    UiState && UiState.setGlobalLoading(true, "Generando PDF...");
+    state.lastSavedInvoiceId = String(id);
+    if (global.InvoicePanelRender) global.InvoicePanelRender.updateSelectionUi();
+
+    const isMsg = isUpdate ? "Factura actualizada correctamente" : "Factura guardada correctamente";
+    const confirmMsg = `${isMsg}.\n\n¿Querés descargar el PDF ahora?`;
+
+    const confirmDownload = (window.UiDialogs && typeof window.UiDialogs.confirm === "function")
+      ? window.UiDialogs.confirm({
+        title: isUpdate ? "Factura Actualizada" : "Factura Guardada",
+        message: confirmMsg,
+        confirmText: "Descargar PDF",
+        cancelText: "Cerrar",
+        confirmVariant: "success",
+        icon: "bi-check-circle-fill",
+        iconClass: "text-success"
+      })
+      : Promise.resolve(confirm(confirmMsg));
+
+    confirmDownload.then((confirmed) => {
+      if (confirmed) downloadPdf(String(id));
+    });
+  }
+
+  function downloadPdf(id, sourceBtn) {
+    if (!id) return;
+
+    const ui = global.UIHelpers;
+    let activeBtn = sourceBtn;
+    const modalBtn = document.getElementById("invoice-download-btn");
+    const lastBtn = document.getElementById("invoice-download-last-btn");
+
+    // Fallback
+    if (!activeBtn) {
+      const isModalOpen = modalBtn && modalBtn.offsetParent !== null;
+      if (isModalOpen) {
+        activeBtn = modalBtn;
+      } else if (lastBtn && !lastBtn.disabled) {
+        activeBtn = lastBtn;
+      }
+    }
+
+    if (activeBtn && ui && typeof ui.withSpinner === "function") {
+      ui.withSpinner(activeBtn, true, "Generando...");
+    } else {
+      UiState && UiState.setGlobalLoading(true, "Generando PDF...");
+    }
+
     InvoiceService.generateInvoicePdf(id)
       .then((res) => {
         if (!res || !res.base64) {
@@ -750,7 +1021,17 @@
           Alerts && Alerts.showAlert("Error al generar PDF", "danger");
         }
       })
-      .finally(() => UiState && UiState.setGlobalLoading(false));
+      .finally(() => {
+        if (activeBtn && ui && typeof ui.withSpinner === "function") {
+          // Restaurar etiqueta original con icono
+          // withSpinner(btn, false) restaura el originalContent
+          ui.withSpinner(activeBtn, false);
+          // Aseguramos que el botón del modal siga visible
+          if (activeBtn === modalBtn) activeBtn.classList.remove("d-none");
+        } else {
+          UiState && UiState.setGlobalLoading(false);
+        }
+      });
   }
 
   function setInvoicePage(page) {

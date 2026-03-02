@@ -306,6 +306,9 @@
           dataset: {
             idCliente: String(r.idCliente || ""),
             cliente: String(r.cliente || ""),
+            razonSocial: String(r.razonSocial || r.cliente || ""),
+            cuit: String(r.cuit || ""),
+            importe: r.importe != null ? String(r.importe) : "",
             period: String(period || "")
           }
         }, [

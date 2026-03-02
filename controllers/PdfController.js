@@ -32,7 +32,32 @@ var PdfController = (function () {
         const data = HoursController.getHoursByClient(startDateStr, endDateStr, clientName, idCliente);
         if (!data || !data.rows) return null;
 
-        const html = buildClientHtml(data.rows, data.summary || {}, startDateStr, endDateStr, clientInfo);
+        const filteredRows = (data.rows || []).filter(r => {
+            const h = Number(r && r.horas);
+            return r && r.asistencia !== false && !isNaN(h) && h > 0;
+        });
+        const summaryBase = data.summary || {};
+        const empleadosSet = new Set();
+        const diasSet = new Set();
+        const totalHoras = filteredRows.reduce((acc, r) => {
+            const h = Number(r.horas);
+            return acc + (isNaN(h) ? 0 : h);
+        }, 0);
+        filteredRows.forEach(r => {
+            if (r.empleado) empleadosSet.add(r.empleado);
+            if (r.fecha) diasSet.add(r.fecha);
+        });
+        const summaryPdf = {
+            totalHoras: totalHoras,
+            empleados: empleadosSet.size,
+            dias: diasSet.size,
+            horasPromEmpleado: empleadosSet.size ? totalHoras / empleadosSet.size : 0,
+            totalRegistros: filteredRows.length,
+            valorHora: summaryBase.valorHora,
+            totalFacturacion: summaryBase.totalFacturacion
+        };
+
+        const html = buildClientHtml(filteredRows, summaryPdf, startDateStr, endDateStr, clientInfo);
         const output = HtmlService.createHtmlOutput(html).setTitle('Reporte Cliente');
         const pdfBlob = output.getAs('application/pdf');
         const base64 = Utilities.base64Encode(pdfBlob.getBytes());

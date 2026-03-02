@@ -726,7 +726,7 @@ var HoursController = (function () {
         Logger.log('  startDateStr: ' + startDateStr);
         Logger.log('  endDateStr: ' + endDateStr);
         Logger.log('  employeeName: ' + employeeName);
-        Logger.log('  targetEmployee (normalizado): ' + targetEmployee);
+        Logger.log('  targetEmployeeId (normalizado): ' + targetEmployeeId);
         Logger.log('Total filas a procesar: ' + rows.length);
 
         const results = [];
@@ -761,6 +761,7 @@ var HoursController = (function () {
 
             results.push({
                 id: row[idxId],
+                rowNumber: idx + 2,
                 fecha: DataUtils.normalizeCellForSearch(row[idxFecha]),
                 cliente: row[idxCliente],
                 empleado: row[idxEmpleado],

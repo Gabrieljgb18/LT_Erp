@@ -122,8 +122,15 @@
       const nombre = toStr(emp.nombre || emp.displayName || emp.empleado || emp.label || "").trim();
       const id = emp.id || emp.ID || emp.ID_EMPLEADO;
       const idStr = id != null ? toStr(id).trim() : "";
-      if (nombre && idStr) return `${nombre} (#${idStr})`;
-      return nombre || idStr;
+      if (nombre) {
+        const cleaned = nombre
+          .replace(/\s*\(#\s*[A-Za-z0-9_-]+\)\s*/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+        if (idStr) return cleaned ? `${cleaned} (#${idStr})` : `#${idStr}`;
+        return cleaned;
+      }
+      return idStr;
     }
 
     function extractIdFromLabel(label) {

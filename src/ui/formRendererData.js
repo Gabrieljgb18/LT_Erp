@@ -35,15 +35,32 @@
 
   function getEmployeeOptions(referenceData) {
     const employees = (referenceData && referenceData.empleados) || [];
+    const stripId = (value) => {
+      if (!value) return "";
+      return String(value)
+        .replace(/\s*\(#\s*[A-Za-z0-9_-]+\)\s*/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    };
     return employees.map((emp) => {
-      const label = typeof emp === "string"
+      const rawName = typeof emp === "string"
         ? emp
         : (emp.nombre || emp.empleado || emp.label || "");
+      const cleanName = stripId(rawName);
+      const idStr = emp && typeof emp === "object" && emp.id != null ? String(emp.id) : "";
+      let label = cleanName;
+      if (global.DomainHelpers && typeof global.DomainHelpers.getEmployeeLabel === "function") {
+        label = global.DomainHelpers.getEmployeeLabel(emp);
+      } else if (cleanName && idStr) {
+        label = `${cleanName} (#${idStr})`;
+      } else if (!cleanName && idStr) {
+        label = `#${idStr}`;
+      }
       return {
-        value: label,
+        value: cleanName || label,
         label: label,
         dataset: {
-          id: emp && typeof emp === "object" && emp.id != null ? String(emp.id) : ""
+          id: idStr
         }
       };
     });

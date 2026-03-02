@@ -12,10 +12,17 @@
     return global.ApiService.call("getAvailableFormats");
   }
 
-  function searchRecords(tipoFormato, query, includeInactive) {
+  function searchRecords(tipoFormato, query, includeInactive, options) {
     if (!ensureApi()) return Promise.resolve([]);
+    const opts = options || {};
+    const key = "search-" + String(tipoFormato || "") + "|" + String(query || "") + "|" + String(includeInactive || "");
+    if ((opts.force === true || opts.force === "direct") && global.ApiService.dataCache && global.ApiService.dataCache.search) {
+      global.ApiService.dataCache.search.delete(key);
+    }
+    if (opts.force === "direct") {
+      return global.ApiService.call("searchRecords", tipoFormato, query || "", includeInactive);
+    }
     if (typeof global.ApiService.callLatest === "function") {
-      const key = "search-" + String(tipoFormato || "") + "|" + String(query || "") + "|" + String(includeInactive || "");
       return global.ApiService.callLatest(
         key,
         "searchRecords",

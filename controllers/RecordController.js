@@ -4,6 +4,29 @@
  */
 
 var RecordController = (function () {
+    function logDebug_(msg) {
+        try {
+            const ss = DatabaseService.getDbSpreadsheet();
+            let sheet = ss.getSheetByName('DEBUG_LOG');
+            if (!sheet) {
+                sheet = ss.insertSheet('DEBUG_LOG');
+                sheet.appendRow(['Timestamp', 'Message']);
+            }
+            sheet.appendRow([new Date(), msg]);
+        } catch (e) {
+            // ignore
+        }
+    }
+
+    function logDebugJson_(label, data) {
+        try {
+            const json = JSON.stringify(data);
+            const safe = json.length > 4000 ? json.slice(0, 4000) + '…' : json;
+            logDebug_(label + ' ' + safe);
+        } catch (e) {
+            logDebug_(label + ' [unserializable]');
+        }
+    }
 
     /**
      * Obtiene la lista de formatos disponibles
@@ -28,6 +51,16 @@ var RecordController = (function () {
             includeInactive === '1' ||
             includeInactive === 'true' ||
             includeInactive === 'TRUE';
+        let debugEmpId = null;
+        if (tipoFormato === 'EMPLEADOS') {
+            try {
+                const props = PropertiesService.getScriptProperties();
+                const raw = props.getProperty('DEBUG_LAST_EMP_ID');
+                debugEmpId = raw ? String(raw).trim() : null;
+            } catch (e) {
+                debugEmpId = null;
+            }
+        }
 
         // Reparación automática de datos legacy para ADELANTOS (corrimiento de columnas)
         if (tipoFormato === 'ADELANTOS' && DatabaseService && typeof DatabaseService.repairAdelantosLegacyRows === 'function') {
@@ -51,6 +84,9 @@ var RecordController = (function () {
         const data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
 
         const q = (query || '').toString().toLowerCase().trim();
+        if (tipoFormato === 'EMPLEADOS' && debugEmpId) {
+            logDebug_('search EMPLEADOS call: q="' + q + '" includeInactive=' + includeInactiveBool);
+        }
         const results = [];
 
         data.forEach(function (row, index) {
@@ -82,6 +118,18 @@ var RecordController = (function () {
                 });
 
                 const rowId = idxId > -1 ? row[idxId] : row[0];
+                if (debugEmpId && String(rowId).trim() === debugEmpId) {
+                    const idxEstado = headerKeys.indexOf('ESTADO');
+                    const estadoRaw = idxEstado > -1 ? row[idxEstado] : '';
+                    const estadoNorm = idxEstado > -1 ? rowStrings[idxEstado] : '';
+                    logDebug_(
+                        'search EMPLEADOS id=' + debugEmpId +
+                        ' estadoRaw=' + estadoRaw +
+                        ' estadoNorm=' + estadoNorm +
+                        ' includeInactive=' + includeInactiveBool +
+                        ' q="' + q + '"'
+                    );
+                }
                 results.push({
                     id: rowId,
                     rowNumber: index + 2,
@@ -90,6 +138,9 @@ var RecordController = (function () {
             }
         });
 
+        if (tipoFormato === 'EMPLEADOS' && debugEmpId) {
+            logDebug_('search EMPLEADOS result count=' + results.length);
+        }
         return results;
     }
 
@@ -341,18 +392,45 @@ var RecordController = (function () {
      * @returns {boolean} true si se actualizó correctamente
      */
     function updateRecord(tipoFormato, id, newRecord) {
-        const sheet = DatabaseService.getDbSheetForFormat(tipoFormato);
-        const template = Formats.getFormatTemplate(tipoFormato);
+        try {
+            const sheet = DatabaseService.getDbSheetForFormat(tipoFormato);
+            const template = Formats.getFormatTemplate(tipoFormato);
 
-        if (!template) {
-            throw new Error('Formato no encontrado: ' + tipoFormato);
-        }
+            if (!template) {
+                throw new Error('Formato no encontrado: ' + tipoFormato);
+            }
 
-        // Find row by ID
-        const rowNumber = DatabaseService.findRowById(sheet, id);
-        if (!rowNumber) {
-            throw new Error('Registro con ID ' + id + ' no encontrado');
-        }
+            let targetId = id;
+            let rowNumber = null;
+            if (id && typeof id === 'object') {
+                if (id.id != null) targetId = id.id;
+                if (id.ID != null) targetId = id.ID;
+                rowNumber = Number(id.rowNumber) || null;
+            }
+
+            if (tipoFormato === 'EMPLEADOS') {
+                const keys = newRecord && typeof newRecord === 'object' ? Object.keys(newRecord).join(',') : '';
+                logDebug_('update EMPLEADOS: id=' + targetId + ' rowNumber=' + rowNumber + ' keys=[' + keys + ']');
+                logDebugJson_('update EMPLEADOS payload:', newRecord || {});
+                try {
+                    PropertiesService.getScriptProperties().setProperty('DEBUG_LAST_EMP_ID', String(targetId));
+                } catch (e) {
+                    // ignore
+                }
+            }
+
+            // Find row by ID or rowNumber
+            if (rowNumber && rowNumber >= 2 && rowNumber <= sheet.getLastRow()) {
+                rowNumber = rowNumber;
+            } else {
+                rowNumber = DatabaseService.findRowById(sheet, targetId);
+            }
+            if (!rowNumber) {
+                throw new Error('Registro con ID ' + targetId + ' no encontrado');
+            }
+            if (tipoFormato === 'EMPLEADOS') {
+                logDebug_('update EMPLEADOS row resolved: ' + rowNumber);
+            }
 
         const lastCol = sheet.getLastColumn();
         let headerRow = lastCol > 0 ? sheet.getRange(1, 1, 1, lastCol).getValues()[0] : [];
@@ -362,6 +440,9 @@ var RecordController = (function () {
         }
         headers = ensureHeaders_(sheet, headers, (template && template.headers) ? template.headers : []);
         headerRow = headers;
+        if (tipoFormato === 'EMPLEADOS') {
+            logDebug_('update EMPLEADOS headers: ' + headers.join('|'));
+        }
 
         // Get current values for comparison
         const currentRowValues = sheet.getRange(rowNumber, 1, 1, headers.length).getValues()[0];
@@ -370,14 +451,14 @@ var RecordController = (function () {
             currentRecord[h] = currentRowValues[idx];
         });
 
-        let incoming = newRecord;
-        if (typeof ValidationService !== 'undefined' && ValidationService && typeof ValidationService.validateAndNormalizeRecord === 'function') {
-            const validation = ValidationService.validateAndNormalizeRecord(tipoFormato, newRecord, 'update', { headers: headers, partial: true });
-            if (!validation.ok) {
-                throw new Error('Validacion: ' + validation.errors.join(' '));
+            let incoming = newRecord;
+            if (typeof ValidationService !== 'undefined' && ValidationService && typeof ValidationService.validateAndNormalizeRecord === 'function') {
+                const validation = ValidationService.validateAndNormalizeRecord(tipoFormato, newRecord, 'update', { headers: headers, partial: true });
+                if (!validation.ok) {
+                    throw new Error('Validacion: ' + validation.errors.join(' '));
+                }
+                incoming = validation.record;
             }
-            incoming = validation.record;
-        }
 
         // Preserve valores de columnas que el frontend no envía (ej: nuevos IDs)
         headers.forEach(function (h) {
@@ -387,25 +468,53 @@ var RecordController = (function () {
         });
 
         // Ensure ID is set (frontend doesn't send ID field)
-        incoming['ID'] = id;
-
-        ensureRequiredIds(tipoFormato, incoming);
+        incoming['ID'] = targetId;
         if (tipoFormato === 'EMPLEADOS') {
-            ensureUniqueEmployeeDocument_(sheet, headers, incoming, id);
+            logDebugJson_('update EMPLEADOS incoming:', incoming);
         }
+
+            ensureRequiredIds(tipoFormato, incoming);
+            if (tipoFormato === 'EMPLEADOS') {
+                const docTouched = newRecord && typeof newRecord === 'object' && (
+                    Object.prototype.hasOwnProperty.call(newRecord, 'NUMERO DOCUMENTO') ||
+                    Object.prototype.hasOwnProperty.call(newRecord, 'TIPO DOCUMENTO')
+                );
+                if (docTouched) {
+                    const currDoc = normalizeDocNumber_(currentRecord['NUMERO DOCUMENTO']);
+                    const currType = normalizeDocType_(currentRecord['TIPO DOCUMENTO']);
+                    const nextDoc = normalizeDocNumber_(incoming['NUMERO DOCUMENTO']);
+                    const nextType = normalizeDocType_(incoming['TIPO DOCUMENTO']);
+                    const docChanged = nextDoc !== currDoc || nextType !== currType;
+                    if (docChanged) {
+                        ensureUniqueEmployeeDocument_(sheet, headers, incoming, targetId);
+                    }
+                }
+            }
 
         // Build new row values with ID in correct position
         const newRowValues = buildRowValues(headers, incoming);
+        if (tipoFormato === 'EMPLEADOS') {
+            const idxEstado = headers.indexOf('ESTADO');
+            const estadoVal = idxEstado > -1 ? newRowValues[idxEstado] : '';
+            logDebug_('update EMPLEADOS ESTADO value: ' + estadoVal);
+        }
 
         // Verify ID is in correct position (safety check)
         const idxId = headers.indexOf('ID');
         if (idxId > -1) {
-            newRowValues[idxId] = id;
-        } else if (newRowValues[0] != id) {
-            newRowValues[0] = id;
+            newRowValues[idxId] = targetId;
+        } else if (newRowValues[0] != targetId) {
+            newRowValues[0] = targetId;
         }
 
         sheet.getRange(rowNumber, 1, 1, headers.length).setValues([newRowValues]);
+        if (tipoFormato === 'EMPLEADOS') {
+            const idxEstado = headers.indexOf('ESTADO');
+            if (idxEstado > -1) {
+                const postEstado = sheet.getRange(rowNumber, idxEstado + 1, 1, 1).getValue();
+                logDebug_('update EMPLEADOS post-write ESTADO: ' + postEstado);
+            }
+        }
 
         // Log value changes for CLIENTES
         if (tipoFormato === 'CLIENTES') {
@@ -431,7 +540,14 @@ var RecordController = (function () {
             }
         }
 
-        return true;
+            return true;
+        } catch (err) {
+            if (tipoFormato === 'EMPLEADOS') {
+                const msg = err && (err.message || err.toString()) ? (err.message || err.toString()) : 'Error desconocido';
+                logDebug_('update EMPLEADOS error: ' + msg);
+            }
+            throw err;
+        }
     }
 
     /**

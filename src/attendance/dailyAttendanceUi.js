@@ -314,7 +314,7 @@
                         Alerts.showAlert(msg, "success");
                     }
                     state.removedRows = [];
-                    if (GridManager) GridManager.refreshGrid();
+                    if (GridManager) GridManager.refreshGrid({ force: "direct", resetPage: false, source: "attendance-save" });
                 })
                 .catch(function (err) {
                     if (Alerts && typeof Alerts.showError === "function") {

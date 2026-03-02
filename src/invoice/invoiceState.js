@@ -17,6 +17,8 @@
     invoicePage: 1,
     generatorPage: 1,
     coverageRows: [],
+    quickPopoverOpen: false,
+    quickPopoverAnchor: null,
     eventsController: null,
     Dom: (typeof DomHelpers !== "undefined" && DomHelpers) ? DomHelpers : null,
     escapeHtml: (typeof HtmlHelpers !== "undefined" && HtmlHelpers && typeof HtmlHelpers.escapeHtml === "function")

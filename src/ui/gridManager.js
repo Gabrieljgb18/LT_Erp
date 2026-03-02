@@ -6,6 +6,7 @@
 (function (global) {
     const GridManager = (() => {
         let currentFormat = null;
+        let refreshToken = 0;
         let allRecords = [];
         let currentEditingRecord = null;
         let eventsController = null;
@@ -432,7 +433,8 @@
         function deleteRecord(record) {
             if (!record) return;
             const id = record.ID || record.Id || record.id;
-            if (!id) {
+            const rowNumber = record._rowNumber ? Number(record._rowNumber) || null : null;
+            if (!id && !rowNumber) {
                 Alerts && Alerts.showAlert('ID no encontrado para eliminar.', 'warning');
                 return;
             }
@@ -461,8 +463,8 @@
                 return;
             }
 
-            const payload = record._rowNumber
-                ? { id: id, rowNumber: record._rowNumber }
+            const payload = rowNumber
+                ? { id: id || "", rowNumber: rowNumber }
                 : id;
 
             RecordsData.deleteRecord(currentFormat, payload)
@@ -477,7 +479,7 @@
                     if (refData && FormManager) {
                         FormManager.updateReferenceData(refData);
                     }
-                    refreshGrid();
+                    refreshGrid(true);
                     if (global.location && typeof global.location.reload === "function") {
                         setTimeout(function () {
                             global.location.reload();
@@ -549,18 +551,52 @@
         /**
          * Recarga los datos de la grilla
          */
-        function refreshGrid() {
-            if (!currentFormat) return;
+        function refreshGrid(force) {
+            let options = {};
+            if (force && typeof force === "object") {
+                options = force;
+            } else if (force === true) {
+                options = { force: "direct" };
+            } else {
+                options = { force: !!force };
+            }
+
+            const formatOverride = options.format || currentFormat;
+            if (!formatOverride) return;
+            const format = formatOverride;
 
             // Aquí iría la lógica para recargar los datos desde el servidor
             if (RecordsData && typeof RecordsData.searchRecords === 'function') {
-                renderLoading(currentFormat, "Actualizando registros...");
-                const query = getCurrentQuery();
-                const includeInactive = getIncludeInactive();
-                RecordsData.searchRecords(currentFormat, query, includeInactive)
+                const token = ++refreshToken;
+                renderLoading(format, "Actualizando registros...");
+                const query = options.query != null ? options.query : getCurrentQuery();
+                const includeInactive = options.includeInactive != null ? options.includeInactive : getIncludeInactive();
+                if (format === "EMPLEADOS") {
+                    try {
+                        console.log("[DEBUG] refreshGrid", {
+                            source: options.source || "",
+                            query: query,
+                            includeInactive: includeInactive,
+                            force: options.force
+                        });
+                    } catch (e) {
+                        // ignore
+                    }
+                }
+                RecordsData.searchRecords(format, query, includeInactive, options)
                     .then(records => {
                         if (records && records.ignored) return;
-                        renderGrid(currentFormat, records);
+                        if (token !== refreshToken) return;
+                        if (format === "EMPLEADOS" && Array.isArray(records)) {
+                            const target = records.find(r => String(r.id) === "9") || null;
+                            const estado = target && target.record ? target.record.ESTADO : (target ? target.ESTADO : undefined);
+                            console.log("[DEBUG] refreshGrid result", {
+                                count: records.length,
+                                targetId: target ? target.id : null,
+                                targetEstado: estado
+                            });
+                        }
+                        renderGrid(format, records, options);
                     })
                     .catch(err => {
                         console.error('Error al recargar la grilla:', err);

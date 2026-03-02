@@ -224,7 +224,12 @@ var InvoiceTemplates = (function () {
                                     
                                     <div class="col-md-8">
                                         <label class="form-label">Razón Social <span class="text-danger">*</span></label>
-                                        <input list="invoice-modal-client-list" class="form-control" id="invoice-razon-social" required>
+                                        <div class="input-group">
+                                            <input list="invoice-modal-client-list" class="form-control" id="invoice-razon-social" required>
+                                            <button class="btn btn-outline-secondary d-none" type="button" id="invoice-add-client-btn" title="Nuevo Cliente">
+                                                <i class="bi bi-plus-lg"></i>
+                                            </button>
+                                        </div>
                                         <datalist id="invoice-modal-client-list"></datalist>
                                     </div>
                                     <div class="col-md-4">
@@ -267,10 +272,15 @@ var InvoiceTemplates = (function () {
                             </form>
                         </div>
                         <div class="modal-footer">
-                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                            <button type="button" class="btn btn-primary" id="invoice-save-btn">
-                                <i class="bi bi-save me-1"></i>Guardar
+                            <button type="button" class="btn btn-outline-danger d-none" id="invoice-download-btn">
+                                <i class="bi bi-file-earmark-pdf-fill me-1"></i>Descargar PDF
                             </button>
+                            <div class="ms-auto d-flex gap-2">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                                <button type="button" class="btn btn-primary" id="invoice-save-btn">
+                                    <i class="bi bi-save me-1"></i>Guardar
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -321,6 +331,58 @@ var InvoiceTemplates = (function () {
                             <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
                             <button type="button" class="btn btn-primary btn-sm" id="invoice-att-save">Generar factura</button>
                         </div>
+                    </div>
+                </div>
+            </div>
+            <!-- Popover compacto de factura rápida -->
+            <div id="invoice-quick-popover" class="lt-quick-popover d-none" role="dialog" aria-hidden="true">
+                <div class="lt-quick-popover__arrow"></div>
+                <div class="lt-quick-popover__panel">
+                    <div class="lt-quick-popover__header lt-quick-popover__header--clean">
+                        <button type="button" class="btn btn-sm btn-light lt-quick-popover__close" id="quick-close-btn" aria-label="Cerrar">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </div>
+
+                    <input type="hidden" id="quick-client-id">
+                    <input type="hidden" id="quick-period">
+                    <input type="hidden" id="quick-range-start">
+                    <input type="hidden" id="quick-range-end">
+
+                    <div class="lt-quick-popover__meta">
+                        <button type="button" class="lt-quick-copy lt-quick-copy--title" id="quick-razon-copy" data-copy="" title="Copiar razón social">
+                            <span id="quick-client-label"></span>
+                            <i class="bi bi-copy"></i>
+                        </button>
+                        <div class="lt-quick-popover__meta-row">
+                            <button type="button" class="lt-quick-chip lt-quick-copy" id="quick-cuit-copy" data-copy="" title="Copiar CUIT">
+                                <span class="lt-quick-chip__label">CUIT</span>
+                                <strong id="quick-cuit">—</strong>
+                                <i class="bi bi-copy"></i>
+                            </button>
+                            <button type="button" class="lt-quick-chip lt-quick-chip--amount lt-quick-copy" id="quick-importe-copy" data-copy="" title="Copiar monto">
+                                <span class="lt-quick-chip__label">Monto</span>
+                                <strong id="quick-importe">—</strong>
+                                <i class="bi bi-copy"></i>
+                            </button>
+                        </div>
+                    <div class="small text-muted d-none" id="quick-period-label"></div>
+                </div>
+
+                    <div class="lt-quick-popover__divider"></div>
+
+                    <label class="form-label small fw-semibold mb-1" for="quick-invoice-number">Número de factura</label>
+                    <input type="text" class="form-control form-control-sm text-center lt-quick-popover__input" id="quick-invoice-number" placeholder="0000-00000000" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="numeric">
+
+                    <div id="quick-status-msg" class="lt-quick-popover__status d-none">
+                        <i class="bi bi-check-circle-fill me-1"></i>Factura guardada. Podés descargar el PDF.
+                    </div>
+
+                    <div class="lt-quick-popover__actions">
+                        <button type="button" class="btn btn-primary btn-sm lt-quick-popover__btn" id="quick-save-btn">Guardar</button>
+                        <button type="button" class="btn btn-outline-danger btn-sm lt-quick-popover__btn" id="quick-download-btn" disabled>
+                            <i class="bi bi-file-earmark-pdf-fill me-1"></i>Descargar PDF
+                        </button>
                     </div>
                 </div>
             </div>

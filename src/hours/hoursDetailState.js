@@ -3,6 +3,37 @@
  * Estado y helpers del panel de detalle de horas.
  */
 (function (global) {
+  function escapeRegExp(value) {
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  function sanitizeLabelName(label, idStr) {
+    if (!label) return "";
+    let text = String(label);
+    if (idStr) {
+      const esc = escapeRegExp(idStr);
+      text = text.replace(new RegExp(`\\s*\\(#\\s*${esc}\\s*\\)\\s*`, "g"), " ");
+      text = text.replace(new RegExp(`\\s*#\\s*${esc}\\b`, "g"), " ");
+    }
+    return text.replace(/\s+/g, " ").trim();
+  }
+
+  function extractId(label) {
+    if (!label) return "";
+    if (typeof DomainHelpers !== "undefined" && DomainHelpers && typeof DomainHelpers.extractIdFromLabel === "function") {
+      const extracted = DomainHelpers.extractIdFromLabel(label);
+      if (extracted) return extracted;
+    }
+    const str = String(label);
+    const hashMatch = str.match(/#\s*([A-Za-z0-9_-]+)/);
+    if (hashMatch) return hashMatch[1].trim();
+    const idMatch = str.match(/ID\s*:\s*([^|)]+)/i);
+    if (idMatch) return idMatch[1].trim();
+    const plain = str.trim();
+    if (/^\d+$/.test(plain)) return plain;
+    return "";
+  }
+
   const state = {
     containerId: "hours-detail-panel",
     employeeIdMap: new Map(),
@@ -32,12 +63,8 @@
         if (!idStr) return "";
         let label = state.formatEmployeeLabel(emp);
         label = label != null ? String(label).trim() : "";
-        if (!label) label = `#${idStr}`;
-        if (typeof DomainHelpers !== "undefined" && DomainHelpers && typeof DomainHelpers.extractIdFromLabel === "function") {
-          if (!DomainHelpers.extractIdFromLabel(label)) {
-            label = `${label} (#${idStr})`;
-          }
-        }
+        const base = sanitizeLabelName(label, idStr);
+        label = base ? `${base} (#${idStr})` : `#${idStr}`;
         state.employeeIdMap.set(label, idStr);
         return label;
       })
@@ -48,13 +75,11 @@
 
   state.getEmployeeIdFromLabel = function (label) {
     if (!label) return "";
-    if (typeof DomainHelpers !== "undefined" && DomainHelpers && typeof DomainHelpers.extractIdFromLabel === "function") {
-      const extracted = DomainHelpers.extractIdFromLabel(label);
-      if (extracted) return extracted;
+    const labelStr = String(label).trim();
+    if (state.employeeIdMap && state.employeeIdMap.has(labelStr)) {
+      return state.employeeIdMap.get(labelStr);
     }
-    const plain = String(label).trim();
-    if (/^\\d+$/.test(plain)) return plain;
-    return "";
+    return extractId(labelStr);
   };
 
   global.HoursDetailPanelState = state;

@@ -216,12 +216,12 @@
 
       const editBtn = Dom.el("button", {
         className: "btn btn-sm btn-outline-primary lt-btn-icon btn-edit-hour",
-        dataset: { id: row.id },
+        dataset: { id: row.id, rowNumber: row.rowNumber },
         title: "Editar"
       }, Dom.el("i", { className: "bi bi-pencil-fill" }));
       const deleteBtn = Dom.el("button", {
         className: "btn btn-sm btn-outline-danger lt-btn-icon btn-delete-hour",
-        dataset: { id: row.id },
+        dataset: { id: row.id, rowNumber: row.rowNumber },
         title: "Eliminar"
       }, Dom.el("i", { className: "bi bi-trash-fill" }));
       const actions = Dom.el("div", { className: "d-flex gap-2 justify-content-end" }, [editBtn, deleteBtn]);

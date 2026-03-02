@@ -63,7 +63,7 @@
 
   function deleteRecord(id) {
     if (!ensureApi()) return Promise.reject(new Error("ApiService no disponible"));
-    return global.ApiService.call("deleteRecord", ["ASISTENCIA", id]);
+    return global.ApiService.call("deleteRecord", "ASISTENCIA", id);
   }
 
   function updateRecord(id, payload) {

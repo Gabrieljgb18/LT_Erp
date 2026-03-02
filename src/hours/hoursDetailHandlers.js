@@ -143,18 +143,28 @@
     const editBtn = event.target.closest(".btn-edit-hour");
     if (editBtn) {
       const id = editBtn.dataset.id;
-      const record = state.lastResults.find((r) => String(r.id) === String(id));
+      const rowNumber = editBtn.dataset.rowNumber;
+      let record = null;
+      if (id) {
+        record = state.lastResults.find((r) => String(r.id) === String(id));
+      }
+      if (!record && rowNumber) {
+        record = state.lastResults.find((r) => String(r.rowNumber) === String(rowNumber));
+      }
       if (record) openInlineEditModal(record);
       return;
     }
     const deleteBtn = event.target.closest(".btn-delete-hour");
     if (deleteBtn) {
       const id = deleteBtn.dataset.id;
-      if (id) deleteRecord(id);
+      const rowNumber = deleteBtn.dataset.rowNumber;
+      if (id || rowNumber) {
+        deleteRecord({ id: id || "", rowNumber: rowNumber ? Number(rowNumber) : null });
+      }
     }
   }
 
-  function deleteRecord(id) {
+  function deleteRecord(idPayload) {
     const confirmPromise =
       typeof window !== "undefined" &&
       window.UiDialogs &&
@@ -174,7 +184,8 @@
       if (!confirmed) return;
 
       UiState && UiState.setGlobalLoading(true, "Eliminando...");
-      global.HoursDetailPanelData.deleteRecord(id)
+      const payload = (idPayload && typeof idPayload === "object") ? idPayload : idPayload;
+      global.HoursDetailPanelData.deleteRecord(payload)
         .then(() => {
           Alerts && Alerts.showAlert("Registro eliminado correctamente", "success");
           if (state.lastFilters) {
